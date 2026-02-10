@@ -44,6 +44,29 @@ public class ElytraBotModule extends ToggleableModule {
             return;
         }
 
+        // Check if wearing elytra
+        var chest = mc.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST);
+        if (!chest.is(net.minecraft.world.item.Items.ELYTRA)) {
+            ChatUtils.print("[ElytraBot] ERROR: You must wear an Elytra!");
+            this.toggle();
+            return;
+        }
+
+        // Check if target is set (not 0,0)
+        if (targetX.getValue() == 0 && targetZ.getValue() == 0) {
+            ChatUtils.print("[ElytraBot] ERROR: Set Target X and Target Z first!");
+            this.toggle();
+            return;
+        }
+
+        // Check for fireworks
+        int fireworks = elytraBot.getFireworkCount();
+        if (fireworks == 0) {
+            ChatUtils.print("[ElytraBot] WARNING: No fireworks found! You need fireworks to fly.");
+        } else {
+            ChatUtils.print("[ElytraBot] Found " + fireworks + " fireworks.");
+        }
+
         elytraBot.setCruiseAltitude(cruiseAltitude.getValue());
         elytraBot.setMinAltitude(minAltitude.getValue());
         elytraBot.setFireworkInterval(fireworkInterval.getValue());
@@ -51,7 +74,13 @@ public class ElytraBotModule extends ToggleableModule {
         BlockPos target = new BlockPos(targetX.getValue(), 200, targetZ.getValue());
         elytraBot.startFlight(target);
 
-        ChatUtils.print(String.format("[ElytraBot] Flying to %d, %d", targetX.getValue(), targetZ.getValue()));
+        double distance = Math.sqrt(
+            Math.pow(mc.player.getX() - targetX.getValue(), 2) +
+            Math.pow(mc.player.getZ() - targetZ.getValue(), 2)
+        );
+        ChatUtils.print(String.format("[ElytraBot] Flying to %d, %d (%.0f blocks away)",
+            targetX.getValue(), targetZ.getValue(), distance));
+        ChatUtils.print("[ElytraBot] Jump to take off!");
     }
 
     @Override
