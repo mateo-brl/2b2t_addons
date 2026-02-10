@@ -3,13 +3,17 @@ package com.basefinder.modules;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.navigation.NavigationHelper;
+import com.basefinder.scanner.ChunkAgeAnalyzer;
 import com.basefinder.scanner.ChunkScanner;
+import com.basefinder.scanner.NewChunkDetector;
 import com.basefinder.trail.TrailFollower;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BaseType;
 import com.basefinder.util.ChunkAnalysis;
 import net.minecraft.core.BlockPos;
+import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.events.client.EventUpdate;
+import org.rusherhack.client.api.feature.module.IModule;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
@@ -67,6 +71,8 @@ public class BaseFinderModule extends ToggleableModule {
     private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", true);
     private final BooleanSetting detectTrails = new BooleanSetting("Trails", true);
     private final BooleanSetting followTrails = new BooleanSetting("Follow Trails", true);
+    private final BooleanSetting useChunkTrails = new BooleanSetting("Chunk Trails", "Use new/old chunk data for trail detection", true);
+    private final BooleanSetting useVersionBorders = new BooleanSetting("Version Borders", "Detect version generation borders", true);
 
     // Elytra settings
     private final NullSetting elytraGroup = new NullSetting("Elytra Settings", "Flight parameters");
@@ -105,7 +111,7 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Register settings with groups
         searchGroup.addSubSettings(searchPattern, scanIntervalSetting, minScore, waypointThreshold);
-        detectionGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails, followTrails);
+        detectionGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails, followTrails, useChunkTrails, useVersionBorders);
         elytraGroup.addSubSettings(cruiseAltitude, minAltitude, fireworkInterval, useElytra);
         navGroup.addSubSettings(spiralStep, searchMinDist, searchMaxDist);
 
@@ -129,6 +135,9 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Apply settings to components
         applySettings();
+
+        // Connect to NewChunks module if it's active
+        connectToNewChunksModule();
 
         // Initialize navigation
         NavigationHelper.SearchPattern pattern;
@@ -175,6 +184,28 @@ public class BaseFinderModule extends ToggleableModule {
         logger.setLogToFile(logToFile.getValue());
 
         scanInterval = scanIntervalSetting.getValue();
+    }
+
+    /**
+     * Connect TrailFollower to NewChunks module's detector and analyzer
+     * so it can use chunk age data for trail detection.
+     */
+    private void connectToNewChunksModule() {
+        IModule ncModule = RusherHackAPI.getModuleManager().getFeature("NewChunks").orElse(null);
+        if (ncModule instanceof NewChunksModule newChunksModule) {
+            if (useChunkTrails.getValue()) {
+                trailFollower.setNewChunkDetector(newChunksModule.getDetector());
+                ChatUtils.print("[BaseFinder] Connected to NewChunks - chunk trail detection enabled");
+            }
+            if (useVersionBorders.getValue()) {
+                trailFollower.setChunkAgeAnalyzer(newChunksModule.getAgeAnalyzer());
+                ChatUtils.print("[BaseFinder] Connected to NewChunks - version border detection enabled");
+            }
+        } else {
+            if (useChunkTrails.getValue() || useVersionBorders.getValue()) {
+                ChatUtils.print("[BaseFinder] Enable NewChunks module for chunk trail & version border detection");
+            }
+        }
     }
 
     @Subscribe

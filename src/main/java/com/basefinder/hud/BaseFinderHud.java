@@ -2,7 +2,8 @@ package com.basefinder.hud;
 
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.modules.BaseFinderModule;
-import com.basefinder.modules.ElytraBotModule;
+import com.basefinder.modules.NewChunksModule;
+import com.basefinder.trail.TrailFollower;
 import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.feature.hud.TextHudElement;
 import org.rusherhack.client.api.feature.module.IModule;
@@ -38,7 +39,16 @@ public class BaseFinderHud extends TextHudElement {
 
         // Trail info
         if (baseFinder.getTrailFollower().isFollowingTrail()) {
-            sb.append(" | Trail: ").append(baseFinder.getTrailFollower().getTrailLength()).append(" blocks");
+            TrailFollower.TrailType trailType = baseFinder.getTrailFollower().getCurrentTrailType();
+            sb.append(" | Trail(").append(trailType.name()).append("): ")
+              .append(baseFinder.getTrailFollower().getTrailLength());
+        }
+
+        // NewChunks info
+        IModule ncModule = RusherHackAPI.getModuleManager().getFeature("NewChunks").orElse(null);
+        if (ncModule instanceof NewChunksModule nc && nc.isToggled()) {
+            sb.append(" | NC: ").append(nc.getDetector().getNewChunkCount())
+              .append("/").append(nc.getDetector().getOldChunkCount());
         }
 
         // Elytra info
