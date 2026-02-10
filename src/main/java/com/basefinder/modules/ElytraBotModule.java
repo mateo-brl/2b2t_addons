@@ -25,7 +25,7 @@ public class ElytraBotModule extends ToggleableModule {
     private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Interval", 40, 10, 100);
 
     public ElytraBotModule() {
-        super("ElytraBot", "Automated elytra flight to coordinates", ModuleCategory.MOVEMENT);
+        super("ElytraBot", "Automated elytra flight to coordinates", ModuleCategory.EXTERNAL);
 
         this.registerSettings(
                 targetX,

@@ -258,7 +258,7 @@ public class BlockAnalyzer {
 
         // Iterate through chunk sections (16x16x16 each) instead of all Y levels
         LevelChunkSection[] sections = chunk.getSections();
-        int minSectionY = level.getMinBuildHeight() >> 4;
+        int minSectionY = level.getMinSectionY();
 
         for (int sectionIdx = 0; sectionIdx < sections.length; sectionIdx++) {
             LevelChunkSection section = sections[sectionIdx];
