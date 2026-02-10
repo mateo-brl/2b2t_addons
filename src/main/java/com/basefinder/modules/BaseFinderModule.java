@@ -221,13 +221,26 @@ public class BaseFinderModule extends ToggleableModule {
         }
     }
 
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("BaseFinder");
+
     private void handleScanning() {
         // Scan chunks periodically
         if (tickCounter % scanInterval != 0) return;
 
-        List<ChunkAnalysis> newFinds = scanner.scanLoadedChunks();
+        LOGGER.info("[BaseFinder] handleScanning called, tickCounter={}", tickCounter);
 
-        // Periodic status update
+        List<ChunkAnalysis> newFinds;
+        try {
+            newFinds = scanner.scanLoadedChunks();
+            LOGGER.info("[BaseFinder] scanLoadedChunks returned {} finds, total scanned: {}",
+                newFinds != null ? newFinds.size() : "null", scanner.getScannedCount());
+        } catch (Exception e) {
+            LOGGER.error("[BaseFinder] Error in scanLoadedChunks: {}", e.getMessage());
+            e.printStackTrace();
+            return;
+        }
+
+        // Periodic status update every 10 seconds
         if (tickCounter % 200 == 0) {
             ChatUtils.print("[BaseFinder] Scanned: " + scanner.getScannedCount() + " chunks | Found: " + logger.getCount() + " bases");
         }
