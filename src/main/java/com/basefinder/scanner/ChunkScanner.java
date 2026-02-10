@@ -30,73 +30,86 @@ public class ChunkScanner {
     private boolean detectConstruction = true;
     private boolean detectTrails = true;
 
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("BaseFinder");
+    private int debugCounter = 0;
+
     /**
      * Scan all currently loaded chunks that haven't been scanned yet.
      * Returns newly found interesting chunks.
      */
     public List<ChunkAnalysis> scanLoadedChunks() {
-        if (mc.level == null) return Collections.emptyList();
-
-        List<ChunkAnalysis> newFinds = new ArrayList<>();
-        List<LevelChunk> chunks = null;
-
-        try {
-            chunks = WorldUtils.getChunks();
-        } catch (Exception e) {
-            // WorldUtils might fail, try alternative method
+        if (mc.level == null || mc.player == null) {
+            LOGGER.warn("[ChunkScanner] mc.level or mc.player is null!");
+            return Collections.emptyList();
         }
 
-        // Fallback: get chunks directly from client level
-        if (chunks == null || chunks.isEmpty()) {
-            chunks = new ArrayList<>();
+        List<ChunkAnalysis> newFinds = new ArrayList<>();
+        int chunksFound = 0;
+        int chunksScanned = 0;
+
+        try {
+            // Get chunks directly from the client chunk cache
             var chunkSource = mc.level.getChunkSource();
             int renderDist = mc.options.renderDistance().get();
-            int playerChunkX = mc.player != null ? mc.player.chunkPosition().x : 0;
-            int playerChunkZ = mc.player != null ? mc.player.chunkPosition().z : 0;
+            int playerChunkX = mc.player.chunkPosition().x;
+            int playerChunkZ = mc.player.chunkPosition().z;
+
+            debugCounter++;
+            if (debugCounter % 10 == 1) {
+                LOGGER.info("[ChunkScanner] Player at chunk ({}, {}), render distance: {}", playerChunkX, playerChunkZ, renderDist);
+            }
 
             for (int x = playerChunkX - renderDist; x <= playerChunkX + renderDist; x++) {
                 for (int z = playerChunkZ - renderDist; z <= playerChunkZ + renderDist; z++) {
-                    LevelChunk chunk = chunkSource.getChunk(x, z, false);
-                    if (chunk != null) {
-                        chunks.add(chunk);
+                    try {
+                        LevelChunk chunk = chunkSource.getChunk(x, z, false);
+                        if (chunk == null) continue;
+
+                        chunksFound++;
+                        ChunkPos pos = chunk.getPos();
+
+                        if (scannedChunks.contains(pos)) continue;
+                        scannedChunks.add(pos);
+                        chunksScanned++;
+
+                        ChunkAnalysis analysis = BlockAnalyzer.analyzeChunk(mc.level, chunk);
+
+                        if (analysis != null && analysis.getScore() >= minScore && analysis.isInteresting()) {
+                            if (!shouldDetect(analysis.getBaseType())) continue;
+
+                            interestingChunks.add(analysis);
+                            newFinds.add(analysis);
+                            LOGGER.info("[ChunkScanner] Found interesting chunk at ({}, {}) - Type: {}, Score: {}",
+                                pos.x, pos.z, analysis.getBaseType(), analysis.getScore());
+
+                            if (analysis.getBaseType() == BaseType.TRAIL) {
+                                trailChunks.add(analysis);
+                            } else {
+                                BaseRecord record = new BaseRecord(
+                                        analysis.getCenterBlockPos(),
+                                        analysis.getBaseType(),
+                                        analysis.getScore(),
+                                        analysis.getPlayerBlockCount(),
+                                        analysis.getStorageCount(),
+                                        analysis.getShulkerCount()
+                                );
+                                foundBases.add(record);
+                            }
+                        }
+                    } catch (Exception e) {
+                        LOGGER.error("[ChunkScanner] Error scanning chunk ({}, {}): {}", x, z, e.getMessage());
                     }
                 }
             }
-        }
 
-        for (LevelChunk chunk : chunks) {
-            if (chunk == null) continue;
-            ChunkPos pos = chunk.getPos();
-            if (scannedChunks.contains(pos)) continue;
-
-            scannedChunks.add(pos);
-
-            try {
-                ChunkAnalysis analysis = BlockAnalyzer.analyzeChunk(mc.level, chunk);
-
-                if (analysis.getScore() >= minScore && analysis.isInteresting()) {
-                    if (!shouldDetect(analysis.getBaseType())) continue;
-
-                    interestingChunks.add(analysis);
-                    newFinds.add(analysis);
-
-                    if (analysis.getBaseType() == BaseType.TRAIL) {
-                        trailChunks.add(analysis);
-                    } else {
-                        BaseRecord record = new BaseRecord(
-                                analysis.getCenterBlockPos(),
-                                analysis.getBaseType(),
-                                analysis.getScore(),
-                                analysis.getPlayerBlockCount(),
-                                analysis.getStorageCount(),
-                                analysis.getShulkerCount()
-                        );
-                        foundBases.add(record);
-                    }
-                }
-            } catch (Exception e) {
-                // Skip chunk if analysis fails
+            if (debugCounter % 10 == 1) {
+                LOGGER.info("[ChunkScanner] Found {} chunks, scanned {} new chunks, total scanned: {}",
+                    chunksFound, chunksScanned, scannedChunks.size());
             }
+
+        } catch (Exception e) {
+            LOGGER.error("[ChunkScanner] Fatal error in scanLoadedChunks: {}", e.getMessage());
+            e.printStackTrace();
         }
 
         return newFinds;

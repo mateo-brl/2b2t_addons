@@ -98,11 +98,28 @@ public class NewChunksModule extends ToggleableModule {
         }
     }
 
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("NewChunks");
+    private int packetCounter = 0;
+
     @Subscribe
     private void onPacketReceive(EventPacket.Receive event) {
-        if (!useLiquidDetection.getValue()) return;
-
         var packet = event.getPacket();
+
+        // Log chunk packets for debugging
+        if (packet instanceof ClientboundLevelChunkWithLightPacket chunkPacket) {
+            ChunkPos pos = new ChunkPos(chunkPacket.getX(), chunkPacket.getZ());
+            detector.onChunkLoad(pos);
+            packetCounter++;
+            if (packetCounter % 20 == 1) {
+                LOGGER.info("[NewChunks] Chunk loaded: ({}, {}), pending: {}, new: {}, old: {}",
+                    pos.x, pos.z, detector.getPendingCount(), detector.getNewChunkCount(), detector.getOldChunkCount());
+            }
+        } else if (packet instanceof ClientboundForgetLevelChunkPacket forgetPacket) {
+            detector.onChunkUnload(forgetPacket.pos());
+        }
+
+        // Liquid detection
+        if (!useLiquidDetection.getValue()) return;
 
         if (packet instanceof ClientboundBlockUpdatePacket blockUpdate) {
             detector.onBlockUpdate(blockUpdate.getPos(), blockUpdate.getBlockState());
@@ -110,10 +127,6 @@ public class NewChunksModule extends ToggleableModule {
             sectionUpdate.runUpdates((pos, state) -> {
                 detector.onBlockUpdate(pos.immutable(), state);
             });
-        } else if (packet instanceof ClientboundLevelChunkWithLightPacket chunkPacket) {
-            detector.onChunkLoad(new ChunkPos(chunkPacket.getX(), chunkPacket.getZ()));
-        } else if (packet instanceof ClientboundForgetLevelChunkPacket forgetPacket) {
-            detector.onChunkUnload(forgetPacket.pos());
         }
     }
 
