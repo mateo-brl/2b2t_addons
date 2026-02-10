@@ -111,29 +111,44 @@ public class ElytraBot {
 
         takeoffTimer++;
 
-        // Jump to get airborne
-        if (mc.player.onGround() && takeoffTimer < 5) {
-            mc.player.jumpFromGround();
+        // Already flying? Go to climbing
+        if (mc.player.isFallFlying()) {
+            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Elytra deployed! Climbing...");
+            state = FlightState.CLIMBING;
             return;
         }
 
-        // Start elytra once in air
-        if (!mc.player.onGround() && !mc.player.isFallFlying()) {
-            // Send jump packet again to activate elytra
-            mc.player.jumpFromGround();
+        // On ground - need to jump first
+        if (mc.player.onGround()) {
+            if (takeoffTimer == 1) {
+                org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Waiting for jump... Press SPACE!");
+            }
+            // Reset timer while on ground, player needs to jump manually
+            if (takeoffTimer > 20) {
+                takeoffTimer = 1;
+            }
+            return;
+        }
+
+        // In air but not flying - try to activate elytra
+        // Player must be falling (negative Y velocity) for elytra to deploy
+        Vec3 velocity = mc.player.getDeltaMovement();
+        if (velocity.y < 0) {
+            // Falling - try to deploy elytra
             if (mc.getConnection() != null) {
                 mc.getConnection().send(new ServerboundPlayerCommandPacket(
                         mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
                 ));
             }
+
+            if (takeoffTimer % 5 == 0) {
+                org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Trying to deploy elytra...");
+            }
         }
 
-        if (mc.player.isFallFlying()) {
-            state = FlightState.CLIMBING;
-        }
-
-        // Stuck or failed takeoff
-        if (takeoffTimer > 60) {
+        // Timeout - reset
+        if (takeoffTimer > 100) {
+            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Takeoff failed. Try jumping from a higher place!");
             takeoffTimer = 0;
         }
     }
