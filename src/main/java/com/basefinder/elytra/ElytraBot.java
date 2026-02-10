@@ -2,10 +2,8 @@ package com.basefinder.elytra;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.item.FireworkRocketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
@@ -53,6 +51,11 @@ public class ElytraBot {
         if (mc.player == null || mc.level == null) return;
 
         if (fireworkCooldown > 0) fireworkCooldown--;
+
+        // Process pending firework use (delayed slot sync)
+        if (pendingFireworkSlot >= 0) {
+            useFireworkIfNeeded();
+        }
 
         // Detect if stuck
         Vec3 currentPos = mc.player.position();
@@ -248,9 +251,26 @@ public class ElytraBot {
 
     /**
      * Use a firework rocket if cooldown allows.
+     * Uses a 2-tick delay between slot switch and use to allow server sync.
      */
+    private int pendingFireworkSlot = -1;
+    private int pendingFireworkDelay = 0;
+    private int previousSlotBeforeFirework = -1;
+
     private void useFireworkIfNeeded() {
         if (fireworkCooldown > 0 || mc.player == null || mc.gameMode == null) return;
+
+        // Handle pending firework use (slot was switched, wait a tick before using)
+        if (pendingFireworkSlot >= 0) {
+            pendingFireworkDelay--;
+            if (pendingFireworkDelay <= 0) {
+                mc.gameMode.useItem(mc.player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                mc.player.getInventory().selected = previousSlotBeforeFirework;
+                fireworkCooldown = fireworkInterval;
+                pendingFireworkSlot = -1;
+            }
+            return;
+        }
 
         int slot = findFireworkInHotbar();
         if (slot < 0) {
@@ -265,14 +285,11 @@ public class ElytraBot {
             }
         }
 
-        // Switch to firework slot and use
-        int previousSlot = mc.player.getInventory().selected;
+        // Switch to firework slot and schedule use for next tick
+        previousSlotBeforeFirework = mc.player.getInventory().selected;
         mc.player.getInventory().selected = slot;
-        if (mc.gameMode != null) {
-            mc.gameMode.useItem(mc.player, net.minecraft.world.InteractionHand.MAIN_HAND);
-        }
-        mc.player.getInventory().selected = previousSlot;
-        fireworkCooldown = fireworkInterval;
+        pendingFireworkSlot = slot;
+        pendingFireworkDelay = 1; // Wait 1 tick for server to sync
     }
 
     private int findFireworkInHotbar() {

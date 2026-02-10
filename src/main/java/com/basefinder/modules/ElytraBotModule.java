@@ -6,6 +6,7 @@ import org.rusherhack.client.api.events.client.EventUpdate;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
+import org.rusherhack.core.event.stage.Stage;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.NumberSetting;
 
@@ -19,12 +20,9 @@ public class ElytraBotModule extends ToggleableModule {
 
     private final NumberSetting<Integer> targetX = new NumberSetting<>("Target X", 0, -30000000, 30000000);
     private final NumberSetting<Integer> targetZ = new NumberSetting<>("Target Z", 0, -30000000, 30000000);
-    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Cruise Altitude", 200.0, 50.0, 350.0)
-            .incremental(10.0);
-    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Min Altitude", 100.0, 30.0, 200.0)
-            .incremental(10.0);
-    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Interval", 40, 10, 100)
-            .incremental(5);
+    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Cruise Altitude", 200.0, 50.0, 350.0);
+    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Min Altitude", 100.0, 30.0, 200.0);
+    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Interval", 40, 10, 100);
 
     public ElytraBotModule() {
         super("ElytraBot", "Automated elytra flight to coordinates", ModuleCategory.MOVEMENT);
@@ -66,6 +64,7 @@ public class ElytraBotModule extends ToggleableModule {
 
     @Subscribe
     private void onUpdate(EventUpdate event) {
+        if (event.getStage() != Stage.PRE) return;
         if (mc.player == null || mc.level == null) return;
 
         elytraBot.tick();

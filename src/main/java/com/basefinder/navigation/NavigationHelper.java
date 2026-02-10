@@ -1,6 +1,5 @@
 package com.basefinder.navigation;
 
-import com.basefinder.util.Vec2d;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 
