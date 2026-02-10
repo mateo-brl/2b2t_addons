@@ -113,43 +113,22 @@ public class ElytraBot {
 
         // Already flying? Go to climbing
         if (mc.player.isFallFlying()) {
-            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Elytra deployed! Climbing...");
+            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Elytra active! Taking control...");
             state = FlightState.CLIMBING;
-            return;
-        }
-
-        // On ground - need to jump first
-        if (mc.player.onGround()) {
-            if (takeoffTimer == 1) {
-                org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Waiting for jump... Press SPACE!");
-            }
-            // Reset timer while on ground, player needs to jump manually
-            if (takeoffTimer > 20) {
-                takeoffTimer = 1;
-            }
-            return;
-        }
-
-        // In air but not flying - try to activate elytra
-        // Player must be falling (negative Y velocity) for elytra to deploy
-        Vec3 velocity = mc.player.getDeltaMovement();
-        if (velocity.y < 0) {
-            // Falling - try to deploy elytra
-            if (mc.getConnection() != null) {
-                mc.getConnection().send(new ServerboundPlayerCommandPacket(
-                        mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
-                ));
-            }
-
-            if (takeoffTimer % 5 == 0) {
-                org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Trying to deploy elytra...");
-            }
-        }
-
-        // Timeout - reset
-        if (takeoffTimer > 100) {
-            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Takeoff failed. Try jumping from a higher place!");
             takeoffTimer = 0;
+            return;
+        }
+
+        // Just wait for player to deploy elytra manually
+        // Once flying, bot takes over
+        if (takeoffTimer == 1) {
+            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Deploy your elytra manually (double-tap SPACE while falling)");
+            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Once flying, I'll take control automatically!");
+        }
+
+        // Periodic reminder
+        if (takeoffTimer % 100 == 0) {
+            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Still waiting for elytra... Double-tap SPACE while in air!");
         }
     }
 
