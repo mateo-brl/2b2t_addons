@@ -1,0 +1,80 @@
+plugins {
+    id 'idea'
+    id 'java'
+    id 'fabric-loom' version '1.9-SNAPSHOT'
+    id 'maven-publish'
+}
+
+version = project.plugin_version
+group = project.maven_group
+archivesBaseName = project.plugin_name
+
+configurations {
+    rusherhackApi
+    compileOnly.extendsFrom(rusherhackApi)
+    productionRuntime {
+        extendsFrom configurations.minecraftLibraries
+        extendsFrom configurations.loaderLibraries
+        extendsFrom configurations.minecraftRuntimeLibraries
+    }
+}
+
+repositories {
+    maven {
+        name = "rusherhack"
+        url = "https://maven.rusherhack.org/snapshots"
+    }
+    maven {
+        name = 'ParchmentMC'
+        url = 'https://maven.parchmentmc.org'
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    productionRuntime(modImplementation("net.fabricmc:fabric-loader:${project.fabric_loader_version}"))
+    productionRuntime("net.fabricmc:intermediary:${project.minecraft_version}")
+
+    mappings loom.layered() {
+        officialMojangMappings()
+        parchment("org.parchmentmc.data:parchment-${project.parchment_version}@zip")
+    }
+
+    rusherhackApi "org.rusherhack:rusherhack-api:$minecraft_version-SNAPSHOT"
+}
+
+loom {
+    accessWidenerPath.set(file("src/main/resources/rusherhack-plugin.accesswidener").with {
+        if (!exists()) null else it
+    })
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
+    it.options.release = Integer.parseInt(project.java_version)
+}
+
+java {
+    sourceCompatibility = JavaVersion.toVersion(project.java_version)
+    targetCompatibility = JavaVersion.toVersion(project.java_version)
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${archivesBaseName}" }
+    }
+}
+
+processResources {
+    inputs.property "plugin_name", project.plugin_name
+    inputs.property "plugin_version", project.plugin_version
+    inputs.property "minecraft_version", project.minecraft_version
+
+    filesMatching("rusherhack-plugin.json") {
+        expand(
+                "plugin_name": project.plugin_name,
+                "plugin_version": project.plugin_version,
+                "minecraft_version": project.minecraft_version
+        )
+    }
+}
