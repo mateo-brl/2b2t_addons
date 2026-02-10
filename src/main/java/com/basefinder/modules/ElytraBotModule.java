@@ -6,7 +6,6 @@ import org.rusherhack.client.api.events.client.EventUpdate;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
-import org.rusherhack.core.event.stage.Stage;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.NumberSetting;
 
@@ -25,7 +24,7 @@ public class ElytraBotModule extends ToggleableModule {
     private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Interval", 40, 10, 100);
 
     public ElytraBotModule() {
-        super("ElytraBot", "Automated elytra flight to coordinates", ModuleCategory.EXTERNAL);
+        super("ElytraBot", "Automated elytra flight to coordinates", ModuleCategory.MOVEMENT);
 
         this.registerSettings(
                 targetX,
@@ -93,7 +92,6 @@ public class ElytraBotModule extends ToggleableModule {
 
     @Subscribe
     private void onUpdate(EventUpdate event) {
-        if (event.getStage() != Stage.PRE) return;
         if (mc.player == null || mc.level == null) return;
 
         elytraBot.tick();
