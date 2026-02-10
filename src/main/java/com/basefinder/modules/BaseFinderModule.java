@@ -3,9 +3,7 @@ package com.basefinder.modules;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.navigation.NavigationHelper;
-import com.basefinder.scanner.ChunkAgeAnalyzer;
 import com.basefinder.scanner.ChunkScanner;
-import com.basefinder.scanner.NewChunkDetector;
 import com.basefinder.trail.TrailFollower;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BaseType;
@@ -17,6 +15,7 @@ import org.rusherhack.client.api.feature.module.IModule;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
+import org.rusherhack.core.event.stage.Stage;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.BooleanSetting;
 import org.rusherhack.core.setting.NumberSetting;
@@ -50,48 +49,39 @@ public class BaseFinderModule extends ToggleableModule {
     private FinderState state = FinderState.IDLE;
     private int tickCounter = 0;
     private int scanInterval = 20; // scan every second
+    private int investigationStartTick = 0;
 
     // === Settings ===
 
     // Search pattern
-    private final NullSetting searchGroup = new NullSetting("Search Settings", "Configure search behavior");
-    private final StringSetting searchPattern = new StringSetting("Pattern", "SPIRAL")
-            .setNameVisible(true);
-    private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Scan Interval", 20, 5, 100)
-            .incremental(5);
-    private final NumberSetting<Double> minScore = new NumberSetting<>("Min Score", 20.0, 5.0, 200.0)
-            .incremental(5.0);
-    private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Waypoint Radius", 100.0, 20.0, 500.0)
-            .incremental(10.0);
+    private final NullSetting searchGroup = new NullSetting("Search Settings");
+    private final StringSetting searchPattern = new StringSetting("Pattern", "SPIRAL");
+    private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Scan Interval", 20, 5, 100);
+    private final NumberSetting<Double> minScore = new NumberSetting<>("Min Score", 20.0, 5.0, 200.0);
+    private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Waypoint Radius", 100.0, 20.0, 500.0);
 
     // Detection filters
-    private final NullSetting detectionGroup = new NullSetting("Detection Filters", "What to detect");
+    private final NullSetting detectionGroup = new NullSetting("Detection Filters");
     private final BooleanSetting detectConstruction = new BooleanSetting("Constructions", true);
     private final BooleanSetting detectStorage = new BooleanSetting("Storage Bases", true);
     private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", true);
     private final BooleanSetting detectTrails = new BooleanSetting("Trails", true);
     private final BooleanSetting followTrails = new BooleanSetting("Follow Trails", true);
-    private final BooleanSetting useChunkTrails = new BooleanSetting("Chunk Trails", "Use new/old chunk data for trail detection", true);
-    private final BooleanSetting useVersionBorders = new BooleanSetting("Version Borders", "Detect version generation borders", true);
+    private final BooleanSetting useChunkTrails = new BooleanSetting("Chunk Trails", true);
+    private final BooleanSetting useVersionBorders = new BooleanSetting("Version Borders", true);
 
     // Elytra settings
-    private final NullSetting elytraGroup = new NullSetting("Elytra Settings", "Flight parameters");
-    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Cruise Altitude", 200.0, 50.0, 350.0)
-            .incremental(10.0);
-    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Min Altitude", 100.0, 30.0, 200.0)
-            .incremental(10.0);
-    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Interval", 40, 10, 100)
-            .incremental(5);
+    private final NullSetting elytraGroup = new NullSetting("Elytra Settings");
+    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Cruise Altitude", 200.0, 50.0, 350.0);
+    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Min Altitude", 100.0, 30.0, 200.0);
+    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Interval", 40, 10, 100);
     private final BooleanSetting useElytra = new BooleanSetting("Use Elytra", true);
 
     // Navigation settings
-    private final NullSetting navGroup = new NullSetting("Navigation", "Search area parameters");
-    private final NumberSetting<Double> spiralStep = new NumberSetting<>("Spiral Step", 500.0, 100.0, 5000.0)
-            .incremental(100.0);
-    private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Min Distance", 5000, 100, 50000)
-            .incremental(1000);
-    private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Max Distance", 100000, 10000, 500000)
-            .incremental(10000);
+    private final NullSetting navGroup = new NullSetting("Navigation");
+    private final NumberSetting<Double> spiralStep = new NumberSetting<>("Spiral Step", 500.0, 100.0, 5000.0);
+    private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Min Distance", 5000, 100, 50000);
+    private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Max Distance", 100000, 10000, 500000);
 
     // Logging
     private final BooleanSetting logToChat = new BooleanSetting("Log to Chat", true);
@@ -160,6 +150,10 @@ public class BaseFinderModule extends ToggleableModule {
         elytraBot.stop();
         trailFollower.stopFollowing();
 
+        // Release movement keys
+        mc.options.keyUp.setDown(false);
+        mc.options.keySprint.setDown(false);
+
         if (mc.level != null) {
             ChatUtils.print("[BaseFinder] Stopped. Found " + logger.getCount() + " bases. Scanned " + scanner.getScannedCount() + " chunks.");
         }
@@ -210,6 +204,7 @@ public class BaseFinderModule extends ToggleableModule {
 
     @Subscribe
     private void onUpdate(EventUpdate event) {
+        if (event.getStage() != Stage.PRE) return;
         if (mc.player == null || mc.level == null) return;
 
         tickCounter++;
@@ -304,6 +299,7 @@ public class BaseFinderModule extends ToggleableModule {
                     // If we found something big, investigate
                     if (analysis.getScore() >= minScore.getValue() * 2) {
                         state = FinderState.INVESTIGATING;
+                        investigationStartTick = tickCounter;
                         ChatUtils.print("[BaseFinder] Significant find! Investigating...");
                         return;
                     }
@@ -371,7 +367,7 @@ public class BaseFinderModule extends ToggleableModule {
         }
 
         // Stay and investigate for 5 seconds (100 ticks), then continue
-        if (tickCounter % 100 == 0) {
+        if (tickCounter - investigationStartTick >= 100) {
             state = FinderState.SCANNING;
             ChatUtils.print("[BaseFinder] Investigation complete. Continuing search.");
         }

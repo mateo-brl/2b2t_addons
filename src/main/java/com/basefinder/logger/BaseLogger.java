@@ -2,7 +2,6 @@ package com.basefinder.logger;
 
 import com.basefinder.util.BaseRecord;
 import net.minecraft.client.Minecraft;
-import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.utils.ChatUtils;
 
 import java.io.*;
@@ -16,26 +15,22 @@ import java.util.List;
  */
 public class BaseLogger {
 
-    private final List<BaseRecord> records = new ArrayList<>();
+    private final List<BaseRecord> records = Collections.synchronizedList(new ArrayList<>());
     private Path logFile;
     private boolean logToChat = true;
     private boolean logToFile = true;
 
     public BaseLogger() {
         try {
-            Path configDir = RusherHackAPI.getConfigPath();
-            Path pluginDir = configDir.resolve("basefinder");
+            Path minecraftDir = Minecraft.getInstance().gameDirectory.toPath();
+            Path pluginDir = minecraftDir.resolve("rusherhack").resolve("basefinder");
             Files.createDirectories(pluginDir);
             logFile = pluginDir.resolve("bases.log");
         } catch (IOException e) {
-            // Fallback to working directory
             logFile = Path.of("basefinder_bases.log");
         }
     }
 
-    /**
-     * Log a newly found base.
-     */
     public void logBase(BaseRecord record) {
         records.add(record);
 
@@ -53,23 +48,21 @@ public class BaseLogger {
             Files.writeString(logFile, record.toLogLine() + "\n",
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
-            // Silent fail, don't spam errors
+            // Silent fail
         }
     }
 
-    /**
-     * Export all recorded bases to a file.
-     */
     public void exportAll(String filename) {
         try {
-            Path configDir = RusherHackAPI.getConfigPath();
-            Path exportFile = configDir.resolve("basefinder").resolve(filename);
+            Path exportFile = logFile.getParent().resolve(filename);
             StringBuilder sb = new StringBuilder();
             sb.append("=== BaseFinder Export ===\n");
             sb.append("Total bases found: ").append(records.size()).append("\n\n");
 
-            for (BaseRecord record : records) {
-                sb.append(record.toLogLine()).append("\n");
+            synchronized (records) {
+                for (BaseRecord record : records) {
+                    sb.append(record.toLogLine()).append("\n");
+                }
             }
 
             Files.writeString(exportFile, sb.toString(),
