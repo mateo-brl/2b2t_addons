@@ -97,7 +97,7 @@ public class BaseFinderModule extends ToggleableModule {
     }
 
     public BaseFinderModule() {
-        super("BaseFinder", "Automated base hunting - scans chunks, follows trails, flies with elytra", ModuleCategory.WORLD);
+        super("BaseFinder", "Automated base hunting - scans chunks, follows trails, flies with elytra", ModuleCategory.EXTERNAL);
 
         // Register settings with groups
         searchGroup.addSubSettings(searchPattern, scanIntervalSetting, minScore, waypointThreshold);
