@@ -8,7 +8,6 @@ import org.rusherhack.client.api.feature.module.IModule;
 import org.rusherhack.core.command.annotations.CommandExecutor;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Command interface for BaseFinder.
@@ -64,12 +63,11 @@ public class BaseFinderCommand extends Command {
     }
 
     @CommandExecutor(subCommand = "export")
-    @CommandExecutor.Argument("string")
-    private String export(Optional<String> filename) {
+    private String export(String filename) {
         BaseFinderModule module = getModule();
         if (module == null) return "BaseFinder module not found!";
 
-        String file = filename.orElse("bases_export.txt");
+        String file = (filename != null && !filename.isEmpty()) ? filename : "bases_export.txt";
         module.getBaseLogger().exportAll(file);
         return "Exporting to " + file;
     }
