@@ -187,23 +187,43 @@ public class NewChunksModule extends ToggleableModule {
     }
 
     private void renderChunkOverlay(IRenderer3D renderer, ChunkPos pos, int y, int color) {
-        double x1 = pos.getMinBlockX();
-        double z1 = pos.getMinBlockZ();
-        // Draw a flat box (1 block tall) covering the chunk footprint
-        renderer.drawBox(x1, y, z1, 16, 1, 16, true, false, color);
+        if (renderer == null) return;
+
+        try {
+            double x1 = pos.getMinBlockX();
+            double z1 = pos.getMinBlockZ();
+            double x2 = x1 + 16;
+            double z2 = z1 + 16;
+
+            // Draw chunk outline using lines instead of filled box
+            renderer.drawLine(x1, y, z1, x2, y, z1, color);
+            renderer.drawLine(x2, y, z1, x2, y, z2, color);
+            renderer.drawLine(x2, y, z2, x1, y, z2, color);
+            renderer.drawLine(x1, y, z2, x1, y, z1, color);
+        } catch (Exception e) {
+            // Silently ignore render errors to prevent crashes
+        }
     }
 
     private void renderVersionBorders(IRenderer3D renderer, ChunkPos playerChunk, int renderDist, int y) {
-        int color = versionBorderColor.getValue().getRGB();
-        var chunks = WorldUtils.getChunks();
+        if (renderer == null) return;
 
-        for (var chunk : chunks) {
-            ChunkPos pos = chunk.getPos();
-            if (!isInRenderRange(pos, playerChunk, renderDist)) continue;
+        try {
+            int color = versionBorderColor.getValue().getRGB();
+            var chunks = WorldUtils.getChunks();
+            if (chunks == null) return;
 
-            if (ageAnalyzer.isLikelyOldChunk(chunk)) {
-                renderChunkOverlay(renderer, pos, y, color);
+            for (var chunk : chunks) {
+                if (chunk == null) continue;
+                ChunkPos pos = chunk.getPos();
+                if (pos == null || !isInRenderRange(pos, playerChunk, renderDist)) continue;
+
+                if (ageAnalyzer.isLikelyOldChunk(chunk)) {
+                    renderChunkOverlay(renderer, pos, y, color);
+                }
             }
+        } catch (Exception e) {
+            // Silently ignore render errors
         }
     }
 
