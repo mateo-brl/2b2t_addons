@@ -15,7 +15,6 @@ import org.rusherhack.client.api.feature.module.IModule;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
-import org.rusherhack.core.event.stage.Stage;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.BooleanSetting;
 import org.rusherhack.core.setting.NumberSetting;
@@ -97,7 +96,7 @@ public class BaseFinderModule extends ToggleableModule {
     }
 
     public BaseFinderModule() {
-        super("BaseFinder", "Automated base hunting - scans chunks, follows trails, flies with elytra", ModuleCategory.EXTERNAL);
+        super("BaseFinder", "Automated base hunting - scans chunks, follows trails, flies with elytra", ModuleCategory.WORLD);
 
         // Register settings with groups
         searchGroup.addSubSettings(searchPattern, scanIntervalSetting, minScore, waypointThreshold);
@@ -206,7 +205,6 @@ public class BaseFinderModule extends ToggleableModule {
 
     @Subscribe
     private void onUpdate(EventUpdate event) {
-        if (event.getStage() != Stage.PRE) return;
         if (mc.player == null || mc.level == null) return;
 
         tickCounter++;

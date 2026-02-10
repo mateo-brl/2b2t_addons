@@ -7,8 +7,6 @@ import com.basefinder.util.ChunkAnalysis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
-import org.rusherhack.client.api.utils.WorldUtils;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 

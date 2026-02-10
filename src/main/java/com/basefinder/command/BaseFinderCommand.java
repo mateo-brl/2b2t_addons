@@ -63,6 +63,7 @@ public class BaseFinderCommand extends Command {
     }
 
     @CommandExecutor(subCommand = "export")
+    @CommandExecutor.Argument({"filename"})
     private String export(String filename) {
         BaseFinderModule module = getModule();
         if (module == null) return "BaseFinder module not found!";

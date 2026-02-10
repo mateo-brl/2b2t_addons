@@ -2,7 +2,6 @@ package com.basefinder.elytra;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -72,9 +71,9 @@ public class ElytraBot {
 
         // Debug logging every 2 seconds
         if (tickCounter % 40 == 0 && state != FlightState.IDLE) {
-            LOGGER.info("[ElytraBot] State: {}, isFallFlying: {}, onGround: {}, Y: {:.1f}, Dest: {}",
+            LOGGER.info("[ElytraBot] State: {}, isFallFlying: {}, onGround: {}, Y: {}, Dest: {}",
                 state, mc.player.isFallFlying(), mc.player.onGround(),
-                mc.player.getY(), destination != null ? destination.toShortString() : "none");
+                (int) mc.player.getY(), destination != null ? destination.toShortString() : "none");
         }
 
         switch (state) {
