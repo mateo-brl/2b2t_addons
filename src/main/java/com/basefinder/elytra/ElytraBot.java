@@ -15,6 +15,7 @@ import org.rusherhack.client.api.utils.InventoryUtils;
  */
 public class ElytraBot {
 
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("ElytraBot");
     private final Minecraft mc = Minecraft.getInstance();
 
     // Flight parameters
@@ -44,12 +45,15 @@ public class ElytraBot {
         REFUELING // Looking for fireworks in inventory
     }
 
+    private int tickCounter = 0;
+
     /**
      * Called every tick to manage elytra flight.
      */
     public void tick() {
         if (mc.player == null || mc.level == null) return;
 
+        tickCounter++;
         if (fireworkCooldown > 0) fireworkCooldown--;
 
         // Process pending firework use (delayed slot sync)
@@ -65,6 +69,13 @@ public class ElytraBot {
             stuckTimer = 0;
         }
         lastPosition = currentPos;
+
+        // Debug logging every 2 seconds
+        if (tickCounter % 40 == 0 && state != FlightState.IDLE) {
+            LOGGER.info("[ElytraBot] State: {}, isFallFlying: {}, onGround: {}, Y: {:.1f}, Dest: {}",
+                state, mc.player.isFallFlying(), mc.player.onGround(),
+                mc.player.getY(), destination != null ? destination.toShortString() : "none");
+        }
 
         switch (state) {
             case IDLE -> {}
@@ -136,6 +147,7 @@ public class ElytraBot {
         if (mc.player == null) return;
 
         if (!mc.player.isFallFlying()) {
+            LOGGER.info("[ElytraBot] Lost flight during climbing, going back to takeoff");
             state = FlightState.TAKING_OFF;
             takeoffTimer = 0;
             return;
@@ -147,6 +159,8 @@ public class ElytraBot {
         useFireworkIfNeeded();
 
         if (mc.player.getY() >= cruiseAltitude) {
+            LOGGER.info("[ElytraBot] Reached cruise altitude {}, switching to cruise mode", cruiseAltitude);
+            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Cruising at altitude " + (int)cruiseAltitude);
             state = FlightState.CRUISING;
         }
     }
