@@ -54,14 +54,14 @@ public class NewChunksModule extends ToggleableModule {
     private final ColorSetting newChunkColor = new ColorSetting("New Color", new Color(255, 50, 50, 80));
     private final ColorSetting oldChunkColor = new ColorSetting("Old Color", new Color(50, 255, 50, 80));
     private final ColorSetting versionBorderColor = new ColorSetting("Version Color", new Color(255, 255, 50, 80));
-    private final NumberSetting<Integer> renderHeight = new NumberSetting<>("Render Y", 64, 0, 320);
+    private final NumberSetting<Integer> renderHeight = new NumberSetting<>("Render Y", -1, -1, 320); // -1 = player Y
     private final NumberSetting<Integer> renderDistance = new NumberSetting<>("Render Distance", 16, 4, 32);
 
     // Detection settings
     private final NullSetting detectionGroup = new NullSetting("Detection");
     private final BooleanSetting useLiquidDetection = new BooleanSetting("Liquid Detection", true);
     private final BooleanSetting useVersionDetection = new BooleanSetting("Version Detection", true);
-    private final NumberSetting<Integer> classificationDelay = new NumberSetting<>("Classification Delay", 40, 10, 100);
+    private final NumberSetting<Integer> classificationDelay = new NumberSetting<>("Classification Delay", 5, 1, 100); // 5 ticks = 0.25 sec
 
     // Stats
     private final BooleanSetting logNewChunks = new BooleanSetting("Log to Chat", false);
@@ -100,6 +100,7 @@ public class NewChunksModule extends ToggleableModule {
 
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("NewChunks");
     private int packetCounter = 0;
+    private int tickCounter = 0;
 
     @Subscribe
     private void onPacketReceive(EventPacket.Receive event) {
@@ -172,10 +173,25 @@ public class NewChunksModule extends ToggleableModule {
 
         ChunkPos playerChunk = new ChunkPos(mc.player.blockPosition());
         int renderDist = renderDistance.getValue();
-        int y = renderHeight.getValue();
 
-        // Render new chunks
-        if (showNewChunks.getValue()) {
+        // Use player Y if renderHeight is -1
+        int y = renderHeight.getValue();
+        if (y < 0) {
+            y = (int) mc.player.getY();
+        }
+
+        int newChunks = detector.getNewChunkCount();
+        int oldChunks = detector.getOldChunkCount();
+
+        // Debug: log render attempt
+        if (tickCounter % 100 == 0) {
+            LOGGER.info("[NewChunks] Rendering at Y={}, new={}, old={}, playerChunk=({},{})",
+                y, newChunks, oldChunks, playerChunk.x, playerChunk.z);
+        }
+        tickCounter++;
+
+        // Render new chunks (RED)
+        if (showNewChunks.getValue() && newChunks > 0) {
             int color = newChunkColor.getValue().getRGB();
             for (ChunkPos pos : detector.getNewChunks()) {
                 if (isInRenderRange(pos, playerChunk, renderDist)) {
