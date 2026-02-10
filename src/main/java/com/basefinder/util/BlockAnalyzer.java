@@ -3,9 +3,9 @@ package com.basefinder.util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.*;
-import net.minecraft.world.level.block.entity.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 
 import java.util.*;
 
@@ -128,7 +128,7 @@ public class BlockAnalyzer {
             Blocks.RED_CONCRETE,
             Blocks.BLACK_CONCRETE,
 
-            // Signs & banners
+            // Signs
             Blocks.OAK_SIGN,
             Blocks.SPRUCE_SIGN,
             Blocks.BIRCH_SIGN,
@@ -136,7 +136,6 @@ public class BlockAnalyzer {
             Blocks.ACACIA_SIGN,
             Blocks.DARK_OAK_SIGN,
             Blocks.OAK_WALL_SIGN,
-            Blocks.ITEM_FRAME,
 
             // Farm blocks
             Blocks.FARMLAND,
@@ -144,6 +143,17 @@ public class BlockAnalyzer {
             Blocks.PUMPKIN,
             Blocks.HAY_BLOCK,
             Blocks.COMPOSTER
+    ));
+
+    /**
+     * Wool blocks used in map art detection.
+     */
+    private static final Set<Block> WOOL_BLOCKS = new HashSet<>(Arrays.asList(
+            Blocks.WHITE_WOOL, Blocks.ORANGE_WOOL, Blocks.MAGENTA_WOOL,
+            Blocks.LIGHT_BLUE_WOOL, Blocks.YELLOW_WOOL, Blocks.LIME_WOOL,
+            Blocks.PINK_WOOL, Blocks.GRAY_WOOL, Blocks.LIGHT_GRAY_WOOL,
+            Blocks.CYAN_WOOL, Blocks.PURPLE_WOOL, Blocks.BLUE_WOOL,
+            Blocks.BROWN_WOOL, Blocks.GREEN_WOOL, Blocks.RED_WOOL, Blocks.BLACK_WOOL
     ));
 
     /**
@@ -213,7 +223,7 @@ public class BlockAnalyzer {
     }
 
     /**
-     * Check if a block is part of a map art (large flat area of colored blocks at y=255 or similar).
+     * Check if a block is part of a map art (large flat area of colored blocks).
      */
     public static boolean isMapArtBlock(Block block) {
         return block instanceof ConcretePowderBlock
@@ -226,11 +236,12 @@ public class BlockAnalyzer {
                 || block == Blocks.PURPLE_CONCRETE || block == Blocks.BLUE_CONCRETE
                 || block == Blocks.BROWN_CONCRETE || block == Blocks.GREEN_CONCRETE
                 || block == Blocks.RED_CONCRETE || block == Blocks.BLACK_CONCRETE
-                || block instanceof WoolBlock;
+                || WOOL_BLOCKS.contains(block);
     }
 
     /**
      * Scores a chunk for player activity (0 = natural, higher = more likely player-built).
+     * Uses section-based scanning to skip empty sections for performance.
      */
     public static ChunkAnalysis analyzeChunk(Level level, LevelChunk chunk) {
         ChunkAnalysis analysis = new ChunkAnalysis(chunk.getPos());
@@ -245,31 +256,43 @@ public class BlockAnalyzer {
         int shulkerCount = 0;
         int highYColoredBlocks = 0;
 
-        for (int x = 0; x < 16; x++) {
-            for (int z = 0; z < 16; z++) {
-                for (int y = level.getMinBuildHeight(); y < level.getMaxBuildHeight(); y++) {
-                    BlockPos pos = new BlockPos(minX + x, y, minZ + z);
-                    BlockState state = chunk.getBlockState(pos);
-                    Block block = state.getBlock();
+        // Iterate through chunk sections (16x16x16 each) instead of all Y levels
+        LevelChunkSection[] sections = chunk.getSections();
+        int minSectionY = level.getMinBuildHeight() >> 4;
 
-                    if (state.isAir()) continue;
+        for (int sectionIdx = 0; sectionIdx < sections.length; sectionIdx++) {
+            LevelChunkSection section = sections[sectionIdx];
+            if (section == null || section.hasOnlyAir()) continue;
 
-                    if (isPlayerPlaced(block)) {
-                        playerBlockCount++;
-                        analysis.addSignificantBlock(pos, block);
-                    }
-                    if (isStorageBlock(block)) {
-                        storageCount++;
-                    }
-                    if (isShulkerBox(block)) {
-                        shulkerCount++;
-                    }
-                    if (isTrailBlock(block)) {
-                        trailBlockCount++;
-                    }
-                    if (isMapArtBlock(block) && y > 200) {
-                        highYColoredBlocks++;
-                        mapArtBlockCount++;
+            int sectionY = (minSectionY + sectionIdx) << 4;
+
+            // Sample every other block for performance (catches structures without scanning all 4096 blocks)
+            for (int x = 0; x < 16; x += 2) {
+                for (int z = 0; z < 16; z += 2) {
+                    for (int y = 0; y < 16; y += 2) {
+                        BlockState state = section.getBlockState(x, y, z);
+                        if (state.isAir()) continue;
+
+                        Block block = state.getBlock();
+                        int worldY = sectionY + y;
+
+                        if (isPlayerPlaced(block)) {
+                            playerBlockCount++;
+                            analysis.addSignificantBlock(new BlockPos(minX + x, worldY, minZ + z), block);
+                        }
+                        if (isStorageBlock(block)) {
+                            storageCount++;
+                        }
+                        if (isShulkerBox(block)) {
+                            shulkerCount++;
+                        }
+                        if (isTrailBlock(block)) {
+                            trailBlockCount++;
+                        }
+                        if (isMapArtBlock(block) && worldY > 200) {
+                            highYColoredBlocks++;
+                            mapArtBlockCount++;
+                        }
                     }
                 }
             }
@@ -282,13 +305,13 @@ public class BlockAnalyzer {
         analysis.setShulkerCount(shulkerCount);
 
         // Determine base type
-        if (highYColoredBlocks > 200) {
+        if (highYColoredBlocks > 50) {
             analysis.setBaseType(BaseType.MAP_ART);
-        } else if (shulkerCount >= 3 || storageCount >= 10) {
+        } else if (shulkerCount >= 2 || storageCount >= 5) {
             analysis.setBaseType(BaseType.STORAGE);
-        } else if (playerBlockCount >= 50) {
+        } else if (playerBlockCount >= 15) {
             analysis.setBaseType(BaseType.CONSTRUCTION);
-        } else if (trailBlockCount >= 20 && playerBlockCount < 30) {
+        } else if (trailBlockCount >= 8 && playerBlockCount < 10) {
             analysis.setBaseType(BaseType.TRAIL);
         } else {
             analysis.setBaseType(BaseType.NONE);

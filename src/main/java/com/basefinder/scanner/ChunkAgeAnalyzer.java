@@ -2,7 +2,6 @@ package com.basefinder.scanner;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -70,49 +69,47 @@ public class ChunkAgeAnalyzer {
         boolean hasStoneAtY0 = false;
         boolean hasCopperOre = false;
         boolean hasDeepslate = false;
-        boolean hasTuff = false;
-        boolean hasDripstone = false;
         boolean hasTerrainBelowY0 = false;
 
-        for (int x = 0; x < 16; x++) {
-            for (int z = 0; z < 16; z++) {
-                // Check Y=0 to Y=4 for deepslate (old bedrock replacement)
-                for (int y = 0; y <= 4; y++) {
-                    BlockPos pos = new BlockPos(minX + x, y, minZ + z);
-                    BlockState state = chunk.getBlockState(pos);
-                    Block block = state.getBlock();
+        // Sample 8 columns instead of all 256 for performance
+        int[][] sampleColumns = {{0,0}, {4,4}, {8,8}, {12,12}, {15,0}, {0,15}, {15,15}, {7,7}};
 
-                    if (block == Blocks.DEEPSLATE && y >= 0 && y <= 4) {
-                        hasDeepslateAtY0to4 = true;
-                    }
-                    if (block == Blocks.STONE && y == 0) {
-                        hasStoneAtY0 = true;
-                    }
+        for (int[] col : sampleColumns) {
+            int x = col[0];
+            int z = col[1];
+
+            // Check Y=0 to Y=4 for deepslate (old bedrock replacement)
+            for (int y = 0; y <= 4; y++) {
+                BlockState state = chunk.getBlockState(new BlockPos(minX + x, y, minZ + z));
+                Block block = state.getBlock();
+
+                if (block == Blocks.DEEPSLATE) {
+                    hasDeepslateAtY0to4 = true;
                 }
+                if (block == Blocks.STONE && y == 0) {
+                    hasStoneAtY0 = true;
+                }
+            }
 
-                // Check for 1.17+ blocks (copper, tuff, dripstone)
-                for (int y = -64; y < 128; y++) {
-                    BlockPos pos = new BlockPos(minX + x, y, minZ + z);
-                    BlockState state = chunk.getBlockState(pos);
-                    Block block = state.getBlock();
+            // Check for terrain below Y=0 (sample a few Y levels)
+            for (int y = -4; y >= -60; y -= 8) {
+                BlockState state = chunk.getBlockState(new BlockPos(minX + x, y, minZ + z));
+                if (!state.isAir() && state.getBlock() != Blocks.BEDROCK) {
+                    hasTerrainBelowY0 = true;
+                    break;
+                }
+            }
 
-                    if (block == Blocks.COPPER_ORE || block == Blocks.DEEPSLATE_COPPER_ORE) {
-                        hasCopperOre = true;
-                    }
-                    if (block == Blocks.DEEPSLATE) {
-                        hasDeepslate = true;
-                    }
-                    if (block == Blocks.TUFF) {
-                        hasTuff = true;
-                    }
-                    if (block == Blocks.DRIPSTONE_BLOCK || block == Blocks.POINTED_DRIPSTONE) {
-                        hasDripstone = true;
-                    }
+            // Check for 1.17+ blocks in relevant Y ranges (copper: Y=-16 to Y=112, deepslate: Y=-64 to Y=0)
+            for (int y = -16; y < 48; y += 4) {
+                BlockState state = chunk.getBlockState(new BlockPos(minX + x, y, minZ + z));
+                Block block = state.getBlock();
 
-                    // Check for solid terrain below Y=0
-                    if (y < 0 && !state.isAir() && block != Blocks.BEDROCK) {
-                        hasTerrainBelowY0 = true;
-                    }
+                if (block == Blocks.COPPER_ORE || block == Blocks.DEEPSLATE_COPPER_ORE) {
+                    hasCopperOre = true;
+                }
+                if (block == Blocks.DEEPSLATE) {
+                    hasDeepslate = true;
                 }
             }
         }
