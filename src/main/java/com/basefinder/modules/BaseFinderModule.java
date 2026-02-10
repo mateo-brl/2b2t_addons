@@ -140,8 +140,10 @@ public class BaseFinderModule extends ToggleableModule {
 
         state = FinderState.SCANNING;
         tickCounter = 0;
+        scanner.reset(); // Reset scanner on enable
 
-        ChatUtils.print("[BaseFinder] Started! Pattern: " + pattern + " | Waypoints: " + navigation.getWaypointCount());
+        ChatUtils.print("[BaseFinder] Started! Pattern: " + pattern);
+        ChatUtils.print("[BaseFinder] Scanning chunks around you... Walk/fly to scan more.");
     }
 
     @Override
@@ -224,6 +226,11 @@ public class BaseFinderModule extends ToggleableModule {
         if (tickCounter % scanInterval != 0) return;
 
         List<ChunkAnalysis> newFinds = scanner.scanLoadedChunks();
+
+        // Periodic status update
+        if (tickCounter % 200 == 0) {
+            ChatUtils.print("[BaseFinder] Scanned: " + scanner.getScannedCount() + " chunks | Found: " + logger.getCount() + " bases");
+        }
 
         for (ChunkAnalysis analysis : newFinds) {
             if (analysis.getBaseType() != BaseType.TRAIL) {
