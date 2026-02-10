@@ -38,34 +38,64 @@ public class ChunkScanner {
         if (mc.level == null) return Collections.emptyList();
 
         List<ChunkAnalysis> newFinds = new ArrayList<>();
-        List<LevelChunk> chunks = WorldUtils.getChunks();
+        List<LevelChunk> chunks = null;
+
+        try {
+            chunks = WorldUtils.getChunks();
+        } catch (Exception e) {
+            // WorldUtils might fail, try alternative method
+        }
+
+        // Fallback: get chunks directly from client level
+        if (chunks == null || chunks.isEmpty()) {
+            chunks = new ArrayList<>();
+            var chunkSource = mc.level.getChunkSource();
+            int renderDist = mc.options.renderDistance().get();
+            int playerChunkX = mc.player != null ? mc.player.chunkPosition().x : 0;
+            int playerChunkZ = mc.player != null ? mc.player.chunkPosition().z : 0;
+
+            for (int x = playerChunkX - renderDist; x <= playerChunkX + renderDist; x++) {
+                for (int z = playerChunkZ - renderDist; z <= playerChunkZ + renderDist; z++) {
+                    LevelChunk chunk = chunkSource.getChunk(x, z, false);
+                    if (chunk != null) {
+                        chunks.add(chunk);
+                    }
+                }
+            }
+        }
 
         for (LevelChunk chunk : chunks) {
+            if (chunk == null) continue;
             ChunkPos pos = chunk.getPos();
             if (scannedChunks.contains(pos)) continue;
 
             scannedChunks.add(pos);
-            ChunkAnalysis analysis = BlockAnalyzer.analyzeChunk(mc.level, chunk);
 
-            if (analysis.getScore() >= minScore && analysis.isInteresting()) {
-                if (!shouldDetect(analysis.getBaseType())) continue;
+            try {
+                ChunkAnalysis analysis = BlockAnalyzer.analyzeChunk(mc.level, chunk);
 
-                interestingChunks.add(analysis);
-                newFinds.add(analysis);
+                if (analysis.getScore() >= minScore && analysis.isInteresting()) {
+                    if (!shouldDetect(analysis.getBaseType())) continue;
 
-                if (analysis.getBaseType() == BaseType.TRAIL) {
-                    trailChunks.add(analysis);
-                } else {
-                    BaseRecord record = new BaseRecord(
-                            analysis.getCenterBlockPos(),
-                            analysis.getBaseType(),
-                            analysis.getScore(),
-                            analysis.getPlayerBlockCount(),
-                            analysis.getStorageCount(),
-                            analysis.getShulkerCount()
-                    );
-                    foundBases.add(record);
+                    interestingChunks.add(analysis);
+                    newFinds.add(analysis);
+
+                    if (analysis.getBaseType() == BaseType.TRAIL) {
+                        trailChunks.add(analysis);
+                    } else {
+                        BaseRecord record = new BaseRecord(
+                                analysis.getCenterBlockPos(),
+                                analysis.getBaseType(),
+                                analysis.getScore(),
+                                analysis.getPlayerBlockCount(),
+                                analysis.getStorageCount(),
+                                analysis.getShulkerCount()
+                        );
+                        foundBases.add(record);
+                    }
                 }
+            } catch (Exception e) {
+                // Skip chunk if analysis fails
             }
         }
 
