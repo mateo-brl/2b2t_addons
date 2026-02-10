@@ -2,6 +2,7 @@ package com.basefinder;
 
 import com.basefinder.modules.BaseFinderModule;
 import com.basefinder.modules.ElytraBotModule;
+import com.basefinder.modules.NewChunksModule;
 import com.basefinder.hud.BaseFinderHud;
 import com.basefinder.command.BaseFinderCommand;
 import org.rusherhack.client.api.RusherHackAPI;
@@ -19,7 +20,10 @@ public class BaseFinderPlugin extends Plugin {
         instance = this;
         this.getLogger().info("BaseFinder plugin loading...");
 
-        // Register modules
+        // Register modules (NewChunks first so BaseFinder can connect to it)
+        NewChunksModule newChunksModule = new NewChunksModule();
+        RusherHackAPI.getModuleManager().registerFeature(newChunksModule);
+
         BaseFinderModule baseFinderModule = new BaseFinderModule();
         RusherHackAPI.getModuleManager().registerFeature(baseFinderModule);
 
