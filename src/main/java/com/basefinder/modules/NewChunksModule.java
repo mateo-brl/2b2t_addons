@@ -85,6 +85,7 @@ public class NewChunksModule extends ToggleableModule {
 
         if (mc.level != null) {
             ChatUtils.print("[NewChunks] Enabled - tracking new/old chunks");
+            ChatUtils.print("[NewChunks] Walk around to detect chunks. Lines will appear at Y=" + renderHeight.getValue());
         }
     }
 
@@ -139,15 +140,15 @@ public class NewChunksModule extends ToggleableModule {
         }
 
         // Log new findings
-        if (logNewChunks.getValue()) {
-            int newCount = detector.getNewChunkCount();
-            int oldCount = detector.getOldChunkCount();
-            if (newCount > lastNewCount) {
-                ChatUtils.print("[NewChunks] New: " + newCount + " | Old: " + oldCount);
-            }
-            lastNewCount = newCount;
-            lastOldCount = oldCount;
+        int newCount = detector.getNewChunkCount();
+        int oldCount = detector.getOldChunkCount();
+        int pendingCount = detector.getPendingCount();
+
+        if (logNewChunks.getValue() && (newCount > lastNewCount || oldCount > lastOldCount)) {
+            ChatUtils.print("[NewChunks] New: " + newCount + " | Old: " + oldCount + " | Pending: " + pendingCount);
         }
+        lastNewCount = newCount;
+        lastOldCount = oldCount;
     }
 
     @Subscribe
@@ -195,11 +196,20 @@ public class NewChunksModule extends ToggleableModule {
             double x2 = x1 + 16;
             double z2 = z1 + 16;
 
-            // Draw chunk outline using lines instead of filled box
-            renderer.drawLine(x1, y, z1, x2, y, z1, color);
-            renderer.drawLine(x2, y, z1, x2, y, z2, color);
-            renderer.drawLine(x2, y, z2, x1, y, z2, color);
-            renderer.drawLine(x1, y, z2, x1, y, z1, color);
+            // Draw thick chunk outline (multiple Y levels for visibility)
+            for (int yOffset = 0; yOffset <= 2; yOffset++) {
+                double drawY = y + yOffset;
+                renderer.drawLine(x1, drawY, z1, x2, drawY, z1, color);
+                renderer.drawLine(x2, drawY, z1, x2, drawY, z2, color);
+                renderer.drawLine(x2, drawY, z2, x1, drawY, z2, color);
+                renderer.drawLine(x1, drawY, z2, x1, drawY, z1, color);
+            }
+
+            // Draw vertical corner lines for better visibility
+            renderer.drawLine(x1, y, z1, x1, y + 2, z1, color);
+            renderer.drawLine(x2, y, z1, x2, y + 2, z1, color);
+            renderer.drawLine(x1, y, z2, x1, y + 2, z2, color);
+            renderer.drawLine(x2, y, z2, x2, y + 2, z2, color);
         } catch (Exception e) {
             // Silently ignore render errors to prevent crashes
         }
