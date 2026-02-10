@@ -20,25 +20,53 @@ public class BaseFinderPlugin extends Plugin {
         instance = this;
         this.getLogger().info("BaseFinder plugin loading...");
 
-        // Register modules (NewChunks first so BaseFinder can connect to it)
-        NewChunksModule newChunksModule = new NewChunksModule();
-        RusherHackAPI.getModuleManager().registerFeature(newChunksModule);
+        // Register modules individually with try/catch so one failure doesn't block others
+        try {
+            NewChunksModule newChunksModule = new NewChunksModule();
+            RusherHackAPI.getModuleManager().registerFeature(newChunksModule);
+            this.getLogger().info("NewChunks module registered (Render category)");
+        } catch (Exception e) {
+            this.getLogger().error("Failed to register NewChunks module: {}", e.getMessage());
+            e.printStackTrace();
+        }
 
-        BaseFinderModule baseFinderModule = new BaseFinderModule();
-        RusherHackAPI.getModuleManager().registerFeature(baseFinderModule);
+        try {
+            BaseFinderModule baseFinderModule = new BaseFinderModule();
+            RusherHackAPI.getModuleManager().registerFeature(baseFinderModule);
+            this.getLogger().info("BaseFinder module registered (World category)");
+        } catch (Exception e) {
+            this.getLogger().error("Failed to register BaseFinder module: {}", e.getMessage());
+            e.printStackTrace();
+        }
 
-        ElytraBotModule elytraBotModule = new ElytraBotModule();
-        RusherHackAPI.getModuleManager().registerFeature(elytraBotModule);
+        try {
+            ElytraBotModule elytraBotModule = new ElytraBotModule();
+            RusherHackAPI.getModuleManager().registerFeature(elytraBotModule);
+            this.getLogger().info("ElytraBot module registered (Movement category)");
+        } catch (Exception e) {
+            this.getLogger().error("Failed to register ElytraBot module: {}", e.getMessage());
+            e.printStackTrace();
+        }
 
-        // Register HUD
-        BaseFinderHud hud = new BaseFinderHud();
-        RusherHackAPI.getHudManager().registerFeature(hud);
+        try {
+            BaseFinderHud hud = new BaseFinderHud();
+            RusherHackAPI.getHudManager().registerFeature(hud);
+            this.getLogger().info("BaseFinder HUD registered");
+        } catch (Exception e) {
+            this.getLogger().error("Failed to register HUD: {}", e.getMessage());
+            e.printStackTrace();
+        }
 
-        // Register commands
-        BaseFinderCommand command = new BaseFinderCommand();
-        RusherHackAPI.getCommandManager().registerFeature(command);
+        try {
+            BaseFinderCommand command = new BaseFinderCommand();
+            RusherHackAPI.getCommandManager().registerFeature(command);
+            this.getLogger().info("BaseFinder command registered");
+        } catch (Exception e) {
+            this.getLogger().error("Failed to register command: {}", e.getMessage());
+            e.printStackTrace();
+        }
 
-        this.getLogger().info("BaseFinder plugin loaded successfully!");
+        this.getLogger().info("BaseFinder plugin loaded!");
     }
 
     @Override
