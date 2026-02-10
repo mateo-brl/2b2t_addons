@@ -1,0 +1,9 @@
+{
+  "Plugin-Class": "com.basefinder.BaseFinderPlugin",
+  "Name": "${plugin_name}",
+  "Version": "${plugin_version}",
+  "Description": "Automated base finder for 2b2t - scans chunks, follows trails, flies with elytra",
+  "URL": "https://github.com/mateo-brl/2b2t_addons",
+  "Authors": ["mateo-brl"],
+  "Minecraft-Versions": ["${minecraft_version}"]
+}
