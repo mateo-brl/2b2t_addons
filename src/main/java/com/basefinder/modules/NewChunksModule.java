@@ -3,7 +3,6 @@ package com.basefinder.modules;
 import com.basefinder.scanner.ChunkAgeAnalyzer;
 import com.basefinder.scanner.NewChunkDetector;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
@@ -19,7 +18,6 @@ import org.rusherhack.client.api.render.IRenderer3D;
 import org.rusherhack.client.api.setting.ColorSetting;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.client.api.utils.WorldUtils;
-import org.rusherhack.core.event.stage.Stage;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.BooleanSetting;
 import org.rusherhack.core.setting.NullSetting;
@@ -69,7 +67,7 @@ public class NewChunksModule extends ToggleableModule {
     private int lastOldCount = 0;
 
     public NewChunksModule() {
-        super("NewChunks", "Detects and highlights new vs old chunks (liquid flow + version detection)", ModuleCategory.EXTERNAL);
+        super("NewChunks", "Detects and highlights new vs old chunks (liquid flow + version detection)", ModuleCategory.RENDER);
 
         renderGroup.addSubSettings(showNewChunks, showOldChunks, showVersionBorders,
                 newChunkColor, oldChunkColor, versionBorderColor, renderHeight, renderDistance);
@@ -133,8 +131,6 @@ public class NewChunksModule extends ToggleableModule {
 
     @Subscribe
     private void onUpdate(EventUpdate event) {
-        if (event.getStage() != Stage.PRE) return;
-
         detector.tick();
 
         // Version-based detection on loaded chunks
@@ -190,29 +186,37 @@ public class NewChunksModule extends ToggleableModule {
         }
         tickCounter++;
 
-        // Render new chunks (RED)
-        if (showNewChunks.getValue() && newChunks > 0) {
-            int color = newChunkColor.getValue().getRGB();
-            for (ChunkPos pos : detector.getNewChunks()) {
-                if (isInRenderRange(pos, playerChunk, renderDist)) {
-                    renderChunkOverlay(renderer, pos, y, color);
+        // Begin rendering - REQUIRED before any draw calls
+        renderer.begin(event.getMatrixStack());
+
+        try {
+            // Render new chunks (RED)
+            if (showNewChunks.getValue() && newChunks > 0) {
+                int color = newChunkColor.getValueRGB();
+                for (ChunkPos pos : detector.getNewChunks()) {
+                    if (isInRenderRange(pos, playerChunk, renderDist)) {
+                        renderChunkOverlay(renderer, pos, y, color);
+                    }
                 }
             }
-        }
 
-        // Render old chunks
-        if (showOldChunks.getValue()) {
-            int color = oldChunkColor.getValue().getRGB();
-            for (ChunkPos pos : detector.getOldChunks()) {
-                if (isInRenderRange(pos, playerChunk, renderDist)) {
-                    renderChunkOverlay(renderer, pos, y, color);
+            // Render old chunks
+            if (showOldChunks.getValue()) {
+                int color = oldChunkColor.getValueRGB();
+                for (ChunkPos pos : detector.getOldChunks()) {
+                    if (isInRenderRange(pos, playerChunk, renderDist)) {
+                        renderChunkOverlay(renderer, pos, y, color);
+                    }
                 }
             }
-        }
 
-        // Render version borders
-        if (showVersionBorders.getValue() && useVersionDetection.getValue()) {
-            renderVersionBorders(renderer, playerChunk, renderDist, y);
+            // Render version borders
+            if (showVersionBorders.getValue() && useVersionDetection.getValue()) {
+                renderVersionBorders(renderer, playerChunk, renderDist, y);
+            }
+        } finally {
+            // End rendering - REQUIRED after draw calls
+            renderer.end();
         }
     }
 
@@ -248,7 +252,7 @@ public class NewChunksModule extends ToggleableModule {
         if (renderer == null) return;
 
         try {
-            int color = versionBorderColor.getValue().getRGB();
+            int color = versionBorderColor.getValueRGB();
             var chunks = WorldUtils.getChunks();
             if (chunks == null) return;
 
