@@ -4,11 +4,11 @@ package com.basefinder.util;
  * Types of bases that can be detected.
  */
 public enum BaseType {
-    NONE("None"),
+    NONE("Aucun"),
     CONSTRUCTION("Construction"),
-    STORAGE("Storage"),
+    STORAGE("Stockage"),
     MAP_ART("Map Art"),
-    TRAIL("Trail");
+    TRAIL("Piste");
 
     private final String displayName;
 

@@ -18,60 +18,60 @@ public class BaseFinderPlugin extends Plugin {
     @Override
     public void onLoad() {
         instance = this;
-        this.getLogger().info("BaseFinder plugin loading...");
+        this.getLogger().info("Plugin BaseFinder en chargement...");
 
-        // Register modules individually with try/catch so one failure doesn't block others
+        // Enregistrer les modules individuellement avec try/catch
         try {
             NewChunksModule newChunksModule = new NewChunksModule();
             RusherHackAPI.getModuleManager().registerFeature(newChunksModule);
-            this.getLogger().info("ChunkHistory module registered (External category)");
+            this.getLogger().info("Module ChunkHistory enregistré (catégorie External)");
         } catch (Exception e) {
-            this.getLogger().error("Failed to register NewChunks module: {}", e.getMessage());
+            this.getLogger().error("Échec enregistrement module NewChunks : {}", e.getMessage());
             e.printStackTrace();
         }
 
         try {
             BaseFinderModule baseFinderModule = new BaseFinderModule();
             RusherHackAPI.getModuleManager().registerFeature(baseFinderModule);
-            this.getLogger().info("BaseHunter module registered (External category)");
+            this.getLogger().info("Module BaseHunter enregistré (catégorie External)");
         } catch (Exception e) {
-            this.getLogger().error("Failed to register BaseFinder module: {}", e.getMessage());
+            this.getLogger().error("Échec enregistrement module BaseFinder : {}", e.getMessage());
             e.printStackTrace();
         }
 
         try {
             ElytraBotModule elytraBotModule = new ElytraBotModule();
             RusherHackAPI.getModuleManager().registerFeature(elytraBotModule);
-            this.getLogger().info("ElytraBot module registered (External category)");
+            this.getLogger().info("Module ElytraBot enregistré (catégorie External)");
         } catch (Exception e) {
-            this.getLogger().error("Failed to register ElytraBot module: {}", e.getMessage());
+            this.getLogger().error("Échec enregistrement module ElytraBot : {}", e.getMessage());
             e.printStackTrace();
         }
 
         try {
             BaseFinderHud hud = new BaseFinderHud();
             RusherHackAPI.getHudManager().registerFeature(hud);
-            this.getLogger().info("BaseFinder HUD registered");
+            this.getLogger().info("HUD BaseFinder enregistré");
         } catch (Exception e) {
-            this.getLogger().error("Failed to register HUD: {}", e.getMessage());
+            this.getLogger().error("Échec enregistrement HUD : {}", e.getMessage());
             e.printStackTrace();
         }
 
         try {
             BaseFinderCommand command = new BaseFinderCommand();
             RusherHackAPI.getCommandManager().registerFeature(command);
-            this.getLogger().info("BaseFinder command registered");
+            this.getLogger().info("Commande BaseFinder enregistrée");
         } catch (Exception e) {
-            this.getLogger().error("Failed to register command: {}", e.getMessage());
+            this.getLogger().error("Échec enregistrement commande : {}", e.getMessage());
             e.printStackTrace();
         }
 
-        this.getLogger().info("BaseFinder plugin loaded!");
+        this.getLogger().info("Plugin BaseFinder chargé !");
     }
 
     @Override
     public void onUnload() {
-        this.getLogger().info("BaseFinder plugin unloaded.");
+        this.getLogger().info("Plugin BaseFinder déchargé.");
     }
 
     public static BaseFinderPlugin getInstance() {
