@@ -8,6 +8,7 @@ import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
+import com.basefinder.util.Lang;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.client.api.utils.InventoryUtils;
 
@@ -160,10 +161,10 @@ public class ElytraBot {
         if (!chest.is(Items.ELYTRA)) {
             int spareSlot = findElytraInInventory();
             if (spareSlot >= 0) {
-                ChatUtils.print("[ElytraBot] Pas d'elytra équipé ! Équipement depuis l'inventaire...");
+                ChatUtils.print("[ElytraBot] " + Lang.t("No elytra equipped! Equipping from inventory...", "Pas d'elytra équipé ! Équipement depuis l'inventaire..."));
                 startElytraSwap(spareSlot);
             } else {
-                ChatUtils.print("[ElytraBot] Aucun elytra disponible ! Atterrissage d'urgence...");
+                ChatUtils.print("[ElytraBot] " + Lang.t("No elytra available! Emergency landing...", "Aucun elytra disponible ! Atterrissage d'urgence..."));
                 initiateEmergencyLanding();
             }
             return;
@@ -177,11 +178,10 @@ public class ElytraBot {
             // Low durability - try to swap
             int spareSlot = findElytraInInventory();
             if (spareSlot >= 0) {
-                ChatUtils.print("[ElytraBot] Elytra usé (" + remaining + " durabilité) ! Échange...");
+                ChatUtils.print("[ElytraBot] " + Lang.t("Elytra low (" + remaining + " durability)! Swapping...", "Elytra usé (" + remaining + " durabilité) ! Échange..."));
                 startElytraSwap(spareSlot);
             } else {
-                // Pas d'elytra de rechange - atterrir
-                ChatUtils.print("[ElytraBot] Elytra usé (" + remaining + ") et aucun de rechange ! Atterrissage...");
+                ChatUtils.print("[ElytraBot] " + Lang.t("Elytra low (" + remaining + ") and no spare! Landing...", "Elytra usé (" + remaining + ") et aucun de rechange ! Atterrissage..."));
                 initiateEmergencyLanding();
             }
         }
@@ -282,7 +282,7 @@ public class ElytraBot {
                 mc.gameMode.handleInventoryMouseClick(containerId, elytraSwapSlot, 0, ClickType.PICKUP, mc.player);
                 elytraSwapStep = 0;
                 elytraSwapSlot = -1;
-                ChatUtils.print("[ElytraBot] Elytra échangé ! Durabilité : " + getEquippedElytraDurability());
+                ChatUtils.print("[ElytraBot] " + Lang.t("Elytra swapped! Durability: ", "Elytra échangé ! Durabilité : ") + getEquippedElytraDurability());
                 LOGGER.info("[ElytraBot] Swap step 3: completed swap");
             }
             default -> {
@@ -309,7 +309,7 @@ public class ElytraBot {
 
         // Already flying? Go to climbing
         if (mc.player.isFallFlying()) {
-            ChatUtils.print("[ElytraBot] Elytra déployé ! Montée...");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Elytra deployed! Climbing...", "Elytra déployé ! Montée..."));
             state = FlightState.CLIMBING;
             takeoffTimer = 0;
             return;
@@ -355,7 +355,7 @@ public class ElytraBot {
 
         if (mc.player.getY() >= cruiseAltitude) {
             LOGGER.info("[ElytraBot] Reached cruise altitude {}, switching to cruise mode", cruiseAltitude);
-            ChatUtils.print("[ElytraBot] Croisière à altitude " + (int)cruiseAltitude);
+            ChatUtils.print("[ElytraBot] " + Lang.t("Cruising at altitude ", "Croisière à altitude ") + (int)cruiseAltitude);
             state = FlightState.CRUISING;
         }
     }
@@ -438,7 +438,7 @@ public class ElytraBot {
         if (mc.player != null && mc.player.onGround()) {
             state = FlightState.IDLE;
             isFlying = false;
-            ChatUtils.print("[ElytraBot] Atterri.");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Landed.", "Atterri."));
         }
     }
 
@@ -456,7 +456,7 @@ public class ElytraBot {
             }
             applyRotation();
             if (mc.player != null && mc.player.getY() < minAltitude) {
-                ChatUtils.print("[ElytraBot] Plus de fusées ! Atterrissage...");
+                ChatUtils.print("[ElytraBot] " + Lang.t("No fireworks! Landing...", "Plus de fusées ! Atterrissage..."));
                 state = FlightState.LANDING;
             }
         }
@@ -487,12 +487,12 @@ public class ElytraBot {
         // Low firework warning (<=5 left)
         if (currentCount <= 5 && !lowFireworkWarned) {
             lowFireworkWarned = true;
-            ChatUtils.print("[ElytraBot] Fusées basses ! Seulement " + currentCount + " restantes.");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Low fireworks! Only " + currentCount + " remaining.", "Fusées basses ! Seulement " + currentCount + " restantes."));
         }
 
         // Critical: 2 or fewer fireworks - start descending to save them for landing
         if (currentCount <= 2 && mc.player.getY() > minAltitude + 30) {
-            ChatUtils.print("[ElytraBot] Presque plus de fusées (" + currentCount + ") ! Descente vers altitude sûre...");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Almost out of fireworks (" + currentCount + ")! Descending...", "Presque plus de fusées (" + currentCount + ") ! Descente..."));
             state = FlightState.DESCENDING;
         }
     }
