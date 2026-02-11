@@ -25,10 +25,10 @@ public class ElytraBotModule extends ToggleableModule {
     private final NumberSetting<Double> minAltitude = new NumberSetting<>("Altitude minimum", 100.0, 30.0, 200.0);
     private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Intervalle fusées", 40, 10, 100);
     private final NumberSetting<Integer> minDurability = new NumberSetting<>("Durabilité min. elytra", 10, 1, 100);
-    private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick bruit", true);
+    private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick bruit", "Petits mouvements aléatoires pour éviter l'AFK kick", true);
 
     // --- LANGUE / LANGUAGE ---
-    private final BooleanSetting langFr = new BooleanSetting("Français", true);
+    private final BooleanSetting langFr = new BooleanSetting("Français", "Interface en français (off = English)", true);
 
     public ElytraBotModule() {
         super("ElytraBot", "Vol elytra automatique vers des coordonnées", ModuleCategory.EXTERNAL);
