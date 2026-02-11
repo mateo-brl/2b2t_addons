@@ -467,12 +467,22 @@ public class ElytraBot {
             return;
         }
 
-        // Pitch up and use fireworks to gain altitude
-        targetPitch = -45.0f;
+        // Pitch up to gain altitude - reduce angle as we approach cruise to avoid overshooting
+        double altDiff = cruiseAltitude - mc.player.getY();
+        if (altDiff > 50) {
+            targetPitch = -45.0f; // steep climb when far below
+            useFireworkIfNeeded();
+        } else if (altDiff > 20) {
+            targetPitch = -25.0f; // moderate climb
+            useFireworkIfNeeded();
+        } else if (altDiff > 5) {
+            targetPitch = -10.0f; // gentle climb, no fireworks to limit momentum
+        } else {
+            targetPitch = -2.0f; // almost there, just glide up
+        }
         applyRotation();
-        useFireworkIfNeeded();
 
-        if (mc.player.getY() >= cruiseAltitude) {
+        if (mc.player.getY() >= cruiseAltitude - 3) {
             LOGGER.info("[ElytraBot] Reached cruise altitude {}, switching to cruise mode", cruiseAltitude);
             ChatUtils.print("[ElytraBot] " + Lang.t("Cruising at altitude ", "Croisière à altitude ") + (int)cruiseAltitude);
             state = FlightState.CRUISING;
@@ -496,17 +506,22 @@ public class ElytraBot {
         // 2b2t lag safety: check if chunks ahead are loaded
         updateChunkLoadingSafety();
 
-        // Maintain altitude (with noise variation for anti-detection + lag safety boost)
-        // Cap total altitude to cruiseAltitude + 40 max to prevent overshooting
-        double effectiveCruise = Math.min(cruiseAltitude + 40, cruiseAltitude + (useFlightNoise ? altitudeNoise : 0) + safeAltitudeBoost);
+        // Maintain altitude - HARD CAP at cruiseAltitude, never exceed it
         double y = mc.player.getY();
-        if (y < effectiveCruise - 10) {
-            targetPitch = -20.0f; // nose up
+        if (y > cruiseAltitude) {
+            // Above cruise altitude - nose down to correct
+            targetPitch = 15.0f;
+        } else if (y < cruiseAltitude - 15) {
+            // Far below - aggressive climb
+            targetPitch = -25.0f;
             useFireworkIfNeeded();
-        } else if (y > effectiveCruise + 10) {
-            targetPitch = 10.0f; // nose down slightly
+        } else if (y < cruiseAltitude - 5) {
+            // Slightly below - gentle climb
+            targetPitch = -8.0f;
+            useFireworkIfNeeded();
         } else {
-            targetPitch = -2.0f; // cruise
+            // Within 5 blocks of target - cruise level
+            targetPitch = -2.0f;
             // Periodic firework to maintain speed
             Vec3 velocity = mc.player.getDeltaMovement();
             double horizontalSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
@@ -636,8 +651,8 @@ public class ElytraBot {
         // Use LagDetector if available
         if (lagDetector != null && !lagDetector.isFlightPathLoaded()) {
             unloadedChunksAhead = true;
-            // Gain 15 extra blocks per unloaded chunk (max 40) - capped to avoid overshooting
-            double boost = Math.min(40.0, lagDetector.getUnloadedChunksAhead() * 15.0);
+            // Gain 3 extra blocks per unloaded chunk (max 10)
+            double boost = Math.min(10.0, lagDetector.getUnloadedChunksAhead() * 3.0);
             safeAltitudeBoost = Math.max(safeAltitudeBoost, boost);
             return;
         }
@@ -647,7 +662,7 @@ public class ElytraBot {
         double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
         if (hSpeed < 0.5) {
             unloadedChunksAhead = false;
-            safeAltitudeBoost = Math.max(0, safeAltitudeBoost - 2); // Decay slowly
+            safeAltitudeBoost = Math.max(0, safeAltitudeBoost - 1); // Decay gradually
             return;
         }
 
@@ -677,10 +692,10 @@ public class ElytraBot {
                 LOGGER.warn("[ElytraBot] Unloaded chunks ahead ({})! Gaining altitude for safety", unloaded);
             }
             unloadedChunksAhead = true;
-            safeAltitudeBoost = Math.min(40.0, unloaded * 15.0);
+            safeAltitudeBoost = Math.min(10.0, unloaded * 3.0);
         } else {
             unloadedChunksAhead = false;
-            safeAltitudeBoost = Math.max(0, safeAltitudeBoost - 2); // Decay slowly
+            safeAltitudeBoost = Math.max(0, safeAltitudeBoost - 1); // Decay gradually
         }
     }
 
