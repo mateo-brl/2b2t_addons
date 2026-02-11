@@ -5,6 +5,7 @@ import com.basefinder.util.BaseType;
 import com.basefinder.util.Lang;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -14,6 +15,8 @@ import org.rusherhack.client.api.utils.ChatUtils;
 
 import java.io.*;
 import java.nio.file.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -21,13 +24,19 @@ import java.util.List;
 /**
  * Logs found bases to file and chat.
  * Alerts include clickable [GOTO] and [COPY] buttons for Baritone integration.
+ * Auto-screenshot feature captures the screen when a base is detected.
  */
 public class BaseLogger {
 
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("BaseLogger");
+    private static final DateTimeFormatter SCREENSHOT_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+
     private final List<BaseRecord> records = Collections.synchronizedList(new ArrayList<>());
     private Path logFile;
+    private Path screenshotDir;
     private boolean logToChat = true;
     private boolean logToFile = true;
+    private boolean autoScreenshot = false;
 
     public BaseLogger() {
         try {
@@ -35,6 +44,10 @@ public class BaseLogger {
             Path pluginDir = minecraftDir.resolve("rusherhack").resolve("basefinder");
             Files.createDirectories(pluginDir);
             logFile = pluginDir.resolve("bases.log");
+
+            // Screenshot directory
+            screenshotDir = pluginDir.resolve("screenshots");
+            Files.createDirectories(screenshotDir);
         } catch (IOException e) {
             logFile = Path.of("basefinder_bases.log");
         }
@@ -49,6 +62,46 @@ public class BaseLogger {
 
         if (logToFile) {
             writeToFile(record);
+        }
+
+        if (autoScreenshot) {
+            takeScreenshot(record);
+        }
+    }
+
+    /**
+     * Takes a screenshot with base coordinates in the filename.
+     * Format: base_TYPE_X_Z_TIMESTAMP.png
+     */
+    private void takeScreenshot(BaseRecord record) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null || mc.level == null) return;
+
+            BlockPos pos = record.getPosition();
+            String timestamp = LocalDateTime.now().format(SCREENSHOT_FORMAT);
+            String filename = String.format("base_%s_%d_%d_%s",
+                    record.getType().name().toLowerCase(),
+                    pos.getX(), pos.getZ(),
+                    timestamp);
+
+            // Use MC's screenshot API - takes screenshot on next frame render
+            mc.execute(() -> {
+                try {
+                    Screenshot.grab(
+                            mc.gameDirectory,
+                            mc.getMainRenderTarget(),
+                            (component) -> {
+                                LOGGER.info("[BaseLogger] Screenshot saved: {}", component.getString());
+                                ChatUtils.print("[BaseHunter] " + Lang.t("Screenshot saved!", "Capture d'écran sauvegardée !"));
+                            }
+                    );
+                } catch (Exception e) {
+                    LOGGER.error("[BaseLogger] Failed to take screenshot: {}", e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            LOGGER.error("[BaseLogger] Error scheduling screenshot: {}", e.getMessage());
         }
     }
 
@@ -74,6 +127,12 @@ public class BaseLogger {
             default -> ChatFormatting.WHITE;
         };
 
+        // Build freshness tag if available
+        String notesTag = "";
+        if (record.getNotes() != null && !record.getNotes().isEmpty()) {
+            notesTag = " [" + record.getNotes() + "]";
+        }
+
         MutableComponent message = Component.literal("[BaseHunter] ")
                 .withStyle(ChatFormatting.GOLD)
                 .append(Component.literal(record.getType().getDisplayName())
@@ -81,8 +140,15 @@ public class BaseLogger {
                 .append(Component.literal(String.format(" @ %d, %d ", x, z))
                         .withStyle(ChatFormatting.WHITE))
                 .append(Component.literal(String.format("(%.0f) ", record.getScore()))
-                        .withStyle(ChatFormatting.GRAY))
-                .append(Component.literal(Lang.t("[GOTO]", "[ALLER]"))
+                        .withStyle(ChatFormatting.GRAY));
+
+        // Add freshness/notes tag
+        if (!notesTag.isEmpty()) {
+            message.append(Component.literal(notesTag + " ")
+                    .withStyle(ChatFormatting.DARK_GRAY));
+        }
+
+        message.append(Component.literal(Lang.t("[GOTO]", "[ALLER]"))
                         .withStyle(style -> style
                                 .withColor(ChatFormatting.GREEN)
                                 .withBold(true)
@@ -144,6 +210,7 @@ public class BaseLogger {
     public int getCount() { return records.size(); }
     public void setLogToChat(boolean v) { this.logToChat = v; }
     public void setLogToFile(boolean v) { this.logToFile = v; }
+    public void setAutoScreenshot(boolean v) { this.autoScreenshot = v; }
 
     public void clear() {
         records.clear();
