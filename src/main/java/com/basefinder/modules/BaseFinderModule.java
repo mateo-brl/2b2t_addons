@@ -23,8 +23,8 @@ import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.BooleanSetting;
+import org.rusherhack.core.setting.EnumSetting;
 import org.rusherhack.core.setting.NumberSetting;
-import org.rusherhack.core.setting.StringSetting;
 import org.rusherhack.core.setting.NullSetting;
 
 import java.util.List;
@@ -67,22 +67,22 @@ public class BaseFinderModule extends ToggleableModule {
     // --- MODE : Paramètres de recherche ---
     private final NullSetting modeGroup = new NullSetting("Mode");
     private final BooleanSetting useElytra = new BooleanSetting("Vol Elytra", "Vol automatique entre les zones", true);
-    private final StringSetting searchMode = new StringSetting("Mode de recherche", "SPIRAL");
+    private final EnumSetting<NavigationHelper.SearchPattern> searchMode = new EnumSetting<>("Mode de recherche", "Cliquez pour changer le mode de recherche", NavigationHelper.SearchPattern.SPIRAL);
 
     // --- DÉTECTION : Quoi chercher ---
     private final NullSetting detectGroup = new NullSetting("Détection");
     private final BooleanSetting detectConstruction = new BooleanSetting("Bases", "Structures construites par des joueurs", true);
     private final BooleanSetting detectStorage = new BooleanSetting("Stashes", "Shulkers, ender chests, stockage", true);
-    private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", true);
+    private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", "Détecter les map arts au sol", true);
     private final BooleanSetting detectTrails = new BooleanSetting("Pistes", "Autoroutes de glace, chemins d'obsidienne", true);
     private final NumberSetting<Double> minScore = new NumberSetting<>("Sensibilité", 25.0, 5.0, 200.0);
 
     // --- OPTIMISATIONS : Nouvelles fonctionnalités ---
     private final NullSetting optimGroup = new NullSetting("Optimisations");
-    private final BooleanSetting useEntityScanning = new BooleanSetting("Scan entités", true);
-    private final BooleanSetting useClusterScoring = new BooleanSetting("Score cluster", true);
-    private final BooleanSetting autoScreenshot = new BooleanSetting("Auto capture", false);
-    private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick bruit", true);
+    private final BooleanSetting useEntityScanning = new BooleanSetting("Scan entités", "Scanner véhicules, animaux dressés, armures", true);
+    private final BooleanSetting useClusterScoring = new BooleanSetting("Score cluster", "Regrouper les blocs proches pour un meilleur score", true);
+    private final BooleanSetting autoScreenshot = new BooleanSetting("Auto capture", "Capturer l'écran à chaque découverte", false);
+    private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick bruit", "Petits mouvements aléatoires pour éviter l'AFK kick", true);
 
     // --- SURVIE 24/7 : Système de survie automatique ---
     private final NullSetting survivalGroup = new NullSetting("Survie 24/7");
@@ -106,9 +106,9 @@ public class BaseFinderModule extends ToggleableModule {
 
     // --- AVANCÉ : Réglages fins ---
     private final NullSetting advancedGroup = new NullSetting("Avancé");
-    private final BooleanSetting followTrails = new BooleanSetting("Suivi auto pistes", true);
-    private final BooleanSetting useChunkTrails = new BooleanSetting("Détection âge chunks", true);
-    private final BooleanSetting useVersionBorders = new BooleanSetting("Bordures de version", true);
+    private final BooleanSetting followTrails = new BooleanSetting("Suivi auto pistes", "Suivre automatiquement les pistes détectées", true);
+    private final BooleanSetting useChunkTrails = new BooleanSetting("Détection âge chunks", "Utiliser l'âge des chunks pour détecter les pistes", true);
+    private final BooleanSetting useVersionBorders = new BooleanSetting("Bordures de version", "Détecter les frontières entre versions de Minecraft", true);
     private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Vitesse scan", 20, 5, 100);
     private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Rayon waypoint", 100.0, 20.0, 500.0);
     private final NumberSetting<Double> spiralStep = new NumberSetting<>("Espacement waypoints", 500.0, 100.0, 5000.0);
@@ -119,11 +119,11 @@ public class BaseFinderModule extends ToggleableModule {
     private final NumberSetting<Integer> highwayInterval = new NumberSetting<>("Intervalle autoroute", 1000, 100, 10000);
 
     // --- LOG ---
-    private final BooleanSetting logToChat = new BooleanSetting("Alertes chat", true);
-    private final BooleanSetting logToFile = new BooleanSetting("Sauvegarder", true);
+    private final BooleanSetting logToChat = new BooleanSetting("Alertes chat", "Afficher les découvertes dans le chat", true);
+    private final BooleanSetting logToFile = new BooleanSetting("Sauvegarder", "Sauvegarder les bases dans un fichier .csv", true);
 
     // --- LANGUE / LANGUAGE ---
-    private final BooleanSetting langFr = new BooleanSetting("Français", true);
+    private final BooleanSetting langFr = new BooleanSetting("Français", "Interface en français (off = English)", true);
 
     public enum FinderState {
         IDLE,
@@ -176,14 +176,7 @@ public class BaseFinderModule extends ToggleableModule {
         connectToNewChunksModule();
 
         // Initialize navigation with selected search mode
-        NavigationHelper.SearchPattern pattern;
-        try {
-            pattern = NavigationHelper.SearchPattern.valueOf(searchMode.getValue().toUpperCase().trim());
-        } catch (IllegalArgumentException e) {
-            ChatUtils.print("[BaseHunter] " + Lang.t("Unknown mode: ", "Mode inconnu : ") + searchMode.getValue());
-            ChatUtils.print("[BaseHunter] " + Lang.t("Available: SPIRAL, HIGHWAYS, RANDOM, RING", "Disponibles : SPIRAL, HIGHWAYS, RANDOM, RING"));
-            pattern = NavigationHelper.SearchPattern.SPIRAL;
-        }
+        NavigationHelper.SearchPattern pattern = searchMode.getValue();
 
         // Apply ring radius
         navigation.setSpiralRadius(spiralRadius.getValue());
@@ -257,7 +250,7 @@ public class BaseFinderModule extends ToggleableModule {
                     navigation.getCurrentWaypointIndex(),
                     navigation.getTotalDistanceTraveled(),
                     scanner.getScannedCount(),
-                    searchMode.getValue()
+                    searchMode.getValue().name()
             );
         }
 
@@ -395,7 +388,7 @@ public class BaseFinderModule extends ToggleableModule {
                     navigation.getCurrentWaypointIndex(),
                     navigation.getTotalDistanceTraveled(),
                     scanner.getScannedCount(),
-                    searchMode.getValue()
+                    searchMode.getValue().name()
             );
         }
 
