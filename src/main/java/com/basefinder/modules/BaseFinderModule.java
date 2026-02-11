@@ -72,11 +72,11 @@ public class BaseFinderModule extends ToggleableModule {
     // Paramètres GRID (quadrillage)
     private final NumberSetting<Integer> gridSize = new NumberSetting<>("Taille carrés", 1000, 200, 10000);
     private final NumberSetting<Integer> gridRange = new NumberSetting<>("Zone totale", 50000, 5000, 500000);
-    // Paramètres ZONE (coordonnées exactes)
-    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("Zone min X", -10000, -30000000, 30000000);
-    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("Zone max X", 10000, -30000000, 30000000);
-    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Zone min Z", -10000, -30000000, 30000000);
-    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Zone max Z", 10000, -30000000, 30000000);
+    // Paramètres ZONE (coordonnées exactes) - incremental pour pouvoir taper la valeur
+    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("Zone min X", -10000, -30000000, 30000000).incremental();
+    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("Zone max X", 10000, -30000000, 30000000).incremental();
+    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Zone min Z", -10000, -30000000, 30000000).incremental();
+    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Zone max Z", 10000, -30000000, 30000000).incremental();
     // Paramètres RANDOM
     private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Distance min", 5000, 100, 50000);
     private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Distance max", 100000, 10000, 500000);
