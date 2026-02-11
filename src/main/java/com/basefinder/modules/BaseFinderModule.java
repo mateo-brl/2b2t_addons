@@ -52,12 +52,13 @@ public class BaseFinderModule extends ToggleableModule {
 
     // === Settings ===
 
-    // Search pattern
+    // Search pattern - type: SPIRAL, HIGHWAYS, RANDOM, RING
     private final NullSetting searchGroup = new NullSetting("Search Settings");
-    private final StringSetting searchPattern = new StringSetting("Pattern", "SPIRAL");
+    private final StringSetting searchMode = new StringSetting("Search Mode", "SPIRAL");
     private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Scan Interval", 20, 5, 100);
     private final NumberSetting<Double> minScore = new NumberSetting<>("Min Score", 25.0, 5.0, 200.0);
     private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Waypoint Radius", 100.0, 20.0, 500.0);
+    private final NumberSetting<Double> spiralRadius = new NumberSetting<>("Ring Radius", 5000.0, 500.0, 200000.0);
 
     // Detection filters
     private final NullSetting detectionGroup = new NullSetting("Detection Filters");
@@ -78,9 +79,11 @@ public class BaseFinderModule extends ToggleableModule {
 
     // Navigation settings
     private final NullSetting navGroup = new NullSetting("Navigation");
-    private final NumberSetting<Double> spiralStep = new NumberSetting<>("Spiral Step", 500.0, 100.0, 5000.0);
-    private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Min Distance", 5000, 100, 50000);
-    private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Max Distance", 100000, 10000, 500000);
+    private final NumberSetting<Double> spiralStep = new NumberSetting<>("Waypoint Spacing", 500.0, 100.0, 5000.0);
+    private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Random Min Dist", 5000, 100, 50000);
+    private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Random Max Dist", 100000, 10000, 500000);
+    private final NumberSetting<Integer> highwayDist = new NumberSetting<>("Highway Distance", 100000, 10000, 500000);
+    private final NumberSetting<Integer> highwayInterval = new NumberSetting<>("Highway Check Interval", 1000, 100, 10000);
 
     // Logging
     private final BooleanSetting logToChat = new BooleanSetting("Log to Chat", true);
@@ -99,10 +102,10 @@ public class BaseFinderModule extends ToggleableModule {
         super("BaseHunter", "Automated base hunting - scans chunks, follows trails, flies with elytra", ModuleCategory.EXTERNAL);
 
         // Register settings with groups
-        searchGroup.addSubSettings(searchPattern, scanIntervalSetting, minScore, waypointThreshold);
+        searchGroup.addSubSettings(searchMode, scanIntervalSetting, minScore, waypointThreshold, spiralRadius);
         detectionGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails, followTrails, useChunkTrails, useVersionBorders);
         elytraGroup.addSubSettings(cruiseAltitude, minAltitude, fireworkInterval, useElytra);
-        navGroup.addSubSettings(spiralStep, searchMinDist, searchMaxDist);
+        navGroup.addSubSettings(spiralStep, searchMinDist, searchMaxDist, highwayDist, highwayInterval);
 
         this.registerSettings(
                 searchGroup,
@@ -128,21 +131,35 @@ public class BaseFinderModule extends ToggleableModule {
         // Connect to NewChunks module if it's active
         connectToNewChunksModule();
 
-        // Initialize navigation
+        // Initialize navigation with selected search mode
         NavigationHelper.SearchPattern pattern;
         try {
-            pattern = NavigationHelper.SearchPattern.valueOf(searchPattern.getValue().toUpperCase());
+            pattern = NavigationHelper.SearchPattern.valueOf(searchMode.getValue().toUpperCase().trim());
         } catch (IllegalArgumentException e) {
+            ChatUtils.print("[BaseHunter] Unknown mode: " + searchMode.getValue());
+            ChatUtils.print("[BaseHunter] Available: SPIRAL, HIGHWAYS, RANDOM, RING");
             pattern = NavigationHelper.SearchPattern.SPIRAL;
         }
+
+        // Apply ring radius
+        navigation.setSpiralRadius(spiralRadius.getValue());
         navigation.initializeSearch(pattern, mc.player.blockPosition());
 
         state = FinderState.SCANNING;
         tickCounter = 0;
-        scanner.reset(); // Reset scanner on enable
+        scanner.reset();
 
-        ChatUtils.print("[BaseHunter] Started! Pattern: " + pattern);
-        ChatUtils.print("[BaseHunter] Scanning chunks around you... Walk/fly to scan more.");
+        // Show mode info
+        String modeDesc = switch (pattern) {
+            case SPIRAL -> "Spiral outward from your position";
+            case HIGHWAYS -> "Follow all 8 highways (cardinal + diagonal)";
+            case RANDOM -> "Random positions within " + searchMinDist.getValue() + "-" + searchMaxDist.getValue() + " blocks";
+            case RING -> "Circle at " + String.format("%.0f", spiralRadius.getValue()) + " blocks radius";
+            case CUSTOM -> "Custom waypoints";
+        };
+        ChatUtils.print("[BaseHunter] Started! Mode: " + pattern.name());
+        ChatUtils.print("[BaseHunter] " + modeDesc);
+        ChatUtils.print("[BaseHunter] " + navigation.getWaypointCount() + " waypoints generated. Click [GOTO] on alerts to navigate with Baritone.");
     }
 
     @Override
@@ -174,6 +191,8 @@ public class BaseFinderModule extends ToggleableModule {
         navigation.setSpiralStep(spiralStep.getValue());
         navigation.setSearchMinDistance(searchMinDist.getValue());
         navigation.setSearchMaxDistance(searchMaxDist.getValue());
+        navigation.setHighwayDistance(highwayDist.getValue());
+        navigation.setHighwayCheckInterval(highwayInterval.getValue());
 
         logger.setLogToChat(logToChat.getValue());
         logger.setLogToFile(logToFile.getValue());
