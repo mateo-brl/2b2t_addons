@@ -27,7 +27,7 @@ public class BaseFinderHud extends TextHudElement {
         StringBuilder sb = new StringBuilder();
         sb.append("BaseFinder: ").append(baseFinder.getState().name());
 
-        // Scan info
+        // Info scan
         sb.append(" | Chunks: ").append(baseFinder.getScanner().getScannedCount());
         sb.append(" | Bases: ").append(baseFinder.getBaseLogger().getCount());
 
@@ -37,10 +37,10 @@ public class BaseFinderHud extends TextHudElement {
               .append("/").append(baseFinder.getNavigation().getWaypointCount());
         }
 
-        // Trail info
+        // Info piste
         if (baseFinder.getTrailFollower().isFollowingTrail()) {
             TrailFollower.TrailType trailType = baseFinder.getTrailFollower().getCurrentTrailType();
-            sb.append(" | Trail(").append(trailType.name()).append("): ")
+            sb.append(" | Piste(").append(trailType.name()).append("): ")
               .append(baseFinder.getTrailFollower().getTrailLength());
         }
 
@@ -51,24 +51,24 @@ public class BaseFinderHud extends TextHudElement {
               .append("/").append(nc.getDetector().getOldChunkCount());
         }
 
-        // Elytra info
+        // Info elytra
         ElytraBot elytra = baseFinder.getElytraBot();
         if (elytra.isFlying()) {
-            sb.append(" | Fly: ").append(elytra.getState().name());
-            sb.append(" | FW: ").append(elytra.getFireworkCount());
+            sb.append(" | Vol: ").append(elytra.getState().name());
+            sb.append(" | Fusées: ").append(elytra.getFireworkCount());
             double dist = elytra.getDistanceToDestination();
             if (dist >= 0) {
                 sb.append(" | Dist: ").append(String.format("%.0f", dist));
             }
         }
 
-        // Distance traveled
+        // Distance parcourue
         double dist = baseFinder.getNavigation().getTotalDistanceTraveled();
         if (dist > 0) {
             if (dist > 1000) {
-                sb.append(" | Travel: ").append(String.format("%.1fk", dist / 1000));
+                sb.append(" | Parcouru: ").append(String.format("%.1fk", dist / 1000));
             } else {
-                sb.append(" | Travel: ").append(String.format("%.0f", dist));
+                sb.append(" | Parcouru: ").append(String.format("%.0f", dist));
             }
         }
 

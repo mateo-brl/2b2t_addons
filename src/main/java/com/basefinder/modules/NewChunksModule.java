@@ -44,31 +44,31 @@ public class NewChunksModule extends ToggleableModule {
     private final NewChunkDetector detector = new NewChunkDetector();
     private final ChunkAgeAnalyzer ageAnalyzer = new ChunkAgeAnalyzer();
 
-    // Render settings
-    private final NullSetting renderGroup = new NullSetting("Render");
-    private final BooleanSetting showNewChunks = new BooleanSetting("Show New", true);
-    private final BooleanSetting showOldChunks = new BooleanSetting("Show Old", true);
-    private final BooleanSetting showVersionBorders = new BooleanSetting("Show Version Borders", true);
-    private final BooleanSetting fillMode = new BooleanSetting("Fill Chunks", true);
-    private final ColorSetting newChunkColor = new ColorSetting("New Color", new Color(255, 30, 30, 200));
-    private final ColorSetting oldChunkColor = new ColorSetting("Old Color", new Color(30, 255, 30, 160));
-    private final ColorSetting versionBorderColor = new ColorSetting("Version Color", new Color(255, 255, 0, 180));
-    private final NumberSetting<Integer> renderHeight = new NumberSetting<>("Render Y", -1, -1, 320); // -1 = player Y
-    private final NumberSetting<Integer> renderDistance = new NumberSetting<>("Render Distance", 16, 4, 32);
+    // Paramètres d'affichage
+    private final NullSetting renderGroup = new NullSetting("Affichage");
+    private final BooleanSetting showNewChunks = new BooleanSetting("Afficher nouveaux", true);
+    private final BooleanSetting showOldChunks = new BooleanSetting("Afficher anciens", true);
+    private final BooleanSetting showVersionBorders = new BooleanSetting("Bordures version", true);
+    private final BooleanSetting fillMode = new BooleanSetting("Remplir chunks", true);
+    private final ColorSetting newChunkColor = new ColorSetting("Couleur nouveaux", new Color(255, 30, 30, 200));
+    private final ColorSetting oldChunkColor = new ColorSetting("Couleur anciens", new Color(30, 255, 30, 160));
+    private final ColorSetting versionBorderColor = new ColorSetting("Couleur version", new Color(255, 255, 0, 180));
+    private final NumberSetting<Integer> renderHeight = new NumberSetting<>("Hauteur Y", -1, -1, 320); // -1 = Y du joueur
+    private final NumberSetting<Integer> renderDistance = new NumberSetting<>("Distance affichage", 16, 4, 32);
 
-    // Detection settings
-    private final NullSetting detectionGroup = new NullSetting("Detection");
-    private final BooleanSetting useLiquidDetection = new BooleanSetting("Liquid Detection", true);
-    private final BooleanSetting useVersionDetection = new BooleanSetting("Version Detection", true);
-    private final NumberSetting<Integer> classificationDelay = new NumberSetting<>("Classification Delay", 5, 1, 100); // 5 ticks = 0.25 sec
+    // Paramètres de détection
+    private final NullSetting detectionGroup = new NullSetting("Détection");
+    private final BooleanSetting useLiquidDetection = new BooleanSetting("Détection liquides", true);
+    private final BooleanSetting useVersionDetection = new BooleanSetting("Détection version", true);
+    private final NumberSetting<Integer> classificationDelay = new NumberSetting<>("Délai classification", 5, 1, 100); // 5 ticks = 0.25 sec
 
     // Stats
-    private final BooleanSetting logNewChunks = new BooleanSetting("Log to Chat", false);
+    private final BooleanSetting logNewChunks = new BooleanSetting("Alertes chat", false);
     private int lastNewCount = 0;
     private int lastOldCount = 0;
 
     public NewChunksModule() {
-        super("ChunkHistory", "Detects and highlights new vs old chunks (liquid flow + version detection)", ModuleCategory.EXTERNAL);
+        super("ChunkHistory", "Détecte et affiche les chunks nouveaux vs anciens (flux liquide + détection version)", ModuleCategory.EXTERNAL);
 
         renderGroup.addSubSettings(showNewChunks, showOldChunks, showVersionBorders,
                 fillMode, newChunkColor, oldChunkColor, versionBorderColor, renderHeight, renderDistance);
@@ -83,8 +83,8 @@ public class NewChunksModule extends ToggleableModule {
         detector.setClassificationDelay(classificationDelay.getValue());
 
         if (mc.level != null) {
-            ChatUtils.print("[NewChunks] Enabled - tracking new/old chunks");
-            ChatUtils.print("[NewChunks] Walk around to detect chunks. Lines will appear at Y=" + renderHeight.getValue());
+            ChatUtils.print("[NewChunks] Activé - suivi des chunks nouveaux/anciens");
+            ChatUtils.print("[NewChunks] Déplacez-vous pour détecter les chunks. Lignes à Y=" + renderHeight.getValue());
         }
     }
 
@@ -93,7 +93,7 @@ public class NewChunksModule extends ToggleableModule {
         detector.setEnabled(false);
         detector.reset();
         if (mc.level != null) {
-            ChatUtils.print("[NewChunks] Disabled");
+            ChatUtils.print("[NewChunks] Désactivé");
         }
     }
 
@@ -156,7 +156,7 @@ public class NewChunksModule extends ToggleableModule {
         int pendingCount = detector.getPendingCount();
 
         if (logNewChunks.getValue() && (newCount > lastNewCount || oldCount > lastOldCount)) {
-            ChatUtils.print("[NewChunks] New: " + newCount + " | Old: " + oldCount + " | Pending: " + pendingCount);
+            ChatUtils.print("[NewChunks] Nouveaux : " + newCount + " | Anciens : " + oldCount + " | En attente : " + pendingCount);
         }
         lastNewCount = newCount;
         lastOldCount = oldCount;

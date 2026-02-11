@@ -18,15 +18,15 @@ public class ElytraBotModule extends ToggleableModule {
 
     private final ElytraBot elytraBot = new ElytraBot();
 
-    private final NumberSetting<Integer> targetX = new NumberSetting<>("Target X", 0, -30000000, 30000000);
-    private final NumberSetting<Integer> targetZ = new NumberSetting<>("Target Z", 0, -30000000, 30000000);
-    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Cruise Altitude", 200.0, 50.0, 350.0);
-    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Min Altitude", 100.0, 30.0, 200.0);
-    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Interval", 40, 10, 100);
-    private final NumberSetting<Integer> minDurability = new NumberSetting<>("Min Elytra Durability", 10, 1, 100);
+    private final NumberSetting<Integer> targetX = new NumberSetting<>("Cible X", 0, -30000000, 30000000);
+    private final NumberSetting<Integer> targetZ = new NumberSetting<>("Cible Z", 0, -30000000, 30000000);
+    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Altitude croisière", 200.0, 50.0, 350.0);
+    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Altitude minimum", 100.0, 30.0, 200.0);
+    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Intervalle fusées", 40, 10, 100);
+    private final NumberSetting<Integer> minDurability = new NumberSetting<>("Durabilité min. elytra", 10, 1, 100);
 
     public ElytraBotModule() {
-        super("ElytraBot", "Automated elytra flight to coordinates", ModuleCategory.EXTERNAL);
+        super("ElytraBot", "Vol elytra automatique vers des coordonnées", ModuleCategory.EXTERNAL);
 
         this.registerSettings(
                 targetX,
@@ -41,40 +41,40 @@ public class ElytraBotModule extends ToggleableModule {
     @Override
     public void onEnable() {
         if (mc.player == null || mc.level == null) {
-            ChatUtils.print("[ElytraBot] Must be in a world!");
+            ChatUtils.print("[ElytraBot] Vous devez être dans un monde !");
             this.toggle();
             return;
         }
 
-        // Check if wearing elytra
+        // Vérifier si on porte un elytra
         var chest = mc.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST);
         if (!chest.is(net.minecraft.world.item.Items.ELYTRA)) {
-            ChatUtils.print("[ElytraBot] ERROR: You must wear an Elytra!");
+            ChatUtils.print("[ElytraBot] ERREUR : Vous devez porter un Elytra !");
             this.toggle();
             return;
         }
 
-        // Check if target is set (not 0,0)
+        // Vérifier si la cible est définie
         if (targetX.getValue() == 0 && targetZ.getValue() == 0) {
-            ChatUtils.print("[ElytraBot] ERROR: Set Target X and Target Z first!");
+            ChatUtils.print("[ElytraBot] ERREUR : Définissez Cible X et Cible Z d'abord !");
             this.toggle();
             return;
         }
 
-        // Check for fireworks
+        // Vérifier les fusées
         int fireworks = elytraBot.getFireworkCount();
         if (fireworks == 0) {
-            ChatUtils.print("[ElytraBot] WARNING: No fireworks found! You need fireworks to fly.");
+            ChatUtils.print("[ElytraBot] ATTENTION : Aucune fusée trouvée ! Vous avez besoin de fusées pour voler.");
         } else {
-            ChatUtils.print("[ElytraBot] Found " + fireworks + " fireworks.");
+            ChatUtils.print("[ElytraBot] " + fireworks + " fusées trouvées.");
         }
 
-        // Show elytra count and durability info
+        // Afficher le nombre d'elytra et la durabilité
         int elytraCount = elytraBot.getElytraCount();
         int durability = elytraBot.getEquippedElytraDurability();
-        ChatUtils.print("[ElytraBot] Elytra: " + elytraCount + " usable | Current durability: " + durability);
+        ChatUtils.print("[ElytraBot] Elytra : " + elytraCount + " utilisables | Durabilité actuelle : " + durability);
         if (elytraCount > 1) {
-            ChatUtils.print("[ElytraBot] Auto-swap enabled (swap at " + minDurability.getValue() + " durability)");
+            ChatUtils.print("[ElytraBot] Échange auto activé (échange à " + minDurability.getValue() + " de durabilité)");
         }
 
         elytraBot.setCruiseAltitude(cruiseAltitude.getValue());
@@ -89,16 +89,16 @@ public class ElytraBotModule extends ToggleableModule {
             Math.pow(mc.player.getX() - targetX.getValue(), 2) +
             Math.pow(mc.player.getZ() - targetZ.getValue(), 2)
         );
-        ChatUtils.print(String.format("[ElytraBot] Flying to %d, %d (%.0f blocks away)",
+        ChatUtils.print(String.format("[ElytraBot] Vol vers %d, %d (%.0f blocs)",
             targetX.getValue(), targetZ.getValue(), distance));
-        ChatUtils.print("[ElytraBot] Jump to take off!");
+        ChatUtils.print("[ElytraBot] Sautez pour décoller !");
     }
 
     @Override
     public void onDisable() {
         elytraBot.stop();
         if (mc.level != null) {
-            ChatUtils.print("[ElytraBot] Stopped.");
+            ChatUtils.print("[ElytraBot] Arrêté.");
         }
     }
 
@@ -108,23 +108,23 @@ public class ElytraBotModule extends ToggleableModule {
 
         elytraBot.tick();
 
-        // Check if arrived
+        // Vérifier si arrivé
         double dist = elytraBot.getDistanceToDestination();
         if (dist >= 0 && dist < 50) {
-            ChatUtils.print("[ElytraBot] Arrived at destination!");
+            ChatUtils.print("[ElytraBot] Arrivé à destination !");
             this.toggle();
         }
 
-        // Check if we ran out of fireworks and are on ground
+        // Vérifier si plus de fusées
         if (!elytraBot.isFlying() && mc.player.onGround() && elytraBot.getFireworkCount() == 0) {
-            ChatUtils.print("[ElytraBot] No fireworks remaining. Stopping.");
+            ChatUtils.print("[ElytraBot] Plus de fusées. Arrêt.");
             this.toggle();
             return;
         }
 
-        // Check if landed after emergency (no elytra left)
+        // Vérifier si atterri après urgence (plus d'elytra)
         if (!elytraBot.isFlying() && mc.player.onGround() && elytraBot.getElytraCount() == 0) {
-            ChatUtils.print("[ElytraBot] No elytra remaining. Stopped.");
+            ChatUtils.print("[ElytraBot] Plus d'elytra. Arrêté.");
             this.toggle();
         }
     }

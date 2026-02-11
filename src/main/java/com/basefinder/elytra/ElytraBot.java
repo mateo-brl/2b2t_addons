@@ -160,10 +160,10 @@ public class ElytraBot {
         if (!chest.is(Items.ELYTRA)) {
             int spareSlot = findElytraInInventory();
             if (spareSlot >= 0) {
-                ChatUtils.print("[ElytraBot] No elytra equipped! Equipping from inventory...");
+                ChatUtils.print("[ElytraBot] Pas d'elytra équipé ! Équipement depuis l'inventaire...");
                 startElytraSwap(spareSlot);
             } else {
-                ChatUtils.print("[ElytraBot] No elytra available! Emergency landing...");
+                ChatUtils.print("[ElytraBot] Aucun elytra disponible ! Atterrissage d'urgence...");
                 initiateEmergencyLanding();
             }
             return;
@@ -177,11 +177,11 @@ public class ElytraBot {
             // Low durability - try to swap
             int spareSlot = findElytraInInventory();
             if (spareSlot >= 0) {
-                ChatUtils.print("[ElytraBot] Elytra low (" + remaining + " durability)! Swapping...");
+                ChatUtils.print("[ElytraBot] Elytra usé (" + remaining + " durabilité) ! Échange...");
                 startElytraSwap(spareSlot);
             } else {
-                // No spare elytra - warn and prepare to land
-                ChatUtils.print("[ElytraBot] Elytra low (" + remaining + ") and no spare! Landing...");
+                // Pas d'elytra de rechange - atterrir
+                ChatUtils.print("[ElytraBot] Elytra usé (" + remaining + ") et aucun de rechange ! Atterrissage...");
                 initiateEmergencyLanding();
             }
         }
@@ -282,7 +282,7 @@ public class ElytraBot {
                 mc.gameMode.handleInventoryMouseClick(containerId, elytraSwapSlot, 0, ClickType.PICKUP, mc.player);
                 elytraSwapStep = 0;
                 elytraSwapSlot = -1;
-                ChatUtils.print("[ElytraBot] Elytra swapped! Durability: " + getEquippedElytraDurability());
+                ChatUtils.print("[ElytraBot] Elytra échangé ! Durabilité : " + getEquippedElytraDurability());
                 LOGGER.info("[ElytraBot] Swap step 3: completed swap");
             }
             default -> {
@@ -309,7 +309,7 @@ public class ElytraBot {
 
         // Already flying? Go to climbing
         if (mc.player.isFallFlying()) {
-            ChatUtils.print("[ElytraBot] Elytra deployed! Climbing...");
+            ChatUtils.print("[ElytraBot] Elytra déployé ! Montée...");
             state = FlightState.CLIMBING;
             takeoffTimer = 0;
             return;
@@ -355,7 +355,7 @@ public class ElytraBot {
 
         if (mc.player.getY() >= cruiseAltitude) {
             LOGGER.info("[ElytraBot] Reached cruise altitude {}, switching to cruise mode", cruiseAltitude);
-            ChatUtils.print("[ElytraBot] Cruising at altitude " + (int)cruiseAltitude);
+            ChatUtils.print("[ElytraBot] Croisière à altitude " + (int)cruiseAltitude);
             state = FlightState.CRUISING;
         }
     }
@@ -438,7 +438,7 @@ public class ElytraBot {
         if (mc.player != null && mc.player.onGround()) {
             state = FlightState.IDLE;
             isFlying = false;
-            ChatUtils.print("[ElytraBot] Landed.");
+            ChatUtils.print("[ElytraBot] Atterri.");
         }
     }
 
@@ -456,7 +456,7 @@ public class ElytraBot {
             }
             applyRotation();
             if (mc.player != null && mc.player.getY() < minAltitude) {
-                ChatUtils.print("[ElytraBot] No fireworks! Landing...");
+                ChatUtils.print("[ElytraBot] Plus de fusées ! Atterrissage...");
                 state = FlightState.LANDING;
             }
         }
@@ -487,12 +487,12 @@ public class ElytraBot {
         // Low firework warning (<=5 left)
         if (currentCount <= 5 && !lowFireworkWarned) {
             lowFireworkWarned = true;
-            ChatUtils.print("[ElytraBot] Low fireworks! Only " + currentCount + " remaining.");
+            ChatUtils.print("[ElytraBot] Fusées basses ! Seulement " + currentCount + " restantes.");
         }
 
         // Critical: 2 or fewer fireworks - start descending to save them for landing
         if (currentCount <= 2 && mc.player.getY() > minAltitude + 30) {
-            ChatUtils.print("[ElytraBot] Almost out of fireworks (" + currentCount + ")! Descending to safe altitude...");
+            ChatUtils.print("[ElytraBot] Presque plus de fusées (" + currentCount + ") ! Descente vers altitude sûre...");
             state = FlightState.DESCENDING;
         }
     }

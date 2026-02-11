@@ -52,45 +52,43 @@ public class BaseFinderModule extends ToggleableModule {
 
     // === Settings ===
 
-    // --- MODE: Main search settings ---
+    // --- MODE : Paramètres de recherche ---
     private final NullSetting modeGroup = new NullSetting("Mode");
-    private final BooleanSetting useElytra = new BooleanSetting("Fly with Elytra", "Auto-fly between search zones", true);
-    private final StringSetting searchMode = new StringSetting("Search Mode", "SPIRAL");
-    // SPIRAL = outward spiral, HIGHWAYS = follow 2b2t highways,
-    // RANDOM = random positions, RING = circle at fixed distance
+    private final BooleanSetting useElytra = new BooleanSetting("Vol Elytra", "Vol automatique entre les zones", true);
+    private final StringSetting searchMode = new StringSetting("Mode de recherche", "SPIRAL");
 
-    // --- DETECT: What to search for ---
-    private final NullSetting detectGroup = new NullSetting("Detect");
-    private final BooleanSetting detectConstruction = new BooleanSetting("Bases", "Player-built structures", true);
-    private final BooleanSetting detectStorage = new BooleanSetting("Stashes", "Shulkers, ender chests, storage", true);
+    // --- DÉTECTION : Quoi chercher ---
+    private final NullSetting detectGroup = new NullSetting("Détection");
+    private final BooleanSetting detectConstruction = new BooleanSetting("Bases", "Structures construites par des joueurs", true);
+    private final BooleanSetting detectStorage = new BooleanSetting("Stashes", "Shulkers, ender chests, stockage", true);
     private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", true);
-    private final BooleanSetting detectTrails = new BooleanSetting("Trails", "Ice highways, obsidian paths", true);
-    private final NumberSetting<Double> minScore = new NumberSetting<>("Sensitivity", 25.0, 5.0, 200.0);
+    private final BooleanSetting detectTrails = new BooleanSetting("Pistes", "Autoroutes de glace, chemins d'obsidienne", true);
+    private final NumberSetting<Double> minScore = new NumberSetting<>("Sensibilité", 25.0, 5.0, 200.0);
 
-    // --- FLIGHT: Elytra flight parameters ---
-    private final NullSetting flightGroup = new NullSetting("Flight");
+    // --- VOL : Paramètres elytra ---
+    private final NullSetting flightGroup = new NullSetting("Vol");
     private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Altitude", 200.0, 50.0, 350.0);
-    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Land Below", 100.0, 30.0, 200.0);
-    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Delay", 40, 10, 100);
-    private final NumberSetting<Integer> minElytraDurability = new NumberSetting<>("Swap Durability", 10, 1, 100);
+    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Atterrir sous", 100.0, 30.0, 200.0);
+    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Délai fusées", 40, 10, 100);
+    private final NumberSetting<Integer> minElytraDurability = new NumberSetting<>("Durabilité échange", 10, 1, 100);
 
-    // --- ADVANCED: Fine-tuning (most users don't need to change these) ---
-    private final NullSetting advancedGroup = new NullSetting("Advanced");
-    private final BooleanSetting followTrails = new BooleanSetting("Auto-Follow Trails", true);
-    private final BooleanSetting useChunkTrails = new BooleanSetting("Chunk Age Detection", true);
-    private final BooleanSetting useVersionBorders = new BooleanSetting("Version Borders", true);
-    private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Scan Speed", 20, 5, 100);
-    private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Waypoint Radius", 100.0, 20.0, 500.0);
-    private final NumberSetting<Double> spiralStep = new NumberSetting<>("Waypoint Spacing", 500.0, 100.0, 5000.0);
-    private final NumberSetting<Double> spiralRadius = new NumberSetting<>("Ring Radius", 5000.0, 500.0, 200000.0);
-    private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Random Min Dist", 5000, 100, 50000);
-    private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Random Max Dist", 100000, 10000, 500000);
-    private final NumberSetting<Integer> highwayDist = new NumberSetting<>("Highway Distance", 100000, 10000, 500000);
-    private final NumberSetting<Integer> highwayInterval = new NumberSetting<>("Highway Interval", 1000, 100, 10000);
+    // --- AVANCÉ : Réglages fins ---
+    private final NullSetting advancedGroup = new NullSetting("Avancé");
+    private final BooleanSetting followTrails = new BooleanSetting("Suivi auto pistes", true);
+    private final BooleanSetting useChunkTrails = new BooleanSetting("Détection âge chunks", true);
+    private final BooleanSetting useVersionBorders = new BooleanSetting("Bordures de version", true);
+    private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Vitesse scan", 20, 5, 100);
+    private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Rayon waypoint", 100.0, 20.0, 500.0);
+    private final NumberSetting<Double> spiralStep = new NumberSetting<>("Espacement waypoints", 500.0, 100.0, 5000.0);
+    private final NumberSetting<Double> spiralRadius = new NumberSetting<>("Rayon anneau", 5000.0, 500.0, 200000.0);
+    private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Distance min aléatoire", 5000, 100, 50000);
+    private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Distance max aléatoire", 100000, 10000, 500000);
+    private final NumberSetting<Integer> highwayDist = new NumberSetting<>("Distance autoroute", 100000, 10000, 500000);
+    private final NumberSetting<Integer> highwayInterval = new NumberSetting<>("Intervalle autoroute", 1000, 100, 10000);
 
     // --- LOG ---
-    private final BooleanSetting logToChat = new BooleanSetting("Chat Alerts", true);
-    private final BooleanSetting logToFile = new BooleanSetting("Save to File", true);
+    private final BooleanSetting logToChat = new BooleanSetting("Alertes chat", true);
+    private final BooleanSetting logToFile = new BooleanSetting("Sauvegarder", true);
 
     public enum FinderState {
         IDLE,
@@ -102,7 +100,7 @@ public class BaseFinderModule extends ToggleableModule {
     }
 
     public BaseFinderModule() {
-        super("BaseHunter", "Automated base hunting - scans chunks, follows trails, flies with elytra", ModuleCategory.EXTERNAL);
+        super("BaseHunter", "Chasse de bases automatique - scan des chunks, suivi de pistes, vol elytra", ModuleCategory.EXTERNAL);
 
         // Register settings with groups
         modeGroup.addSubSettings(useElytra, searchMode);
@@ -124,7 +122,7 @@ public class BaseFinderModule extends ToggleableModule {
     @Override
     public void onEnable() {
         if (mc.player == null || mc.level == null) {
-            ChatUtils.print("[BaseHunter] Must be in a world to enable!");
+            ChatUtils.print("[BaseHunter] Vous devez être dans un monde !");
             this.toggle();
             return;
         }
@@ -140,8 +138,8 @@ public class BaseFinderModule extends ToggleableModule {
         try {
             pattern = NavigationHelper.SearchPattern.valueOf(searchMode.getValue().toUpperCase().trim());
         } catch (IllegalArgumentException e) {
-            ChatUtils.print("[BaseHunter] Unknown mode: " + searchMode.getValue());
-            ChatUtils.print("[BaseHunter] Available: SPIRAL, HIGHWAYS, RANDOM, RING");
+            ChatUtils.print("[BaseHunter] Mode inconnu : " + searchMode.getValue());
+            ChatUtils.print("[BaseHunter] Disponibles : SPIRAL, HIGHWAYS, RANDOM, RING");
             pattern = NavigationHelper.SearchPattern.SPIRAL;
         }
 
@@ -153,17 +151,17 @@ public class BaseFinderModule extends ToggleableModule {
         tickCounter = 0;
         scanner.reset();
 
-        // Show mode info
+        // Afficher info du mode
         String modeDesc = switch (pattern) {
-            case SPIRAL -> "Spiral outward from your position";
-            case HIGHWAYS -> "Follow all 8 highways (cardinal + diagonal)";
-            case RANDOM -> "Random positions within " + searchMinDist.getValue() + "-" + searchMaxDist.getValue() + " blocks";
-            case RING -> "Circle at " + String.format("%.0f", spiralRadius.getValue()) + " blocks radius";
-            case CUSTOM -> "Custom waypoints";
+            case SPIRAL -> "Spirale depuis votre position";
+            case HIGHWAYS -> "Suivre les 8 autoroutes (cardinales + diagonales)";
+            case RANDOM -> "Positions aléatoires entre " + searchMinDist.getValue() + " et " + searchMaxDist.getValue() + " blocs";
+            case RING -> "Cercle à " + String.format("%.0f", spiralRadius.getValue()) + " blocs de rayon";
+            case CUSTOM -> "Waypoints personnalisés";
         };
-        ChatUtils.print("[BaseHunter] Started! Mode: " + pattern.name());
+        ChatUtils.print("[BaseHunter] Démarré ! Mode : " + pattern.name());
         ChatUtils.print("[BaseHunter] " + modeDesc);
-        ChatUtils.print("[BaseHunter] " + navigation.getWaypointCount() + " waypoints generated. Click [GOTO] on alerts to navigate with Baritone.");
+        ChatUtils.print("[BaseHunter] " + navigation.getWaypointCount() + " waypoints générés. Cliquez [ALLER] sur les alertes pour naviguer avec Baritone.");
     }
 
     @Override
@@ -177,7 +175,7 @@ public class BaseFinderModule extends ToggleableModule {
         mc.options.keySprint.setDown(false);
 
         if (mc.level != null) {
-            ChatUtils.print("[BaseHunter] Stopped. Found " + logger.getCount() + " bases. Scanned " + scanner.getScannedCount() + " chunks.");
+            ChatUtils.print("[BaseHunter] Arrêté. " + logger.getCount() + " bases trouvées. " + scanner.getScannedCount() + " chunks scannés.");
         }
     }
 
@@ -214,15 +212,15 @@ public class BaseFinderModule extends ToggleableModule {
         if (ncModule instanceof NewChunksModule newChunksModule) {
             if (useChunkTrails.getValue()) {
                 trailFollower.setNewChunkDetector(newChunksModule.getDetector());
-                ChatUtils.print("[BaseHunter] Connected to NewChunks - chunk trail detection enabled");
+                ChatUtils.print("[BaseHunter] Connecté à NewChunks - détection pistes de chunks activée");
             }
             if (useVersionBorders.getValue()) {
                 trailFollower.setChunkAgeAnalyzer(newChunksModule.getAgeAnalyzer());
-                ChatUtils.print("[BaseHunter] Connected to NewChunks - version border detection enabled");
+                ChatUtils.print("[BaseHunter] Connecté à NewChunks - détection bordures de version activée");
             }
         } else {
             if (useChunkTrails.getValue() || useVersionBorders.getValue()) {
-                ChatUtils.print("[BaseHunter] Enable NewChunks module for chunk trail & version border detection");
+                ChatUtils.print("[BaseHunter] Activez le module NewChunks pour la détection des pistes et bordures");
             }
         }
     }
@@ -264,7 +262,7 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Periodic status update every 10 seconds
         if (tickCounter % 200 == 0) {
-            ChatUtils.print("[BaseHunter] Scanned: " + scanner.getScannedCount() + " chunks | Found: " + logger.getCount() + " bases");
+            ChatUtils.print("[BaseHunter] Scannés : " + scanner.getScannedCount() + " chunks | Trouvés : " + logger.getCount() + " bases");
         }
 
         for (ChunkAnalysis analysis : newFinds) {
@@ -285,7 +283,7 @@ public class BaseFinderModule extends ToggleableModule {
         if (followTrails.getValue() && !scanner.getTrailChunks().isEmpty()) {
             if (trailFollower.detectTrail(scanner.getTrailChunks())) {
                 state = FinderState.TRAIL_FOLLOWING;
-                ChatUtils.print("[BaseHunter] Trail detected! Following...");
+                ChatUtils.print("[BaseHunter] Piste détectée ! Poursuite...");
                 return;
             }
         }
@@ -301,8 +299,8 @@ public class BaseFinderModule extends ToggleableModule {
         BlockPos target = trailFollower.getNextTrailTarget();
 
         if (target == null) {
-            // Lost the trail
-            ChatUtils.print("[BaseHunter] Trail lost after " + trailFollower.getTrailLength() + " blocks. Resuming scan.");
+            // Piste perdue
+            ChatUtils.print("[BaseHunter] Piste perdue après " + trailFollower.getTrailLength() + " blocs. Reprise du scan.");
             trailFollower.stopFollowing();
             state = FinderState.SCANNING;
             return;
@@ -338,11 +336,11 @@ public class BaseFinderModule extends ToggleableModule {
                     );
                     logger.logBase(record);
 
-                    // If we found something big, investigate
+                    // Si on trouve quelque chose d'important, investiguer
                     if (analysis.getScore() >= minScore.getValue() * 2) {
                         state = FinderState.INVESTIGATING;
                         investigationStartTick = tickCounter;
-                        ChatUtils.print("[BaseHunter] Significant find! Investigating...");
+                        ChatUtils.print("[BaseHunter] Découverte importante ! Investigation...");
                         return;
                     }
                 }
@@ -375,7 +373,7 @@ public class BaseFinderModule extends ToggleableModule {
                 if (trailFollower.detectTrail(scanner.getTrailChunks())) {
                     elytraBot.stop();
                     state = FinderState.TRAIL_FOLLOWING;
-                    ChatUtils.print("[BaseHunter] Trail detected while flying! Following...");
+                    ChatUtils.print("[BaseHunter] Piste détectée en vol ! Poursuite...");
                     return;
                 }
             }
@@ -383,9 +381,9 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Check if we reached the waypoint
         if (navigation.isNearTarget(waypointThreshold.getValue())) {
-            ChatUtils.print("[BaseHunter] Reached waypoint " + (navigation.getCurrentWaypointIndex() + 1) + "/" + navigation.getWaypointCount());
+            ChatUtils.print("[BaseHunter] Waypoint atteint " + (navigation.getCurrentWaypointIndex() + 1) + "/" + navigation.getWaypointCount());
             if (!navigation.advanceToNext()) {
-                ChatUtils.print("[BaseHunter] All waypoints visited! Total bases found: " + logger.getCount());
+                ChatUtils.print("[BaseHunter] Tous les waypoints visités ! Bases trouvées : " + logger.getCount());
                 this.toggle();
                 return;
             }
@@ -411,7 +409,7 @@ public class BaseFinderModule extends ToggleableModule {
         // Stay and investigate for 5 seconds (100 ticks), then continue
         if (tickCounter - investigationStartTick >= 100) {
             state = FinderState.SCANNING;
-            ChatUtils.print("[BaseHunter] Investigation complete. Continuing search.");
+            ChatUtils.print("[BaseHunter] Investigation terminée. Reprise de la recherche.");
         }
     }
 
@@ -429,20 +427,20 @@ public class BaseFinderModule extends ToggleableModule {
             elytraBot.stop();
             mc.options.keyUp.setDown(false);
             mc.options.keySprint.setDown(false);
-            ChatUtils.print("[BaseHunter] Paused.");
+            ChatUtils.print("[BaseHunter] En pause.");
         }
     }
 
     public void resume() {
         if (state == FinderState.PAUSED) {
             state = FinderState.SCANNING;
-            ChatUtils.print("[BaseHunter] Resumed.");
+            ChatUtils.print("[BaseHunter] Repris.");
         }
     }
 
     public void skipWaypoint() {
         if (navigation.advanceToNext()) {
-            ChatUtils.print("[BaseHunter] Skipped to waypoint " + (navigation.getCurrentWaypointIndex() + 1));
+            ChatUtils.print("[BaseHunter] Sauté au waypoint " + (navigation.getCurrentWaypointIndex() + 1));
             state = FinderState.SCANNING;
         }
     }
