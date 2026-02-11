@@ -4,11 +4,13 @@ import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.navigation.NavigationHelper;
 import com.basefinder.scanner.ChunkScanner;
+import com.basefinder.scanner.FreshnessEstimator;
 import com.basefinder.trail.TrailFollower;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BaseType;
 import com.basefinder.util.ChunkAnalysis;
 import com.basefinder.util.Lang;
+import com.basefinder.util.WaypointExporter;
 import net.minecraft.core.BlockPos;
 import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.events.client.EventUpdate;
@@ -31,10 +33,12 @@ import java.util.List;
  * SCANNING -> TRAIL_FOLLOWING -> FLYING -> SCANNING -> ...
  *
  * When enabled, it:
- * 1. Scans loaded chunks for player activity
+ * 1. Scans loaded chunks for player activity (blocks + entities)
  * 2. If a trail is found, follows it
  * 3. Uses elytra + fireworks to navigate between waypoints
  * 4. Logs all found bases to file and chat
+ * 5. Estimates freshness (active/abandoned/ancient)
+ * 6. Auto-screenshots on detection
  */
 public class BaseFinderModule extends ToggleableModule {
 
@@ -44,6 +48,7 @@ public class BaseFinderModule extends ToggleableModule {
     private final ElytraBot elytraBot = new ElytraBot();
     private final NavigationHelper navigation = new NavigationHelper();
     private final BaseLogger logger = new BaseLogger();
+    private final FreshnessEstimator freshnessEstimator = new FreshnessEstimator();
 
     // State
     private FinderState state = FinderState.IDLE;
@@ -65,6 +70,13 @@ public class BaseFinderModule extends ToggleableModule {
     private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", true);
     private final BooleanSetting detectTrails = new BooleanSetting("Pistes", "Autoroutes de glace, chemins d'obsidienne", true);
     private final NumberSetting<Double> minScore = new NumberSetting<>("Sensibilité", 25.0, 5.0, 200.0);
+
+    // --- OPTIMISATIONS : Nouvelles fonctionnalités ---
+    private final NullSetting optimGroup = new NullSetting("Optimisations");
+    private final BooleanSetting useEntityScanning = new BooleanSetting("Scan entités", true);
+    private final BooleanSetting useClusterScoring = new BooleanSetting("Score cluster", true);
+    private final BooleanSetting autoScreenshot = new BooleanSetting("Auto capture", false);
+    private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick bruit", true);
 
     // --- VOL : Paramètres elytra ---
     private final NullSetting flightGroup = new NullSetting("Vol");
@@ -109,6 +121,7 @@ public class BaseFinderModule extends ToggleableModule {
         // Register settings with groups
         modeGroup.addSubSettings(useElytra, searchMode);
         detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails, minScore);
+        optimGroup.addSubSettings(useEntityScanning, useClusterScoring, autoScreenshot, antiKickNoise);
         flightGroup.addSubSettings(cruiseAltitude, minAltitude, fireworkInterval, minElytraDurability);
         advancedGroup.addSubSettings(followTrails, useChunkTrails, useVersionBorders, scanIntervalSetting,
                 waypointThreshold, spiralStep, spiralRadius, searchMinDist, searchMaxDist, highwayDist, highwayInterval);
@@ -116,6 +129,7 @@ public class BaseFinderModule extends ToggleableModule {
         this.registerSettings(
                 modeGroup,
                 detectGroup,
+                optimGroup,
                 flightGroup,
                 advancedGroup,
                 logToChat,
@@ -166,6 +180,17 @@ public class BaseFinderModule extends ToggleableModule {
         };
         ChatUtils.print("[BaseHunter] " + Lang.t("Started! Mode: ", "Démarré ! Mode : ") + pattern.name());
         ChatUtils.print("[BaseHunter] " + modeDesc);
+
+        // Show optimization status
+        StringBuilder optimStatus = new StringBuilder();
+        if (useEntityScanning.getValue()) optimStatus.append(Lang.t("Entities", "Entités")).append(" ");
+        if (useClusterScoring.getValue()) optimStatus.append(Lang.t("Clusters", "Clusters")).append(" ");
+        if (autoScreenshot.getValue()) optimStatus.append(Lang.t("Screenshot", "Capture")).append(" ");
+        if (antiKickNoise.getValue()) optimStatus.append(Lang.t("AntiKick", "AntiKick")).append(" ");
+        if (!optimStatus.isEmpty()) {
+            ChatUtils.print("[BaseHunter] " + Lang.t("Optimizations: ", "Optimisations : ") + optimStatus.toString().trim());
+        }
+
         ChatUtils.print("[BaseHunter] " + navigation.getWaypointCount() + Lang.t(" waypoints generated. Click [GOTO] on alerts to navigate with Baritone.", " waypoints générés. Cliquez [ALLER] sur les alertes pour naviguer avec Baritone."));
     }
 
@@ -191,10 +216,16 @@ public class BaseFinderModule extends ToggleableModule {
         scanner.setDetectMapArt(detectMapArt.getValue());
         scanner.setDetectTrails(detectTrails.getValue());
 
+        // New optimization settings
+        scanner.setUseEntityScanning(useEntityScanning.getValue());
+        scanner.setUseClusterScoring(useClusterScoring.getValue());
+        scanner.setFreshnessEstimator(freshnessEstimator);
+
         elytraBot.setCruiseAltitude(cruiseAltitude.getValue());
         elytraBot.setMinAltitude(minAltitude.getValue());
         elytraBot.setFireworkInterval(fireworkInterval.getValue());
         elytraBot.setMinElytraDurability(minElytraDurability.getValue());
+        elytraBot.setUseFlightNoise(antiKickNoise.getValue());
 
         navigation.setSpiralStep(spiralStep.getValue());
         navigation.setSearchMinDistance(searchMinDist.getValue());
@@ -204,13 +235,14 @@ public class BaseFinderModule extends ToggleableModule {
 
         logger.setLogToChat(logToChat.getValue());
         logger.setLogToFile(logToFile.getValue());
+        logger.setAutoScreenshot(autoScreenshot.getValue());
 
         scanInterval = scanIntervalSetting.getValue();
     }
 
     /**
-     * Connect TrailFollower to NewChunks module's detector and analyzer
-     * so it can use chunk age data for trail detection.
+     * Connect TrailFollower and FreshnessEstimator to NewChunks module's detector and analyzer
+     * so they can use chunk age data for trail detection and freshness estimation.
      */
     private void connectToNewChunksModule() {
         IModule ncModule = RusherHackAPI.getModuleManager().getFeature("ChunkHistory").orElse(null);
@@ -223,6 +255,11 @@ public class BaseFinderModule extends ToggleableModule {
                 trailFollower.setChunkAgeAnalyzer(newChunksModule.getAgeAnalyzer());
                 ChatUtils.print("[BaseHunter] " + Lang.t("Connected to NewChunks - version border detection enabled", "Connecté à NewChunks - détection bordures de version activée"));
             }
+
+            // Connect freshness estimator
+            freshnessEstimator.setNewChunkDetector(newChunksModule.getDetector());
+            freshnessEstimator.setChunkAgeAnalyzer(newChunksModule.getAgeAnalyzer());
+            ChatUtils.print("[BaseHunter] " + Lang.t("Freshness estimation enabled", "Estimation fraîcheur activée"));
         } else {
             if (useChunkTrails.getValue() || useVersionBorders.getValue()) {
                 ChatUtils.print("[BaseHunter] " + Lang.t("Enable NewChunks module for chunk trail & version border detection", "Activez le module NewChunks pour la détection des pistes et bordures"));
@@ -283,6 +320,8 @@ public class BaseFinderModule extends ToggleableModule {
                         analysis.getStorageCount(),
                         analysis.getShulkerCount()
                 );
+                // Add enriched notes from analysis
+                addAnalysisNotes(record, analysis);
                 logger.logBase(record);
             }
         }
@@ -300,6 +339,40 @@ public class BaseFinderModule extends ToggleableModule {
         if (useElytra.getValue() && navigation.getCurrentTarget() != null) {
             state = FinderState.FLYING_TO_WAYPOINT;
             elytraBot.startFlight(navigation.getCurrentTarget());
+        }
+    }
+
+    /**
+     * Add enriched metadata from analysis to the base record notes.
+     */
+    private void addAnalysisNotes(BaseRecord record, ChunkAnalysis analysis) {
+        StringBuilder notes = new StringBuilder();
+
+        // Freshness
+        if (analysis.getFreshness() != ChunkAnalysis.Freshness.UNKNOWN) {
+            notes.append(analysis.getFreshness().name());
+        }
+
+        // Entity info
+        if (analysis.getEntityCount() > 0) {
+            if (!notes.isEmpty()) notes.append(", ");
+            notes.append("entities:").append(analysis.getEntityCount());
+        }
+
+        // Cluster info
+        if (analysis.getClusterSize() > 0) {
+            if (!notes.isEmpty()) notes.append(", ");
+            notes.append("cluster:").append(analysis.getClusterSize());
+        }
+
+        // Distance from spawn
+        if (analysis.getDistanceFromSpawn() > 0) {
+            if (!notes.isEmpty()) notes.append(", ");
+            notes.append(String.format("dist:%.0fk", analysis.getDistanceFromSpawn() / 1000));
+        }
+
+        if (!notes.isEmpty()) {
+            record.setNotes(notes.toString());
         }
     }
 
@@ -341,6 +414,7 @@ public class BaseFinderModule extends ToggleableModule {
                             analysis.getStorageCount(),
                             analysis.getShulkerCount()
                     );
+                    addAnalysisNotes(record, analysis);
                     logger.logBase(record);
 
                     // Si on trouve quelque chose d'important, investiguer
@@ -371,6 +445,7 @@ public class BaseFinderModule extends ToggleableModule {
                             analysis.getStorageCount(),
                             analysis.getShulkerCount()
                     );
+                    addAnalysisNotes(record, analysis);
                     logger.logBase(record);
                 }
             }
@@ -449,6 +524,20 @@ public class BaseFinderModule extends ToggleableModule {
         if (navigation.advanceToNext()) {
             ChatUtils.print("[BaseHunter] " + Lang.t("Skipped to waypoint ", "Sauté au waypoint ") + (navigation.getCurrentWaypointIndex() + 1));
             state = FinderState.SCANNING;
+        }
+    }
+
+    /**
+     * Export waypoints to minimap mod formats.
+     */
+    public void exportWaypoints(String format) {
+        List<BaseRecord> bases = logger.getRecords();
+        if ("xaero".equalsIgnoreCase(format)) {
+            WaypointExporter.exportXaero(bases, "2b2t.org");
+        } else if ("voxelmap".equalsIgnoreCase(format)) {
+            WaypointExporter.exportVoxelMap(bases, "2b2t.org");
+        } else {
+            WaypointExporter.exportAll(bases, "2b2t.org");
         }
     }
 }

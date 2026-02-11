@@ -1,7 +1,10 @@
 package com.basefinder.util;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -159,6 +162,68 @@ public class BlockAnalyzer {
     }
 
     /**
+     * Check if a chunk's biome is one that naturally generates structures
+     * with blocks that could cause false positives (villages, temples, strongholds).
+     * Returns a multiplier: 1.0 = normal, <1.0 = reduce score (structure biome).
+     * Note: Shulker boxes and very strong indicators are never penalized.
+     */
+    public static double getBiomePenalty(Level level, LevelChunk chunk) {
+        try {
+            BlockPos center = new BlockPos(
+                    chunk.getPos().getMiddleBlockX(), 64, chunk.getPos().getMiddleBlockZ());
+            Holder<Biome> biomeHolder = level.getBiome(center);
+
+            // Villages generate in plains, desert, savanna, taiga, snowy plains
+            // Temples generate in desert, jungle, swamp, snowy taiga
+            // Reduce trail and weak construction scores in these biomes
+            if (biomeHolder.is(BiomeTags.HAS_VILLAGE_PLAINS)
+                    || biomeHolder.is(BiomeTags.HAS_VILLAGE_DESERT)
+                    || biomeHolder.is(BiomeTags.HAS_VILLAGE_SAVANNA)
+                    || biomeHolder.is(BiomeTags.HAS_VILLAGE_TAIGA)
+                    || biomeHolder.is(BiomeTags.HAS_VILLAGE_SNOWY)) {
+                return 0.5; // 50% penalty for village biomes
+            }
+
+            // Desert/jungle temples, witch huts
+            if (biomeHolder.is(BiomeTags.HAS_DESERT_PYRAMID)
+                    || biomeHolder.is(BiomeTags.HAS_JUNGLE_TEMPLE)
+                    || biomeHolder.is(BiomeTags.HAS_SWAMP_HUT)) {
+                return 0.7; // 30% penalty for temple biomes
+            }
+
+            // Mineshaft biomes - reduce trail detection
+            if (biomeHolder.is(BiomeTags.HAS_MINESHAFT)) {
+                return 0.8; // 20% penalty
+            }
+        } catch (Exception e) {
+            // If biome check fails, don't penalize
+        }
+        return 1.0;
+    }
+
+    /**
+     * Calculate spawn distance multiplier.
+     * Near spawn (0-1000): higher threshold needed (more builds = more noise)
+     * Mid range (1000-10000): normal
+     * Far range (10000+): lower threshold (any base is notable)
+     */
+    public static double getSpawnDistanceMultiplier(double distFromSpawn) {
+        if (distFromSpawn < 500) {
+            return 0.3; // Very near spawn - almost everything is player-built, need huge score
+        } else if (distFromSpawn < 2000) {
+            return 0.5; // Near spawn - lots of bases, be picky
+        } else if (distFromSpawn < 10000) {
+            return 0.8; // Mid range
+        } else if (distFromSpawn < 50000) {
+            return 1.0; // Normal
+        } else if (distFromSpawn < 200000) {
+            return 1.3; // Far out - bases are rarer, be more sensitive
+        } else {
+            return 1.5; // Very far - any sign of activity is notable
+        }
+    }
+
+    /**
      * Scores a chunk for player activity. Tuned for 2b2t to avoid false positives
      * from natural structures (villages, temples, dungeons, mineshafts).
      *
@@ -169,6 +234,9 @@ public class BlockAnalyzer {
      * - Storage blocks only count if there are also strong indicators
      * - Trail blocks: 0.5 points each
      * - Map art blocks at high Y: 1 point each
+     * - Multi-Y bonuses: bedrock layer (Y 0-10) and sky layer (Y>200) stashes get bonus
+     * - Biome penalty: reduces score in village/temple biomes
+     * - Spawn distance: adjusts sensitivity based on distance from 0,0
      */
     public static ChunkAnalysis analyzeChunk(Level level, LevelChunk chunk) {
         ChunkAnalysis analysis = new ChunkAnalysis(chunk.getPos());
@@ -183,6 +251,10 @@ public class BlockAnalyzer {
         int mapArtBlockCount = 0;
         int shulkerCount = 0;
         int highYColoredBlocks = 0;
+
+        // Multi-Y scanning: track blocks at special Y levels
+        int bedrockLayerBlocks = 0;  // Y 0-10: hidden stashes in bedrock
+        int skyLayerBlocks = 0;      // Y > 200: sky bases, map art
 
         LevelChunkSection[] sections = chunk.getSections();
         int minSectionY = level.getMinSectionY();
@@ -227,6 +299,14 @@ public class BlockAnalyzer {
                             highYColoredBlocks++;
                             mapArtBlockCount++;
                         }
+
+                        // Multi-Y: track strong/storage blocks at special Y levels
+                        if (worldY >= 0 && worldY <= 10 && (isStrongPlayerBlock(block) || isStorageBlock(block))) {
+                            bedrockLayerBlocks++;
+                        }
+                        if (worldY > 200 && (isStrongPlayerBlock(block) || isStorageBlock(block))) {
+                            skyLayerBlocks++;
+                        }
                     }
                 }
             }
@@ -263,6 +343,34 @@ public class BlockAnalyzer {
                 + significantObsidian * 2.0
                 + mapArtBlockCount * 1.0
                 + trailBlockCount * 0.5;
+
+        // Multi-Y bonuses: hidden stashes at bedrock or sky level are more significant
+        if (bedrockLayerBlocks >= 1) {
+            score += bedrockLayerBlocks * 8.0; // Bedrock stash bonus
+        }
+        if (skyLayerBlocks >= 1) {
+            score += skyLayerBlocks * 6.0; // Sky base/stash bonus
+        }
+
+        // Biome penalty: reduce score for trail/weak construction in structure biomes
+        // Strong indicators (shulkers, ender chests) are NEVER penalized
+        double biomePenalty = getBiomePenalty(level, chunk);
+        if (biomePenalty < 1.0 && shulkerCount == 0) {
+            // Only apply penalty to non-shulker score components
+            double shulkerScore = shulkerCount * 25.0;
+            double otherScore = score - shulkerScore;
+            score = shulkerScore + otherScore * biomePenalty;
+        }
+
+        // Spawn distance: calculate and store for sensitivity adjustment
+        double distFromSpawn = Math.sqrt(
+                Math.pow(chunk.getPos().getMiddleBlockX(), 2) +
+                Math.pow(chunk.getPos().getMiddleBlockZ(), 2));
+        analysis.setDistanceFromSpawn(distFromSpawn);
+
+        // Apply spawn distance multiplier to score
+        double spawnMultiplier = getSpawnDistanceMultiplier(distFromSpawn);
+        score *= spawnMultiplier;
 
         analysis.setScore(score);
         return analysis;
