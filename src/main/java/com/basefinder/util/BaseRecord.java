@@ -32,7 +32,7 @@ public class BaseRecord {
     }
 
     public String toLogLine() {
-        return String.format("[%s] %s at %d, %d, %d | Score: %.1f | Blocks: %d | Storage: %d | Shulkers: %d%s",
+        return String.format("[%s] %s à %d, %d, %d | Score: %.1f | Blocs: %d | Stockage: %d | Shulkers: %d%s",
                 timestamp,
                 type.getDisplayName(),
                 position.getX(), position.getY(), position.getZ(),

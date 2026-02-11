@@ -81,7 +81,7 @@ public class BaseLogger {
                         .withStyle(ChatFormatting.WHITE))
                 .append(Component.literal(String.format("(%.0f) ", record.getScore()))
                         .withStyle(ChatFormatting.GRAY))
-                .append(Component.literal("[GOTO]")
+                .append(Component.literal("[ALLER]")
                         .withStyle(style -> style
                                 .withColor(ChatFormatting.GREEN)
                                 .withBold(true)
@@ -91,11 +91,11 @@ public class BaseLogger {
                                         "#goto " + x + " " + z))
                                 .withHoverEvent(new HoverEvent(
                                         HoverEvent.Action.SHOW_TEXT,
-                                        Component.literal("Click to navigate with Baritone\n")
+                                        Component.literal("Cliquer pour naviguer avec Baritone\n")
                                                 .append(Component.literal("#goto " + x + " " + z)
                                                         .withStyle(ChatFormatting.GRAY))))))
                 .append(Component.literal(" "))
-                .append(Component.literal("[COPY]")
+                .append(Component.literal("[COPIER]")
                         .withStyle(style -> style
                                 .withColor(ChatFormatting.AQUA)
                                 .withUnderlined(true)
@@ -104,7 +104,7 @@ public class BaseLogger {
                                         x + " " + z))
                                 .withHoverEvent(new HoverEvent(
                                         HoverEvent.Action.SHOW_TEXT,
-                                        Component.literal("Copy coordinates to clipboard")))));
+                                        Component.literal("Copier les coordonnées")))));
 
         mc.player.displayClientMessage(message, false);
     }
@@ -123,7 +123,7 @@ public class BaseLogger {
             Path exportFile = logFile.getParent().resolve(filename);
             StringBuilder sb = new StringBuilder();
             sb.append("=== BaseFinder Export ===\n");
-            sb.append("Total bases found: ").append(records.size()).append("\n\n");
+            sb.append("Bases trouvées : ").append(records.size()).append("\n\n");
 
             synchronized (records) {
                 for (BaseRecord record : records) {
@@ -133,9 +133,9 @@ public class BaseLogger {
 
             Files.writeString(exportFile, sb.toString(),
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            ChatUtils.print("[BaseHunter] Exported " + records.size() + " bases to " + exportFile);
+            ChatUtils.print("[BaseHunter] " + records.size() + " bases exportées vers " + exportFile);
         } catch (IOException e) {
-            ChatUtils.print("[BaseHunter] Failed to export: " + e.getMessage());
+            ChatUtils.print("[BaseHunter] Échec de l'export : " + e.getMessage());
         }
     }
 
