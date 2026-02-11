@@ -1,6 +1,7 @@
 package com.basefinder.modules;
 
 import com.basefinder.elytra.ElytraBot;
+import com.basefinder.util.Lang;
 import net.minecraft.core.BlockPos;
 import org.rusherhack.client.api.events.client.EventUpdate;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
@@ -25,6 +26,9 @@ public class ElytraBotModule extends ToggleableModule {
     private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Intervalle fusées", 40, 10, 100);
     private final NumberSetting<Integer> minDurability = new NumberSetting<>("Durabilité min. elytra", 10, 1, 100);
 
+    // --- LANGUE / LANGUAGE ---
+    private final BooleanSetting langFr = new BooleanSetting("Français", true);
+
     public ElytraBotModule() {
         super("ElytraBot", "Vol elytra automatique vers des coordonnées", ModuleCategory.EXTERNAL);
 
@@ -34,47 +38,46 @@ public class ElytraBotModule extends ToggleableModule {
                 cruiseAltitude,
                 minAltitude,
                 fireworkInterval,
-                minDurability
+                minDurability,
+                langFr
         );
     }
 
     @Override
     public void onEnable() {
+        Lang.setFrench(langFr.getValue());
+
         if (mc.player == null || mc.level == null) {
-            ChatUtils.print("[ElytraBot] Vous devez être dans un monde !");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Must be in a world!", "Vous devez être dans un monde !"));
             this.toggle();
             return;
         }
 
-        // Vérifier si on porte un elytra
         var chest = mc.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST);
         if (!chest.is(net.minecraft.world.item.Items.ELYTRA)) {
-            ChatUtils.print("[ElytraBot] ERREUR : Vous devez porter un Elytra !");
+            ChatUtils.print("[ElytraBot] " + Lang.t("ERROR: You must wear an Elytra!", "ERREUR : Vous devez porter un Elytra !"));
             this.toggle();
             return;
         }
 
-        // Vérifier si la cible est définie
         if (targetX.getValue() == 0 && targetZ.getValue() == 0) {
-            ChatUtils.print("[ElytraBot] ERREUR : Définissez Cible X et Cible Z d'abord !");
+            ChatUtils.print("[ElytraBot] " + Lang.t("ERROR: Set Target X and Target Z first!", "ERREUR : Définissez Cible X et Cible Z d'abord !"));
             this.toggle();
             return;
         }
 
-        // Vérifier les fusées
         int fireworks = elytraBot.getFireworkCount();
         if (fireworks == 0) {
-            ChatUtils.print("[ElytraBot] ATTENTION : Aucune fusée trouvée ! Vous avez besoin de fusées pour voler.");
+            ChatUtils.print("[ElytraBot] " + Lang.t("WARNING: No fireworks found!", "ATTENTION : Aucune fusée trouvée !"));
         } else {
-            ChatUtils.print("[ElytraBot] " + fireworks + " fusées trouvées.");
+            ChatUtils.print("[ElytraBot] " + fireworks + Lang.t(" fireworks found.", " fusées trouvées."));
         }
 
-        // Afficher le nombre d'elytra et la durabilité
         int elytraCount = elytraBot.getElytraCount();
         int durability = elytraBot.getEquippedElytraDurability();
-        ChatUtils.print("[ElytraBot] Elytra : " + elytraCount + " utilisables | Durabilité actuelle : " + durability);
+        ChatUtils.print("[ElytraBot] Elytra: " + elytraCount + Lang.t(" usable | Current durability: ", " utilisables | Durabilité actuelle : ") + durability);
         if (elytraCount > 1) {
-            ChatUtils.print("[ElytraBot] Échange auto activé (échange à " + minDurability.getValue() + " de durabilité)");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Auto-swap enabled (swap at " + minDurability.getValue() + " durability)", "Échange auto activé (échange à " + minDurability.getValue() + " de durabilité)"));
         }
 
         elytraBot.setCruiseAltitude(cruiseAltitude.getValue());
@@ -89,16 +92,16 @@ public class ElytraBotModule extends ToggleableModule {
             Math.pow(mc.player.getX() - targetX.getValue(), 2) +
             Math.pow(mc.player.getZ() - targetZ.getValue(), 2)
         );
-        ChatUtils.print(String.format("[ElytraBot] Vol vers %d, %d (%.0f blocs)",
+        ChatUtils.print(String.format("[ElytraBot] " + Lang.t("Flying to %d, %d (%.0f blocks)", "Vol vers %d, %d (%.0f blocs)"),
             targetX.getValue(), targetZ.getValue(), distance));
-        ChatUtils.print("[ElytraBot] Sautez pour décoller !");
+        ChatUtils.print("[ElytraBot] " + Lang.t("Jump to take off!", "Sautez pour décoller !"));
     }
 
     @Override
     public void onDisable() {
         elytraBot.stop();
         if (mc.level != null) {
-            ChatUtils.print("[ElytraBot] Arrêté.");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Stopped.", "Arrêté."));
         }
     }
 
@@ -106,25 +109,23 @@ public class ElytraBotModule extends ToggleableModule {
     private void onUpdate(EventUpdate event) {
         if (mc.player == null || mc.level == null) return;
 
+        Lang.setFrench(langFr.getValue());
         elytraBot.tick();
 
-        // Vérifier si arrivé
         double dist = elytraBot.getDistanceToDestination();
         if (dist >= 0 && dist < 50) {
-            ChatUtils.print("[ElytraBot] Arrivé à destination !");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Arrived at destination!", "Arrivé à destination !"));
             this.toggle();
         }
 
-        // Vérifier si plus de fusées
         if (!elytraBot.isFlying() && mc.player.onGround() && elytraBot.getFireworkCount() == 0) {
-            ChatUtils.print("[ElytraBot] Plus de fusées. Arrêt.");
+            ChatUtils.print("[ElytraBot] " + Lang.t("No fireworks remaining. Stopping.", "Plus de fusées. Arrêt."));
             this.toggle();
             return;
         }
 
-        // Vérifier si atterri après urgence (plus d'elytra)
         if (!elytraBot.isFlying() && mc.player.onGround() && elytraBot.getElytraCount() == 0) {
-            ChatUtils.print("[ElytraBot] Plus d'elytra. Arrêté.");
+            ChatUtils.print("[ElytraBot] " + Lang.t("No elytra remaining. Stopped.", "Plus d'elytra. Arrêté."));
             this.toggle();
         }
     }
