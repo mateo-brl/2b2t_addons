@@ -49,9 +49,10 @@ public class NewChunksModule extends ToggleableModule {
     private final BooleanSetting showNewChunks = new BooleanSetting("Show New", true);
     private final BooleanSetting showOldChunks = new BooleanSetting("Show Old", true);
     private final BooleanSetting showVersionBorders = new BooleanSetting("Show Version Borders", true);
-    private final ColorSetting newChunkColor = new ColorSetting("New Color", new Color(255, 50, 50, 80));
-    private final ColorSetting oldChunkColor = new ColorSetting("Old Color", new Color(50, 255, 50, 80));
-    private final ColorSetting versionBorderColor = new ColorSetting("Version Color", new Color(255, 255, 50, 80));
+    private final BooleanSetting fillMode = new BooleanSetting("Fill Chunks", true);
+    private final ColorSetting newChunkColor = new ColorSetting("New Color", new Color(255, 30, 30, 200));
+    private final ColorSetting oldChunkColor = new ColorSetting("Old Color", new Color(30, 255, 30, 160));
+    private final ColorSetting versionBorderColor = new ColorSetting("Version Color", new Color(255, 255, 0, 180));
     private final NumberSetting<Integer> renderHeight = new NumberSetting<>("Render Y", -1, -1, 320); // -1 = player Y
     private final NumberSetting<Integer> renderDistance = new NumberSetting<>("Render Distance", 16, 4, 32);
 
@@ -70,7 +71,7 @@ public class NewChunksModule extends ToggleableModule {
         super("ChunkHistory", "Detects and highlights new vs old chunks (liquid flow + version detection)", ModuleCategory.EXTERNAL);
 
         renderGroup.addSubSettings(showNewChunks, showOldChunks, showVersionBorders,
-                newChunkColor, oldChunkColor, versionBorderColor, renderHeight, renderDistance);
+                fillMode, newChunkColor, oldChunkColor, versionBorderColor, renderHeight, renderDistance);
         detectionGroup.addSubSettings(useLiquidDetection, useVersionDetection, classificationDelay);
 
         this.registerSettings(renderGroup, detectionGroup, logNewChunks);
@@ -229,8 +230,8 @@ public class NewChunksModule extends ToggleableModule {
             double x2 = x1 + 16;
             double z2 = z1 + 16;
 
-            // Draw thick chunk outline (multiple Y levels for visibility)
-            for (int yOffset = 0; yOffset <= 2; yOffset++) {
+            // Draw chunk outline at multiple Y levels for thickness/visibility
+            for (int yOffset = 0; yOffset <= 4; yOffset++) {
                 double drawY = y + yOffset;
                 renderer.drawLine(x1, drawY, z1, x2, drawY, z1, color);
                 renderer.drawLine(x2, drawY, z1, x2, drawY, z2, color);
@@ -238,11 +239,29 @@ public class NewChunksModule extends ToggleableModule {
                 renderer.drawLine(x1, drawY, z2, x1, drawY, z1, color);
             }
 
-            // Draw vertical corner lines for better visibility
-            renderer.drawLine(x1, y, z1, x1, y + 2, z1, color);
-            renderer.drawLine(x2, y, z1, x2, y + 2, z1, color);
-            renderer.drawLine(x1, y, z2, x1, y + 2, z2, color);
-            renderer.drawLine(x2, y, z2, x2, y + 2, z2, color);
+            // Tall vertical corner pillars
+            renderer.drawLine(x1, y, z1, x1, y + 4, z1, color);
+            renderer.drawLine(x2, y, z1, x2, y + 4, z1, color);
+            renderer.drawLine(x1, y, z2, x1, y + 4, z2, color);
+            renderer.drawLine(x2, y, z2, x2, y + 4, z2, color);
+
+            // Fill mode: diagonal cross + center grid for high visibility
+            if (fillMode.getValue()) {
+                double midY = y + 2;
+                // Diagonal cross
+                renderer.drawLine(x1, midY, z1, x2, midY, z2, color);
+                renderer.drawLine(x1, midY, z2, x2, midY, z1, color);
+                // Center cross (bisect the chunk)
+                double mx = x1 + 8;
+                double mz = z1 + 8;
+                renderer.drawLine(mx, midY, z1, mx, midY, z2, color);
+                renderer.drawLine(x1, midY, mz, x2, midY, mz, color);
+                // Quarter lines for denser fill
+                renderer.drawLine(x1 + 4, midY, z1, x1 + 4, midY, z2, color);
+                renderer.drawLine(x1 + 12, midY, z1, x1 + 12, midY, z2, color);
+                renderer.drawLine(x1, midY, z1 + 4, x2, midY, z1 + 4, color);
+                renderer.drawLine(x1, midY, z1 + 12, x2, midY, z1 + 12, color);
+            }
         } catch (Exception e) {
             // Silently ignore render errors to prevent crashes
         }
