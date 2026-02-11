@@ -19,8 +19,8 @@ public class ElytraBotModule extends ToggleableModule {
 
     private final ElytraBot elytraBot = new ElytraBot();
 
-    private final NumberSetting<Integer> targetX = new NumberSetting<>("Cible X", 0, -30000000, 30000000).incremental();
-    private final NumberSetting<Integer> targetZ = new NumberSetting<>("Cible Z", 0, -30000000, 30000000).incremental();
+    private final NumberSetting<Integer> targetX = new NumberSetting<>("Cible X", 0, -30000000, 30000000).incremental(1.0);
+    private final NumberSetting<Integer> targetZ = new NumberSetting<>("Cible Z", 0, -30000000, 30000000).incremental(1.0);
     private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Altitude croisière", 200.0, 50.0, 350.0);
     private final NumberSetting<Double> minAltitude = new NumberSetting<>("Altitude minimum", 100.0, 30.0, 200.0);
     private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Intervalle fusées", 40, 10, 100);
