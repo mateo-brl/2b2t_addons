@@ -52,42 +52,45 @@ public class BaseFinderModule extends ToggleableModule {
 
     // === Settings ===
 
-    // Search pattern - type: SPIRAL, HIGHWAYS, RANDOM, RING
-    private final NullSetting searchGroup = new NullSetting("Search Settings");
+    // --- MODE: Main search settings ---
+    private final NullSetting modeGroup = new NullSetting("Mode");
+    private final BooleanSetting useElytra = new BooleanSetting("Fly with Elytra", "Auto-fly between search zones", true);
     private final StringSetting searchMode = new StringSetting("Search Mode", "SPIRAL");
-    private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Scan Interval", 20, 5, 100);
-    private final NumberSetting<Double> minScore = new NumberSetting<>("Min Score", 25.0, 5.0, 200.0);
-    private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Waypoint Radius", 100.0, 20.0, 500.0);
-    private final NumberSetting<Double> spiralRadius = new NumberSetting<>("Ring Radius", 5000.0, 500.0, 200000.0);
+    // SPIRAL = outward spiral, HIGHWAYS = follow 2b2t highways,
+    // RANDOM = random positions, RING = circle at fixed distance
 
-    // Detection filters
-    private final NullSetting detectionGroup = new NullSetting("Detection Filters");
-    private final BooleanSetting detectConstruction = new BooleanSetting("Constructions", true);
-    private final BooleanSetting detectStorage = new BooleanSetting("Storage Bases", true);
+    // --- DETECT: What to search for ---
+    private final NullSetting detectGroup = new NullSetting("Detect");
+    private final BooleanSetting detectConstruction = new BooleanSetting("Bases", "Player-built structures", true);
+    private final BooleanSetting detectStorage = new BooleanSetting("Stashes", "Shulkers, ender chests, storage", true);
     private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", true);
-    private final BooleanSetting detectTrails = new BooleanSetting("Trails", true);
-    private final BooleanSetting followTrails = new BooleanSetting("Follow Trails", true);
-    private final BooleanSetting useChunkTrails = new BooleanSetting("Chunk Trails", true);
+    private final BooleanSetting detectTrails = new BooleanSetting("Trails", "Ice highways, obsidian paths", true);
+    private final NumberSetting<Double> minScore = new NumberSetting<>("Sensitivity", 25.0, 5.0, 200.0);
+
+    // --- FLIGHT: Elytra flight parameters ---
+    private final NullSetting flightGroup = new NullSetting("Flight");
+    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Altitude", 200.0, 50.0, 350.0);
+    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Land Below", 100.0, 30.0, 200.0);
+    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Delay", 40, 10, 100);
+    private final NumberSetting<Integer> minElytraDurability = new NumberSetting<>("Swap Durability", 10, 1, 100);
+
+    // --- ADVANCED: Fine-tuning (most users don't need to change these) ---
+    private final NullSetting advancedGroup = new NullSetting("Advanced");
+    private final BooleanSetting followTrails = new BooleanSetting("Auto-Follow Trails", true);
+    private final BooleanSetting useChunkTrails = new BooleanSetting("Chunk Age Detection", true);
     private final BooleanSetting useVersionBorders = new BooleanSetting("Version Borders", true);
-
-    // Elytra settings
-    private final NullSetting elytraGroup = new NullSetting("Elytra Settings");
-    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Cruise Altitude", 200.0, 50.0, 350.0);
-    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Min Altitude", 100.0, 30.0, 200.0);
-    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Interval", 40, 10, 100);
-    private final BooleanSetting useElytra = new BooleanSetting("Use Elytra", true);
-
-    // Navigation settings
-    private final NullSetting navGroup = new NullSetting("Navigation");
+    private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Scan Speed", 20, 5, 100);
+    private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Waypoint Radius", 100.0, 20.0, 500.0);
     private final NumberSetting<Double> spiralStep = new NumberSetting<>("Waypoint Spacing", 500.0, 100.0, 5000.0);
+    private final NumberSetting<Double> spiralRadius = new NumberSetting<>("Ring Radius", 5000.0, 500.0, 200000.0);
     private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Random Min Dist", 5000, 100, 50000);
     private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Random Max Dist", 100000, 10000, 500000);
     private final NumberSetting<Integer> highwayDist = new NumberSetting<>("Highway Distance", 100000, 10000, 500000);
-    private final NumberSetting<Integer> highwayInterval = new NumberSetting<>("Highway Check Interval", 1000, 100, 10000);
+    private final NumberSetting<Integer> highwayInterval = new NumberSetting<>("Highway Interval", 1000, 100, 10000);
 
-    // Logging
-    private final BooleanSetting logToChat = new BooleanSetting("Log to Chat", true);
-    private final BooleanSetting logToFile = new BooleanSetting("Log to File", true);
+    // --- LOG ---
+    private final BooleanSetting logToChat = new BooleanSetting("Chat Alerts", true);
+    private final BooleanSetting logToFile = new BooleanSetting("Save to File", true);
 
     public enum FinderState {
         IDLE,
@@ -102,16 +105,17 @@ public class BaseFinderModule extends ToggleableModule {
         super("BaseHunter", "Automated base hunting - scans chunks, follows trails, flies with elytra", ModuleCategory.EXTERNAL);
 
         // Register settings with groups
-        searchGroup.addSubSettings(searchMode, scanIntervalSetting, minScore, waypointThreshold, spiralRadius);
-        detectionGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails, followTrails, useChunkTrails, useVersionBorders);
-        elytraGroup.addSubSettings(cruiseAltitude, minAltitude, fireworkInterval, useElytra);
-        navGroup.addSubSettings(spiralStep, searchMinDist, searchMaxDist, highwayDist, highwayInterval);
+        modeGroup.addSubSettings(useElytra, searchMode);
+        detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails, minScore);
+        flightGroup.addSubSettings(cruiseAltitude, minAltitude, fireworkInterval, minElytraDurability);
+        advancedGroup.addSubSettings(followTrails, useChunkTrails, useVersionBorders, scanIntervalSetting,
+                waypointThreshold, spiralStep, spiralRadius, searchMinDist, searchMaxDist, highwayDist, highwayInterval);
 
         this.registerSettings(
-                searchGroup,
-                detectionGroup,
-                elytraGroup,
-                navGroup,
+                modeGroup,
+                detectGroup,
+                flightGroup,
+                advancedGroup,
                 logToChat,
                 logToFile
         );
@@ -187,6 +191,7 @@ public class BaseFinderModule extends ToggleableModule {
         elytraBot.setCruiseAltitude(cruiseAltitude.getValue());
         elytraBot.setMinAltitude(minAltitude.getValue());
         elytraBot.setFireworkInterval(fireworkInterval.getValue());
+        elytraBot.setMinElytraDurability(minElytraDurability.getValue());
 
         navigation.setSpiralStep(spiralStep.getValue());
         navigation.setSearchMinDistance(searchMinDist.getValue());
