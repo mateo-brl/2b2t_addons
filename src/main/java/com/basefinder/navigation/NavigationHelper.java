@@ -34,12 +34,24 @@ public class NavigationHelper {
     private int searchMaxDistance = 100000;
     private Random random = new Random();
 
+    // Grid search parameters
+    private int gridSize = 1000; // Size of each grid square in blocks
+    private int gridRange = 50000; // Total range to cover
+
+    // Zone search parameters
+    private int zoneMinX = -10000;
+    private int zoneMaxX = 10000;
+    private int zoneMinZ = -10000;
+    private int zoneMaxZ = 10000;
+
     // Stats
     private double totalDistanceTraveled = 0;
     private BlockPos lastPosition = null;
 
     public enum SearchPattern {
         SPIRAL,      // Spiral out from current position
+        GRID,        // Systematic grid coverage in squares
+        ZONE,        // Search within specific coordinate bounds
         HIGHWAYS,    // Follow nether highways (X+, X-, Z+, Z-)
         RANDOM,      // Random teleport-distance positions
         RING,        // Search at a specific radius
@@ -56,6 +68,8 @@ public class NavigationHelper {
 
         switch (pattern) {
             case SPIRAL -> generateSpiralWaypoints(center);
+            case GRID -> generateGridWaypoints(center);
+            case ZONE -> generateZoneWaypoints();
             case HIGHWAYS -> generateHighwayWaypoints(center);
             case RANDOM -> generateRandomWaypoints(center);
             case RING -> generateRingWaypoints(center);
@@ -118,6 +132,62 @@ public class NavigationHelper {
             int x = center.getX() + (int) (Math.cos(angle) * spiralRadius);
             int z = center.getZ() + (int) (Math.sin(angle) * spiralRadius);
             waypoints.add(new BlockPos(x, 200, z));
+        }
+    }
+
+    /**
+     * Grid mode: divide area into squares of gridSize, zigzag through each.
+     * Starts from center and expands outward in concentric rings of grid cells.
+     * Uses a boustrophedon (zigzag) pattern for efficient coverage.
+     */
+    private void generateGridWaypoints(BlockPos center) {
+        int halfRange = gridRange / 2;
+        int cellsPerSide = (gridRange / gridSize) + 1;
+        int startX = center.getX() - halfRange;
+        int startZ = center.getZ() - halfRange;
+
+        // Zigzag pattern: odd rows go left, even rows go right
+        for (int row = 0; row < cellsPerSide; row++) {
+            int z = startZ + row * gridSize + gridSize / 2;
+            if (row % 2 == 0) {
+                // Left to right
+                for (int col = 0; col < cellsPerSide; col++) {
+                    int x = startX + col * gridSize + gridSize / 2;
+                    waypoints.add(new BlockPos(x, 200, z));
+                }
+            } else {
+                // Right to left
+                for (int col = cellsPerSide - 1; col >= 0; col--) {
+                    int x = startX + col * gridSize + gridSize / 2;
+                    waypoints.add(new BlockPos(x, 200, z));
+                }
+            }
+        }
+    }
+
+    /**
+     * Zone mode: generate waypoints in zigzag within specific coordinate bounds.
+     * Uses the zoneMinX/MaxX/MinZ/MaxZ parameters.
+     */
+    private void generateZoneWaypoints() {
+        int cellSize = gridSize; // Reuse grid size for spacing
+        int minX = Math.min(zoneMinX, zoneMaxX);
+        int maxX = Math.max(zoneMinX, zoneMaxX);
+        int minZ = Math.min(zoneMinZ, zoneMaxZ);
+        int maxZ = Math.max(zoneMinZ, zoneMaxZ);
+
+        int row = 0;
+        for (int z = minZ + cellSize / 2; z <= maxZ; z += cellSize) {
+            if (row % 2 == 0) {
+                for (int x = minX + cellSize / 2; x <= maxX; x += cellSize) {
+                    waypoints.add(new BlockPos(x, 200, z));
+                }
+            } else {
+                for (int x = maxX - cellSize / 2; x >= minX; x -= cellSize) {
+                    waypoints.add(new BlockPos(x, 200, z));
+                }
+            }
+            row++;
         }
     }
 
@@ -208,4 +278,12 @@ public class NavigationHelper {
     public void setHighwayCheckInterval(int interval) { this.highwayCheckInterval = interval; }
     public void setSearchMinDistance(int dist) { this.searchMinDistance = dist; }
     public void setSearchMaxDistance(int dist) { this.searchMaxDistance = dist; }
+    public void setGridSize(int size) { this.gridSize = size; }
+    public void setGridRange(int range) { this.gridRange = range; }
+    public void setZoneBounds(int minX, int maxX, int minZ, int maxZ) {
+        this.zoneMinX = minX;
+        this.zoneMaxX = maxX;
+        this.zoneMinZ = minZ;
+        this.zoneMaxZ = maxZ;
+    }
 }

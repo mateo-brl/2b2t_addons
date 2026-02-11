@@ -497,7 +497,8 @@ public class ElytraBot {
         updateChunkLoadingSafety();
 
         // Maintain altitude (with noise variation for anti-detection + lag safety boost)
-        double effectiveCruise = cruiseAltitude + (useFlightNoise ? altitudeNoise : 0) + safeAltitudeBoost;
+        // Cap total altitude to cruiseAltitude + 40 max to prevent overshooting
+        double effectiveCruise = Math.min(cruiseAltitude + 40, cruiseAltitude + (useFlightNoise ? altitudeNoise : 0) + safeAltitudeBoost);
         double y = mc.player.getY();
         if (y < effectiveCruise - 10) {
             targetPitch = -20.0f; // nose up
@@ -635,8 +636,8 @@ public class ElytraBot {
         // Use LagDetector if available
         if (lagDetector != null && !lagDetector.isFlightPathLoaded()) {
             unloadedChunksAhead = true;
-            // Gain 50 extra blocks altitude per unloaded chunk (max 150)
-            double boost = Math.min(150.0, lagDetector.getUnloadedChunksAhead() * 50.0);
+            // Gain 15 extra blocks per unloaded chunk (max 40) - capped to avoid overshooting
+            double boost = Math.min(40.0, lagDetector.getUnloadedChunksAhead() * 15.0);
             safeAltitudeBoost = Math.max(safeAltitudeBoost, boost);
             return;
         }
@@ -676,7 +677,7 @@ public class ElytraBot {
                 LOGGER.warn("[ElytraBot] Unloaded chunks ahead ({})! Gaining altitude for safety", unloaded);
             }
             unloadedChunksAhead = true;
-            safeAltitudeBoost = Math.min(150.0, unloaded * 50.0);
+            safeAltitudeBoost = Math.min(40.0, unloaded * 15.0);
         } else {
             unloadedChunksAhead = false;
             safeAltitudeBoost = Math.max(0, safeAltitudeBoost - 2); // Decay slowly
