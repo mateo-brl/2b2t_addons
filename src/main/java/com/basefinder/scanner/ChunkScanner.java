@@ -4,6 +4,7 @@ import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BaseType;
 import com.basefinder.util.BlockAnalyzer;
 import com.basefinder.util.ChunkAnalysis;
+import com.basefinder.util.LagDetector;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -36,6 +37,11 @@ public class ChunkScanner {
 
     // Freshness estimator
     private FreshnessEstimator freshnessEstimator;
+
+    // Lag detection - skip partially loaded chunks on 2b2t
+    private LagDetector lagDetector;
+    private final Set<ChunkPos> deferredChunks = ConcurrentHashMap.newKeySet(); // Chunks skipped due to incomplete loading
+    private int skippedCount = 0;
 
     private double minScore = 20.0;
     private boolean detectMapArt = true;
@@ -85,6 +91,18 @@ public class ChunkScanner {
                         ChunkPos pos = chunk.getPos();
 
                         if (scannedChunks.contains(pos)) continue;
+
+                        // 2b2t lag protection: verify chunk is fully loaded before scanning
+                        if (lagDetector != null && !lagDetector.isChunkFullyLoaded(chunk)) {
+                            // Defer this chunk - it may be partially loaded due to lag
+                            deferredChunks.add(pos);
+                            skippedCount++;
+                            continue;
+                        }
+
+                        // Remove from deferred if it was previously skipped and now loaded
+                        deferredChunks.remove(pos);
+
                         scannedChunks.add(pos);
                         chunksScanned++;
 
@@ -283,9 +301,13 @@ public class ChunkScanner {
         foundBases.clear();
         trailChunks.clear();
         allAnalyses.clear();
+        deferredChunks.clear();
+        skippedCount = 0;
     }
 
     public int getScannedCount() { return scannedChunks.size(); }
+    public int getDeferredCount() { return deferredChunks.size(); }
+    public int getSkippedCount() { return skippedCount; }
     public List<ChunkAnalysis> getInterestingChunks() { return Collections.unmodifiableList(interestingChunks); }
     public List<BaseRecord> getFoundBases() { return Collections.unmodifiableList(foundBases); }
     public List<ChunkAnalysis> getTrailChunks() { return Collections.unmodifiableList(trailChunks); }
@@ -299,4 +321,5 @@ public class ChunkScanner {
     public void setUseEntityScanning(boolean v) { this.useEntityScanning = v; }
     public void setUseClusterScoring(boolean v) { this.useClusterScoring = v; }
     public void setFreshnessEstimator(FreshnessEstimator estimator) { this.freshnessEstimator = estimator; }
+    public void setLagDetector(LagDetector detector) { this.lagDetector = detector; }
 }

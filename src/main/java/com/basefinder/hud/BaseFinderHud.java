@@ -5,6 +5,7 @@ import com.basefinder.modules.BaseFinderModule;
 import com.basefinder.modules.NewChunksModule;
 import com.basefinder.survival.SurvivalManager;
 import com.basefinder.trail.TrailFollower;
+import com.basefinder.util.LagDetector;
 import com.basefinder.util.Lang;
 import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.feature.hud.TextHudElement;
@@ -85,6 +86,28 @@ public class BaseFinderHud extends TextHudElement {
 
         if (survival.isResupplying()) {
             sb.append(Lang.t(" | RESUPPLY", " | RÉAPPRO"));
+        }
+
+        // TPS / lag info
+        LagDetector lag = baseFinder.getLagDetector();
+        double tps = lag.getEstimatedTPS();
+        if (tps < 19.5) { // Only show if not perfect TPS
+            sb.append(" | TPS: ").append(String.format("%.1f", tps));
+            if (lag.isSeverelyLagging()) {
+                sb.append(Lang.t(" LAG!", " LAG !"));
+            }
+        }
+
+        // Unloaded chunks warning
+        ElytraBot elytraForLag = baseFinder.getElytraBot();
+        if (elytraForLag.isFlying() && elytraForLag.hasUnloadedChunksAhead()) {
+            sb.append(Lang.t(" | UNLOADED!", " | NON CHARGÉ !"));
+        }
+
+        // Deferred chunks (skipped due to lag)
+        int deferred = baseFinder.getScanner().getDeferredCount();
+        if (deferred > 0) {
+            sb.append(Lang.t(" | Deferred: ", " | Différés: ")).append(deferred);
         }
 
         // Uptime
