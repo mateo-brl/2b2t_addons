@@ -190,18 +190,29 @@ Le HUD affiche en temps reel :
 
 ## Installation
 
-1. Compiler le plugin : `./gradlew build`
-2. Copier le `.jar` depuis `build/libs/` dans `.minecraft/rusherhack/plugins/`
-3. Lancer Minecraft avec RusherHack et le flag `-Drusherhack.enablePlugins=true`
-4. Le module apparait dans la categorie **External**
+### Methode rapide (recommandee)
 
-## Build
+1. Aller dans l'onglet **[Releases](../../releases)** du repo
+2. Telecharger `basefinder-1.0.0.jar` de la derniere release
+3. Placer le `.jar` dans `.minecraft/rusherhack/plugins/`
+4. Lancer Minecraft avec RusherHack
+5. Le module apparait dans la categorie **External**
+
+> **Requis :** RusherHack installe + Minecraft 1.21.4
+
+### Build depuis les sources
+
+Si tu veux compiler toi-meme :
 
 ```bash
+git clone <url-du-repo>
+cd 2b2t_addons
 ./gradlew build
 ```
 
 Le jar se trouve dans `build/libs/basefinder-1.0.0.jar`.
+
+> Le `.jar` est aussi build automatiquement par GitHub Actions a chaque push. Tu peux le telecharger depuis l'onglet **Actions > Build Plugin > Artifacts**.
 
 ## Guide 24/7
 
@@ -392,18 +403,29 @@ The HUD displays in real-time:
 
 ## Installation
 
-1. Build the plugin: `./gradlew build`
-2. Copy the `.jar` from `build/libs/` to `.minecraft/rusherhack/plugins/`
-3. Launch Minecraft with RusherHack and the flag `-Drusherhack.enablePlugins=true`
-4. The module appears in the **External** category
+### Quick install (recommended)
 
-## Build
+1. Go to the **[Releases](../../releases)** tab
+2. Download `basefinder-1.0.0.jar` from the latest release
+3. Place the `.jar` in `.minecraft/rusherhack/plugins/`
+4. Launch Minecraft with RusherHack
+5. The module appears in the **External** category
+
+> **Required:** RusherHack installed + Minecraft 1.21.4
+
+### Build from source
+
+If you want to compile yourself:
 
 ```bash
+git clone <repo-url>
+cd 2b2t_addons
 ./gradlew build
 ```
 
 The jar is located at `build/libs/basefinder-1.0.0.jar`.
+
+> The `.jar` is also built automatically by GitHub Actions on every push. You can download it from the **Actions > Build Plugin > Artifacts** tab.
 
 ## 24/7 Guide
 
