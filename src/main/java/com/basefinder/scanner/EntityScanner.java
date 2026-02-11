@@ -11,8 +11,8 @@ import net.minecraft.world.entity.animal.horse.Horse;
 import net.minecraft.world.entity.animal.horse.Donkey;
 import net.minecraft.world.entity.animal.horse.Llama;
 import net.minecraft.world.entity.npc.Villager;
-import net.minecraft.world.entity.vehicle.ChestMinecart;
-import net.minecraft.world.entity.vehicle.HopperMinecart;
+import net.minecraft.world.entity.vehicle.MinecartChest;
+import net.minecraft.world.entity.vehicle.MinecartHopper;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.AABB;
 
@@ -47,12 +47,12 @@ public class EntityScanner {
         int minZ = chunkPos.getMinBlockZ();
 
         // Get all entities in this chunk's area
-        AABB chunkBox = new AABB(minX, mc.level.getMinBuildHeight(), minZ,
-                minX + 16, mc.level.getMaxBuildHeight(), minZ + 16);
+        AABB chunkBox = new AABB(minX, mc.level.getMinY(), minZ,
+                minX + 16, mc.level.getMaxY(), minZ + 16);
 
         List<Entity> entities;
         try {
-            entities = mc.level.getEntities(null, chunkBox, e -> true);
+            entities = mc.level.getEntities((Entity) null, chunkBox, e -> true);
         } catch (Exception e) {
             return; // Silently fail if entity query fails
         }
@@ -71,9 +71,9 @@ public class EntityScanner {
                 itemFrameCount++;
             } else if (entity instanceof ArmorStand) {
                 armorStandCount++;
-            } else if (entity instanceof ChestMinecart) {
+            } else if (entity instanceof MinecartChest) {
                 chestMinecartCount++;
-            } else if (entity instanceof HopperMinecart) {
+            } else if (entity instanceof MinecartHopper) {
                 hopperMinecartCount++;
             } else if (entity instanceof Villager) {
                 villagerCount++;

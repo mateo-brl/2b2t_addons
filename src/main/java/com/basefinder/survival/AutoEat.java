@@ -122,7 +122,7 @@ public class AutoEat {
         if (stack.is(Items.COOKED_CHICKEN)) return 3;
         if (stack.is(Items.APPLE)) return 2;
         // Generic food check
-        if (stack.getFoodProperties(mc.player) != null) return 1;
+        if (stack.has(net.minecraft.core.component.DataComponents.FOOD)) return 1;
         return -1;
     }
 
