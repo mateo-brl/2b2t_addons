@@ -22,6 +22,28 @@ public class ChunkAnalysis {
     private BaseType baseType = BaseType.NONE;
     private final List<SignificantBlock> significantBlocks = new ArrayList<>();
 
+    // Entity scanner data
+    private double entityScore;
+    private int entityCount;
+
+    // Cluster scoring data
+    private double clusterScore;
+    private int clusterSize;
+
+    // Freshness estimation
+    private Freshness freshness = Freshness.UNKNOWN;
+    private double freshnessConfidence = 0;
+
+    // Distance from spawn (0,0)
+    private double distanceFromSpawn;
+
+    public enum Freshness {
+        UNKNOWN,
+        ACTIVE,     // Recent activity (new chunks nearby, fresh blocks)
+        ABANDONED,  // Old, likely unused (all old chunks, weathered)
+        ANCIENT     // Very old, pre-1.18 era
+    }
+
     public ChunkAnalysis(ChunkPos chunkPos) {
         this.chunkPos = chunkPos;
     }
@@ -53,6 +75,28 @@ public class ChunkAnalysis {
     public BaseType getBaseType() { return baseType; }
     public void setBaseType(BaseType baseType) { this.baseType = baseType; }
     public List<SignificantBlock> getSignificantBlocks() { return significantBlocks; }
+
+    // Entity scanner accessors
+    public double getEntityScore() { return entityScore; }
+    public void setEntityScore(double entityScore) { this.entityScore = entityScore; }
+    public int getEntityCount() { return entityCount; }
+    public void setEntityCount(int entityCount) { this.entityCount = entityCount; }
+
+    // Cluster scoring accessors
+    public double getClusterScore() { return clusterScore; }
+    public void setClusterScore(double clusterScore) { this.clusterScore = clusterScore; }
+    public int getClusterSize() { return clusterSize; }
+    public void setClusterSize(int clusterSize) { this.clusterSize = clusterSize; }
+
+    // Freshness accessors
+    public Freshness getFreshness() { return freshness; }
+    public void setFreshness(Freshness freshness) { this.freshness = freshness; }
+    public double getFreshnessConfidence() { return freshnessConfidence; }
+    public void setFreshnessConfidence(double confidence) { this.freshnessConfidence = confidence; }
+
+    // Distance from spawn
+    public double getDistanceFromSpawn() { return distanceFromSpawn; }
+    public void setDistanceFromSpawn(double distance) { this.distanceFromSpawn = distance; }
 
     public BlockPos getCenterBlockPos() {
         return new BlockPos(chunkPos.getMiddleBlockX(), 64, chunkPos.getMiddleBlockZ());

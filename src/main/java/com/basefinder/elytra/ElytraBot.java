@@ -12,6 +12,8 @@ import com.basefinder.util.Lang;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.client.api.utils.InventoryUtils;
 
+import java.util.Random;
+
 /**
  * Automated elytra flight controller.
  * Handles takeoff, cruise altitude, firework boosting, elytra durability auto-swap, and landing.
@@ -44,6 +46,15 @@ public class ElytraBot {
     private int lastFireworkCount = -1;
     private boolean lowFireworkWarned = false;
 
+    // Anti-kick / anti-detection noise
+    private boolean useFlightNoise = true;
+    private final Random noiseRandom = new Random();
+    private float yawNoise = 0;
+    private float pitchNoise = 0;
+    private double altitudeNoise = 0;
+    private int noiseChangeInterval = 40; // change noise direction every 2 seconds
+    private int noiseTimer = 0;
+
     // State
     private FlightState state = FlightState.IDLE;
     private int takeoffTimer = 0;
@@ -70,6 +81,11 @@ public class ElytraBot {
 
         tickCounter++;
         if (fireworkCooldown > 0) fireworkCooldown--;
+
+        // Update anti-kick flight noise
+        if (useFlightNoise) {
+            updateFlightNoise();
+        }
 
         // Process pending firework use (delayed slot sync)
         if (pendingFireworkSlot >= 0) {
@@ -374,12 +390,13 @@ public class ElytraBot {
             targetYaw = calculateYawToTarget(destination);
         }
 
-        // Maintain altitude
+        // Maintain altitude (with noise variation for anti-detection)
+        double effectiveCruise = cruiseAltitude + (useFlightNoise ? altitudeNoise : 0);
         double y = mc.player.getY();
-        if (y < cruiseAltitude - 10) {
+        if (y < effectiveCruise - 10) {
             targetPitch = -20.0f; // nose up
             useFireworkIfNeeded();
-        } else if (y > cruiseAltitude + 10) {
+        } else if (y > effectiveCruise + 10) {
             targetPitch = 10.0f; // nose down slightly
         } else {
             targetPitch = -2.0f; // cruise
@@ -559,16 +576,44 @@ public class ElytraBot {
         return findFireworkSlot() >= 0 || findFireworkInHotbar() >= 0;
     }
 
+    // ===== ANTI-KICK FLIGHT NOISE =====
+
+    /**
+     * Updates flight noise values to make movement look more human-like.
+     * Adds subtle random variations to yaw, pitch and altitude to avoid
+     * anti-cheat detection on 2b2t.
+     *
+     * Changes:
+     * - Small yaw jitter (±2 degrees)
+     * - Small pitch jitter (±1 degree)
+     * - Altitude micro-variations (±3 blocks)
+     */
+    private void updateFlightNoise() {
+        noiseTimer++;
+        if (noiseTimer >= noiseChangeInterval) {
+            noiseTimer = 0;
+            // Smooth random walk: new target noise values
+            yawNoise = (noiseRandom.nextFloat() - 0.5f) * 4.0f;   // ±2 degrees
+            pitchNoise = (noiseRandom.nextFloat() - 0.5f) * 2.0f; // ±1 degree
+            altitudeNoise = (noiseRandom.nextDouble() - 0.5) * 6.0; // ±3 blocks
+            // Vary the interval slightly to be less predictable
+            noiseChangeInterval = 30 + noiseRandom.nextInt(30); // 1.5-3 seconds
+        }
+    }
+
     // ===== ROTATION =====
 
     private void applyRotation() {
         if (mc.player == null) return;
-        // Smoothly interpolate rotation
+        // Smoothly interpolate rotation with optional noise
         float currentYaw = mc.player.getYRot();
         float currentPitch = mc.player.getXRot();
 
-        float yawDiff = wrapDegrees(targetYaw - currentYaw);
-        float pitchDiff = targetPitch - currentPitch;
+        float noiseY = useFlightNoise ? yawNoise : 0;
+        float noiseP = useFlightNoise ? pitchNoise : 0;
+
+        float yawDiff = wrapDegrees((targetYaw + noiseY) - currentYaw);
+        float pitchDiff = (targetPitch + noiseP) - currentPitch;
 
         float yawStep = Math.min(Math.abs(yawDiff), 5.0f) * Math.signum(yawDiff);
         float pitchStep = Math.min(Math.abs(pitchDiff), 3.0f) * Math.signum(pitchDiff);
@@ -601,6 +646,7 @@ public class ElytraBot {
     public void setMinAltitude(double alt) { this.minAltitude = alt; }
     public void setFireworkInterval(int ticks) { this.fireworkInterval = ticks; }
     public void setMinElytraDurability(int durability) { this.minElytraDurability = durability; }
+    public void setUseFlightNoise(boolean v) { this.useFlightNoise = v; }
 
     public int getFireworkCount() {
         int count = 0;

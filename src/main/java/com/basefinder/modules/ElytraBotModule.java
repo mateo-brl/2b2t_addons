@@ -25,6 +25,7 @@ public class ElytraBotModule extends ToggleableModule {
     private final NumberSetting<Double> minAltitude = new NumberSetting<>("Altitude minimum", 100.0, 30.0, 200.0);
     private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Intervalle fusées", 40, 10, 100);
     private final NumberSetting<Integer> minDurability = new NumberSetting<>("Durabilité min. elytra", 10, 1, 100);
+    private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick bruit", true);
 
     // --- LANGUE / LANGUAGE ---
     private final BooleanSetting langFr = new BooleanSetting("Français", true);
@@ -39,6 +40,7 @@ public class ElytraBotModule extends ToggleableModule {
                 minAltitude,
                 fireworkInterval,
                 minDurability,
+                antiKickNoise,
                 langFr
         );
     }
@@ -84,6 +86,7 @@ public class ElytraBotModule extends ToggleableModule {
         elytraBot.setMinAltitude(minAltitude.getValue());
         elytraBot.setFireworkInterval(fireworkInterval.getValue());
         elytraBot.setMinElytraDurability(minDurability.getValue());
+        elytraBot.setUseFlightNoise(antiKickNoise.getValue());
 
         BlockPos target = new BlockPos(targetX.getValue(), 200, targetZ.getValue());
         elytraBot.startFlight(target);
