@@ -7,11 +7,12 @@ import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.core.event.subscribe.Subscribe;
+import org.rusherhack.core.setting.BooleanSetting;
 import org.rusherhack.core.setting.NumberSetting;
 
 /**
  * Standalone elytra flight module.
- * Can be used independently of BaseFinder to fly to specific coordinates.
+ * Auto-swaps elytra when durability is low. Lands safely when none left.
  */
 public class ElytraBotModule extends ToggleableModule {
 
@@ -22,6 +23,7 @@ public class ElytraBotModule extends ToggleableModule {
     private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Cruise Altitude", 200.0, 50.0, 350.0);
     private final NumberSetting<Double> minAltitude = new NumberSetting<>("Min Altitude", 100.0, 30.0, 200.0);
     private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Firework Interval", 40, 10, 100);
+    private final NumberSetting<Integer> minDurability = new NumberSetting<>("Min Elytra Durability", 10, 1, 100);
 
     public ElytraBotModule() {
         super("ElytraBot", "Automated elytra flight to coordinates", ModuleCategory.EXTERNAL);
@@ -31,7 +33,8 @@ public class ElytraBotModule extends ToggleableModule {
                 targetZ,
                 cruiseAltitude,
                 minAltitude,
-                fireworkInterval
+                fireworkInterval,
+                minDurability
         );
     }
 
@@ -66,9 +69,18 @@ public class ElytraBotModule extends ToggleableModule {
             ChatUtils.print("[ElytraBot] Found " + fireworks + " fireworks.");
         }
 
+        // Show elytra count and durability info
+        int elytraCount = elytraBot.getElytraCount();
+        int durability = elytraBot.getEquippedElytraDurability();
+        ChatUtils.print("[ElytraBot] Elytra: " + elytraCount + " usable | Current durability: " + durability);
+        if (elytraCount > 1) {
+            ChatUtils.print("[ElytraBot] Auto-swap enabled (swap at " + minDurability.getValue() + " durability)");
+        }
+
         elytraBot.setCruiseAltitude(cruiseAltitude.getValue());
         elytraBot.setMinAltitude(minAltitude.getValue());
         elytraBot.setFireworkInterval(fireworkInterval.getValue());
+        elytraBot.setMinElytraDurability(minDurability.getValue());
 
         BlockPos target = new BlockPos(targetX.getValue(), 200, targetZ.getValue());
         elytraBot.startFlight(target);
@@ -106,6 +118,13 @@ public class ElytraBotModule extends ToggleableModule {
         // Check if we ran out of fireworks and are on ground
         if (!elytraBot.isFlying() && mc.player.onGround() && elytraBot.getFireworkCount() == 0) {
             ChatUtils.print("[ElytraBot] No fireworks remaining. Stopping.");
+            this.toggle();
+            return;
+        }
+
+        // Check if landed after emergency (no elytra left)
+        if (!elytraBot.isFlying() && mc.player.onGround() && elytraBot.getElytraCount() == 0) {
+            ChatUtils.print("[ElytraBot] No elytra remaining. Stopped.");
             this.toggle();
         }
     }

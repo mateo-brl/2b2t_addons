@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
@@ -12,7 +13,7 @@ import org.rusherhack.client.api.utils.InventoryUtils;
 
 /**
  * Automated elytra flight controller.
- * Handles takeoff, cruise altitude, firework boosting, and landing.
+ * Handles takeoff, cruise altitude, firework boosting, elytra durability auto-swap, and landing.
  */
 public class ElytraBot {
 
@@ -29,6 +30,18 @@ public class ElytraBot {
     private float targetPitch = -2.0f; // slight nose-up for cruise
     private boolean isFlying = false;
     private BlockPos destination = null;
+
+    // Elytra durability
+    private int minElytraDurability = 10; // swap when remaining durability <= this
+    private int durabilityCheckInterval = 20; // check every second
+
+    // Elytra swap state machine (3-tick process: pickup → equip → putdown)
+    private int elytraSwapStep = 0; // 0=none, 1=pickup, 2=equip, 3=putdown
+    private int elytraSwapSlot = -1;
+
+    // Firework monitoring
+    private int lastFireworkCount = -1;
+    private boolean lowFireworkWarned = false;
 
     // State
     private FlightState state = FlightState.IDLE;
@@ -62,6 +75,12 @@ public class ElytraBot {
             useFireworkIfNeeded();
         }
 
+        // Process elytra swap steps (1 step per tick for server sync)
+        if (elytraSwapStep > 0) {
+            processElytraSwap();
+            return; // Don't do anything else during swap
+        }
+
         // Detect if stuck
         Vec3 currentPos = mc.player.position();
         if (lastPosition != null && currentPos.distanceTo(lastPosition) < 0.01 && state != FlightState.IDLE) {
@@ -76,6 +95,11 @@ public class ElytraBot {
             LOGGER.info("[ElytraBot] State: {}, isFallFlying: {}, onGround: {}, Y: {}, Dest: {}",
                 state, mc.player.isFallFlying(), mc.player.onGround(),
                 (int) mc.player.getY(), destination != null ? destination.toShortString() : "none");
+        }
+
+        // Check elytra durability periodically during flight
+        if (tickCounter % durabilityCheckInterval == 0 && isFlying && state != FlightState.LANDING && state != FlightState.IDLE) {
+            checkElytraDurability();
         }
 
         switch (state) {
@@ -116,7 +140,167 @@ public class ElytraBot {
         isFlying = false;
         state = FlightState.IDLE;
         destination = null;
+        elytraSwapStep = 0;
+        elytraSwapSlot = -1;
+        lastFireworkCount = -1;
+        lowFireworkWarned = false;
     }
+
+    // ===== ELYTRA DURABILITY MANAGEMENT =====
+
+    /**
+     * Checks the equipped elytra's durability and initiates a swap if needed.
+     */
+    private void checkElytraDurability() {
+        if (mc.player == null) return;
+
+        ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+
+        // Not wearing elytra at all - try to equip one
+        if (!chest.is(Items.ELYTRA)) {
+            int spareSlot = findElytraInInventory();
+            if (spareSlot >= 0) {
+                ChatUtils.print("[ElytraBot] No elytra equipped! Equipping from inventory...");
+                startElytraSwap(spareSlot);
+            } else {
+                ChatUtils.print("[ElytraBot] No elytra available! Emergency landing...");
+                initiateEmergencyLanding();
+            }
+            return;
+        }
+
+        // Check remaining durability
+        int remaining = chest.getMaxDamage() - chest.getDamageValue();
+        LOGGER.info("[ElytraBot] Elytra durability: {}/{}", remaining, chest.getMaxDamage());
+
+        if (remaining <= minElytraDurability) {
+            // Low durability - try to swap
+            int spareSlot = findElytraInInventory();
+            if (spareSlot >= 0) {
+                ChatUtils.print("[ElytraBot] Elytra low (" + remaining + " durability)! Swapping...");
+                startElytraSwap(spareSlot);
+            } else {
+                // No spare elytra - warn and prepare to land
+                ChatUtils.print("[ElytraBot] Elytra low (" + remaining + ") and no spare! Landing...");
+                initiateEmergencyLanding();
+            }
+        }
+    }
+
+    /**
+     * Find a usable elytra in the player's inventory (not equipped).
+     * Returns the container slot index, or -1 if none found.
+     */
+    private int findElytraInInventory() {
+        if (mc.player == null) return -1;
+
+        // Search main inventory (slots 9-35) and hotbar (slots 36-44)
+        for (int i = 9; i <= 44; i++) {
+            ItemStack stack = mc.player.inventoryMenu.getSlot(i).getItem();
+            if (stack.is(Items.ELYTRA)) {
+                int durability = stack.getMaxDamage() - stack.getDamageValue();
+                if (durability > minElytraDurability) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Count how many usable elytra are in the inventory (including equipped).
+     */
+    public int getElytraCount() {
+        if (mc.player == null) return 0;
+
+        int count = 0;
+        // Check equipped
+        ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        if (chest.is(Items.ELYTRA) && (chest.getMaxDamage() - chest.getDamageValue()) > minElytraDurability) {
+            count++;
+        }
+        // Check inventory
+        for (int i = 9; i <= 44; i++) {
+            ItemStack stack = mc.player.inventoryMenu.getSlot(i).getItem();
+            if (stack.is(Items.ELYTRA) && (stack.getMaxDamage() - stack.getDamageValue()) > minElytraDurability) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Get the durability of the currently equipped elytra.
+     * Returns -1 if not wearing elytra.
+     */
+    public int getEquippedElytraDurability() {
+        if (mc.player == null) return -1;
+        ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        if (!chest.is(Items.ELYTRA)) return -1;
+        return chest.getMaxDamage() - chest.getDamageValue();
+    }
+
+    /**
+     * Start the 3-tick elytra swap process.
+     */
+    private void startElytraSwap(int inventorySlot) {
+        elytraSwapSlot = inventorySlot;
+        elytraSwapStep = 1;
+        LOGGER.info("[ElytraBot] Starting elytra swap from slot {}", inventorySlot);
+    }
+
+    /**
+     * Process one step of the elytra swap per tick.
+     * Step 1: Pick up new elytra from inventory slot
+     * Step 2: Click chest armor slot to swap
+     * Step 3: Put old elytra in original slot
+     */
+    private void processElytraSwap() {
+        if (mc.player == null || mc.gameMode == null || elytraSwapSlot < 0) {
+            elytraSwapStep = 0;
+            elytraSwapSlot = -1;
+            return;
+        }
+
+        int containerId = mc.player.inventoryMenu.containerId;
+
+        switch (elytraSwapStep) {
+            case 1 -> {
+                // Pick up new elytra from inventory
+                mc.gameMode.handleInventoryMouseClick(containerId, elytraSwapSlot, 0, ClickType.PICKUP, mc.player);
+                elytraSwapStep = 2;
+                LOGGER.info("[ElytraBot] Swap step 1: picked up elytra from slot {}", elytraSwapSlot);
+            }
+            case 2 -> {
+                // Click chest slot to swap (slot 6 = chestplate in inventoryMenu)
+                mc.gameMode.handleInventoryMouseClick(containerId, 6, 0, ClickType.PICKUP, mc.player);
+                elytraSwapStep = 3;
+                LOGGER.info("[ElytraBot] Swap step 2: clicked chest slot");
+            }
+            case 3 -> {
+                // Put old elytra in original inventory slot
+                mc.gameMode.handleInventoryMouseClick(containerId, elytraSwapSlot, 0, ClickType.PICKUP, mc.player);
+                elytraSwapStep = 0;
+                elytraSwapSlot = -1;
+                ChatUtils.print("[ElytraBot] Elytra swapped! Durability: " + getEquippedElytraDurability());
+                LOGGER.info("[ElytraBot] Swap step 3: completed swap");
+            }
+            default -> {
+                elytraSwapStep = 0;
+                elytraSwapSlot = -1;
+            }
+        }
+    }
+
+    /**
+     * Initiate safe emergency landing when no elytra is available.
+     */
+    private void initiateEmergencyLanding() {
+        state = FlightState.DESCENDING;
+        // The descending handler will transition to landing
+    }
+
+    // ===== FLIGHT STATE HANDLERS =====
 
     private void handleTakeoff() {
         if (mc.player == null) return;
@@ -220,10 +404,8 @@ public class ElytraBot {
             }
         }
 
-        // Check firework supply
-        if (!hasFireworks()) {
-            state = FlightState.REFUELING;
-        }
+        // Monitor firework supply
+        checkFireworkSupply();
     }
 
     private void handleDescending() {
@@ -234,11 +416,17 @@ public class ElytraBot {
             return;
         }
 
-        targetPitch = 30.0f; // nose down
+        // Gentle descent - aim for safe landing
+        targetPitch = 15.0f; // nose down gently
         if (destination != null) {
             targetYaw = calculateYawToTarget(destination);
         }
         applyRotation();
+
+        // Near ground - slow down
+        if (mc.player.getY() < 80) {
+            targetPitch = 5.0f; // flatten out to slow descent
+        }
 
         if (mc.player.getY() < minAltitude || mc.player.onGround()) {
             state = FlightState.LANDING;
@@ -250,6 +438,7 @@ public class ElytraBot {
         if (mc.player != null && mc.player.onGround()) {
             state = FlightState.IDLE;
             isFlying = false;
+            ChatUtils.print("[ElytraBot] Landed.");
         }
     }
 
@@ -258,15 +447,57 @@ public class ElytraBot {
         int fireworkSlot = findFireworkSlot();
         if (fireworkSlot >= 0) {
             state = FlightState.CRUISING;
+            lowFireworkWarned = false;
         } else {
-            // No fireworks, try to glide
-            targetPitch = -5.0f;
+            // No fireworks - gentle glide descent
+            targetPitch = -3.0f; // very gentle descent to maximize glide distance
+            if (destination != null) {
+                targetYaw = calculateYawToTarget(destination);
+            }
             applyRotation();
             if (mc.player != null && mc.player.getY() < minAltitude) {
+                ChatUtils.print("[ElytraBot] No fireworks! Landing...");
                 state = FlightState.LANDING;
             }
         }
     }
+
+    /**
+     * Monitor firework supply and warn when getting low.
+     * Plans ahead: if only a few fireworks left, starts descending early
+     * instead of waiting until completely empty at high altitude.
+     */
+    private void checkFireworkSupply() {
+        if (mc.player == null) return;
+
+        int currentCount = getFireworkCount();
+
+        // Track firework usage
+        if (lastFireworkCount >= 0 && currentCount < lastFireworkCount) {
+            LOGGER.info("[ElytraBot] Firework used: {} remaining", currentCount);
+        }
+        lastFireworkCount = currentCount;
+
+        // No fireworks at all - enter refueling/landing
+        if (currentCount == 0) {
+            state = FlightState.REFUELING;
+            return;
+        }
+
+        // Low firework warning (<=5 left)
+        if (currentCount <= 5 && !lowFireworkWarned) {
+            lowFireworkWarned = true;
+            ChatUtils.print("[ElytraBot] Low fireworks! Only " + currentCount + " remaining.");
+        }
+
+        // Critical: 2 or fewer fireworks - start descending to save them for landing
+        if (currentCount <= 2 && mc.player.getY() > minAltitude + 30) {
+            ChatUtils.print("[ElytraBot] Almost out of fireworks (" + currentCount + ")! Descending to safe altitude...");
+            state = FlightState.DESCENDING;
+        }
+    }
+
+    // ===== FIREWORK MANAGEMENT =====
 
     /**
      * Use a firework rocket if cooldown allows.
@@ -328,6 +559,8 @@ public class ElytraBot {
         return findFireworkSlot() >= 0 || findFireworkInHotbar() >= 0;
     }
 
+    // ===== ROTATION =====
+
     private void applyRotation() {
         if (mc.player == null) return;
         // Smoothly interpolate rotation
@@ -358,7 +591,8 @@ public class ElytraBot {
         return degrees;
     }
 
-    // Getters/Setters
+    // ===== GETTERS / SETTERS =====
+
     public boolean isFlying() { return isFlying; }
     public FlightState getState() { return state; }
     public BlockPos getDestination() { return destination; }
@@ -366,6 +600,8 @@ public class ElytraBot {
     public void setCruiseAltitude(double alt) { this.cruiseAltitude = alt; }
     public void setMinAltitude(double alt) { this.minAltitude = alt; }
     public void setFireworkInterval(int ticks) { this.fireworkInterval = ticks; }
+    public void setMinElytraDurability(int durability) { this.minElytraDurability = durability; }
+
     public int getFireworkCount() {
         int count = 0;
         if (mc.player != null) {
