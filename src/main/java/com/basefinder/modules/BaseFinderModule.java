@@ -64,59 +64,68 @@ public class BaseFinderModule extends ToggleableModule {
 
     // === Settings ===
 
-    // --- MODE : Paramètres de recherche ---
-    private final NullSetting modeGroup = new NullSetting("Mode");
-    private final BooleanSetting useElytra = new BooleanSetting("Vol Elytra", "Vol automatique entre les zones", true);
-    private final EnumSetting<NavigationHelper.SearchPattern> searchMode = new EnumSetting<>("Mode de recherche", "Cliquez pour changer le mode de recherche", NavigationHelper.SearchPattern.SPIRAL);
+    // --- MODE DE RECHERCHE ---
+    private final NullSetting modeGroup = new NullSetting("Mode de recherche");
+    private final EnumSetting<NavigationHelper.SearchPattern> searchMode = new EnumSetting<>("Mode", NavigationHelper.SearchPattern.SPIRAL);
+    // Paramètres SPIRAL
+    private final NumberSetting<Double> spiralStep = new NumberSetting<>("Espacement spiral", 500.0, 100.0, 5000.0);
+    // Paramètres GRID (quadrillage)
+    private final NumberSetting<Integer> gridSize = new NumberSetting<>("Taille carrés", 1000, 200, 10000);
+    private final NumberSetting<Integer> gridRange = new NumberSetting<>("Zone totale", 50000, 5000, 500000);
+    // Paramètres ZONE (coordonnées exactes)
+    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("Zone min X", -10000, -30000000, 30000000);
+    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("Zone max X", 10000, -30000000, 30000000);
+    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Zone min Z", -10000, -30000000, 30000000);
+    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Zone max Z", 10000, -30000000, 30000000);
+    // Paramètres RANDOM
+    private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Distance min", 5000, 100, 50000);
+    private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Distance max", 100000, 10000, 500000);
+    // Paramètres RING
+    private final NumberSetting<Double> spiralRadius = new NumberSetting<>("Rayon anneau", 5000.0, 500.0, 200000.0);
+    // Paramètres HIGHWAYS
+    private final NumberSetting<Integer> highwayDist = new NumberSetting<>("Distance autoroute", 100000, 10000, 500000);
+    private final NumberSetting<Integer> highwayInterval = new NumberSetting<>("Intervalle scan", 1000, 100, 10000);
 
-    // --- DÉTECTION : Quoi chercher ---
+    // --- VOL ELYTRA ---
+    private final NullSetting flightGroup = new NullSetting("Vol Elytra");
+    private final BooleanSetting useElytra = new BooleanSetting("Activer le vol", "Voler en elytra entre les zones de scan", true);
+    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Altitude de vol", 200.0, 50.0, 350.0);
+    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Altitude atterrissage", 100.0, 30.0, 200.0);
+    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Délai entre fusées (ticks)", 40, 10, 100);
+    private final NumberSetting<Integer> minElytraDurability = new NumberSetting<>("Durabilité min elytra", 10, 1, 100);
+    private final BooleanSetting enableObstacleAvoidance = new BooleanSetting("Éviter les obstacles", "Monter automatiquement devant le terrain", true);
+    private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick AFK", "Mouvements subtils pour éviter d'être kick", true);
+
+    // --- DÉTECTION ---
     private final NullSetting detectGroup = new NullSetting("Détection");
     private final BooleanSetting detectConstruction = new BooleanSetting("Bases", "Structures construites par des joueurs", true);
     private final BooleanSetting detectStorage = new BooleanSetting("Stashes", "Shulkers, ender chests, stockage", true);
     private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", "Détecter les map arts au sol", true);
     private final BooleanSetting detectTrails = new BooleanSetting("Pistes", "Autoroutes de glace, chemins d'obsidienne", true);
     private final NumberSetting<Double> minScore = new NumberSetting<>("Sensibilité", 25.0, 5.0, 200.0);
-
-    // --- OPTIMISATIONS : Nouvelles fonctionnalités ---
-    private final NullSetting optimGroup = new NullSetting("Optimisations");
     private final BooleanSetting useEntityScanning = new BooleanSetting("Scan entités", "Scanner véhicules, animaux dressés, armures", true);
     private final BooleanSetting useClusterScoring = new BooleanSetting("Score cluster", "Regrouper les blocs proches pour un meilleur score", true);
+    private final BooleanSetting followTrails = new BooleanSetting("Suivre les pistes", "Suivre automatiquement les pistes détectées", true);
     private final BooleanSetting autoScreenshot = new BooleanSetting("Auto capture", "Capturer l'écran à chaque découverte", false);
-    private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick bruit", "Petits mouvements aléatoires pour éviter l'AFK kick", true);
 
-    // --- SURVIE 24/7 : Système de survie automatique ---
+    // --- SURVIE 24/7 ---
     private final NullSetting survivalGroup = new NullSetting("Survie 24/7");
-    private final BooleanSetting enableAutoTotem = new BooleanSetting("Auto totem", "Garder un totem en offhand", true);
+    private final BooleanSetting enableAutoTotem = new BooleanSetting("Auto totem", "Garder un totem en offhand automatiquement", true);
     private final BooleanSetting enableAutoEat = new BooleanSetting("Auto manger", "Manger quand la faim est basse", true);
-    private final BooleanSetting enablePlayerDetection = new BooleanSetting("Radar joueurs", "Déconnexion auto si joueur détecté", true);
-    private final NumberSetting<Double> playerDetectRange = new NumberSetting<>("Portée radar", 200.0, 50.0, 500.0);
-    private final BooleanSetting enableFireworkResupply = new BooleanSetting("Réappro fusées", "Réappro depuis shulkers", true);
-    private final NumberSetting<Integer> resupplyThreshold = new NumberSetting<>("Seuil réappro", 16, 4, 64);
     private final NumberSetting<Integer> healthThreshold = new NumberSetting<>("Seuil santé", 10, 2, 20);
-    private final BooleanSetting enableObstacleAvoidance = new BooleanSetting("Évitement obstacles", "Détecter le terrain devant", true);
-    private final BooleanSetting enableAutoSave = new BooleanSetting("Sauvegarde auto", "Sauvegarder l'état toutes les 5 min", true);
-    private final BooleanSetting enable2b2tLag = new BooleanSetting("Compensation lag 2b2t", "Adapter les timings au TPS du serveur", true);
+    private final BooleanSetting enablePlayerDetection = new BooleanSetting("Radar joueurs", "Se déconnecter si un joueur est détecté", true);
+    private final NumberSetting<Double> playerDetectRange = new NumberSetting<>("Portée radar (blocs)", 200.0, 50.0, 500.0);
+    private final BooleanSetting enableFireworkResupply = new BooleanSetting("Réappro fusées", "Prendre des fusées dans les shulkers", true);
+    private final NumberSetting<Integer> resupplyThreshold = new NumberSetting<>("Réappro quand < fusées", 16, 4, 64);
+    private final BooleanSetting enable2b2tLag = new BooleanSetting("Compensation lag 2b2t", "Adapter les timings quand le serveur lag", true);
+    private final BooleanSetting enableAutoSave = new BooleanSetting("Sauvegarde auto", "Sauvegarder la session toutes les 5 min", true);
 
-    // --- VOL : Paramètres elytra ---
-    private final NullSetting flightGroup = new NullSetting("Vol");
-    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Altitude", 200.0, 50.0, 350.0);
-    private final NumberSetting<Double> minAltitude = new NumberSetting<>("Atterrir sous", 100.0, 30.0, 200.0);
-    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Délai fusées", 40, 10, 100);
-    private final NumberSetting<Integer> minElytraDurability = new NumberSetting<>("Durabilité échange", 10, 1, 100);
-
-    // --- AVANCÉ : Réglages fins ---
+    // --- AVANCÉ ---
     private final NullSetting advancedGroup = new NullSetting("Avancé");
-    private final BooleanSetting followTrails = new BooleanSetting("Suivi auto pistes", "Suivre automatiquement les pistes détectées", true);
     private final BooleanSetting useChunkTrails = new BooleanSetting("Détection âge chunks", "Utiliser l'âge des chunks pour détecter les pistes", true);
     private final BooleanSetting useVersionBorders = new BooleanSetting("Bordures de version", "Détecter les frontières entre versions de Minecraft", true);
-    private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Vitesse scan", 20, 5, 100);
+    private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Vitesse scan (ticks)", 20, 5, 100);
     private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Rayon waypoint", 100.0, 20.0, 500.0);
-    private final NumberSetting<Double> spiralStep = new NumberSetting<>("Espacement waypoints", 500.0, 100.0, 5000.0);
-    private final NumberSetting<Double> spiralRadius = new NumberSetting<>("Rayon anneau", 5000.0, 500.0, 200000.0);
-    private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Distance min aléatoire", 5000, 100, 50000);
-    private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Distance max aléatoire", 100000, 10000, 500000);
-    private final NumberSetting<Integer> highwayDist = new NumberSetting<>("Distance autoroute", 100000, 10000, 500000);
-    private final NumberSetting<Integer> highwayInterval = new NumberSetting<>("Intervalle autoroute", 1000, 100, 10000);
 
     // --- LOG ---
     private final BooleanSetting logToChat = new BooleanSetting("Alertes chat", "Afficher les découvertes dans le chat", true);
@@ -135,25 +144,38 @@ public class BaseFinderModule extends ToggleableModule {
     }
 
     public BaseFinderModule() {
-        super("BaseHunter", "Chasse de bases automatique - scan des chunks, suivi de pistes, vol elytra", ModuleCategory.EXTERNAL);
+        super("BaseHunter", "Chasse de bases automatique sur 2b2t", ModuleCategory.EXTERNAL);
 
-        // Register settings with groups
-        modeGroup.addSubSettings(useElytra, searchMode);
-        detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails, minScore);
-        optimGroup.addSubSettings(useEntityScanning, useClusterScoring, autoScreenshot, antiKickNoise);
-        survivalGroup.addSubSettings(enableAutoTotem, enableAutoEat, enablePlayerDetection, playerDetectRange,
-                enableFireworkResupply, resupplyThreshold, healthThreshold, enableObstacleAvoidance, enableAutoSave,
-                enable2b2tLag);
-        flightGroup.addSubSettings(cruiseAltitude, minAltitude, fireworkInterval, minElytraDurability);
-        advancedGroup.addSubSettings(followTrails, useChunkTrails, useVersionBorders, scanIntervalSetting,
-                waypointThreshold, spiralStep, spiralRadius, searchMinDist, searchMaxDist, highwayDist, highwayInterval);
+        // Mode de recherche avec paramètres spécifiques par mode
+        modeGroup.addSubSettings(searchMode, spiralStep,
+                gridSize, gridRange,
+                zoneMinX, zoneMaxX, zoneMinZ, zoneMaxZ,
+                searchMinDist, searchMaxDist,
+                spiralRadius,
+                highwayDist, highwayInterval);
+
+        // Vol elytra
+        flightGroup.addSubSettings(useElytra, cruiseAltitude, minAltitude, fireworkInterval,
+                minElytraDurability, enableObstacleAvoidance, antiKickNoise);
+
+        // Détection
+        detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails,
+                minScore, useEntityScanning, useClusterScoring, followTrails, autoScreenshot);
+
+        // Survie
+        survivalGroup.addSubSettings(enableAutoTotem, enableAutoEat, healthThreshold,
+                enablePlayerDetection, playerDetectRange,
+                enableFireworkResupply, resupplyThreshold,
+                enable2b2tLag, enableAutoSave);
+
+        // Avancé
+        advancedGroup.addSubSettings(useChunkTrails, useVersionBorders, scanIntervalSetting, waypointThreshold);
 
         this.registerSettings(
                 modeGroup,
-                detectGroup,
-                optimGroup,
-                survivalGroup,
                 flightGroup,
+                detectGroup,
+                survivalGroup,
                 advancedGroup,
                 logToChat,
                 logToFile,
@@ -178,8 +200,17 @@ public class BaseFinderModule extends ToggleableModule {
         // Initialize navigation with selected search mode
         NavigationHelper.SearchPattern pattern = searchMode.getValue();
 
-        // Apply ring radius
+        // Apply mode-specific parameters
+        navigation.setSpiralStep(spiralStep.getValue());
         navigation.setSpiralRadius(spiralRadius.getValue());
+        navigation.setSearchMinDistance(searchMinDist.getValue());
+        navigation.setSearchMaxDistance(searchMaxDist.getValue());
+        navigation.setHighwayDistance(highwayDist.getValue());
+        navigation.setHighwayCheckInterval(highwayInterval.getValue());
+        navigation.setGridSize(gridSize.getValue());
+        navigation.setGridRange(gridRange.getValue());
+        navigation.setZoneBounds(zoneMinX.getValue(), zoneMaxX.getValue(), zoneMinZ.getValue(), zoneMaxZ.getValue());
+
         navigation.initializeSearch(pattern, mc.player.blockPosition());
 
         state = FinderState.SCANNING;
@@ -189,9 +220,15 @@ public class BaseFinderModule extends ToggleableModule {
         // Show mode info
         String modeDesc = switch (pattern) {
             case SPIRAL -> Lang.t("Spiral outward from your position", "Spirale depuis votre position");
-            case HIGHWAYS -> Lang.t("Follow all 8 highways (cardinal + diagonal)", "Suivre les 8 autoroutes (cardinales + diagonales)");
-            case RANDOM -> Lang.t("Random positions within ", "Positions aléatoires entre ") + searchMinDist.getValue() + Lang.t("-", " et ") + searchMaxDist.getValue() + Lang.t(" blocks", " blocs");
-            case RING -> Lang.t("Circle at ", "Cercle à ") + String.format("%.0f", spiralRadius.getValue()) + Lang.t(" blocks radius", " blocs de rayon");
+            case GRID -> Lang.t("Grid: " + gridSize.getValue() + "x" + gridSize.getValue() + " squares over " + gridRange.getValue() + " blocks",
+                    "Grille : carrés de " + gridSize.getValue() + "x" + gridSize.getValue() + " sur " + gridRange.getValue() + " blocs");
+            case ZONE -> Lang.t("Zone: X[" + zoneMinX.getValue() + " to " + zoneMaxX.getValue() + "] Z[" + zoneMinZ.getValue() + " to " + zoneMaxZ.getValue() + "]",
+                    "Zone : X[" + zoneMinX.getValue() + " à " + zoneMaxX.getValue() + "] Z[" + zoneMinZ.getValue() + " à " + zoneMaxZ.getValue() + "]");
+            case HIGHWAYS -> Lang.t("Follow all 8 highways", "Suivre les 8 autoroutes");
+            case RANDOM -> Lang.t("Random within " + searchMinDist.getValue() + "-" + searchMaxDist.getValue() + " blocks",
+                    "Aléatoire entre " + searchMinDist.getValue() + " et " + searchMaxDist.getValue() + " blocs");
+            case RING -> Lang.t("Ring at " + String.format("%.0f", spiralRadius.getValue()) + " blocks radius",
+                    "Anneau à " + String.format("%.0f", spiralRadius.getValue()) + " blocs de rayon");
             case CUSTOM -> Lang.t("Custom waypoints", "Waypoints personnalisés");
         };
         ChatUtils.print("[BaseHunter] " + Lang.t("Started! Mode: ", "Démarré ! Mode : ") + pattern.name());
