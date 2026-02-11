@@ -7,6 +7,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import com.basefinder.util.Lang;
 import org.rusherhack.client.api.utils.ChatUtils;
@@ -45,6 +46,14 @@ public class ElytraBot {
     // Firework monitoring
     private int lastFireworkCount = -1;
     private boolean lowFireworkWarned = false;
+
+    // Obstacle avoidance
+    private boolean useObstacleAvoidance = true;
+    private boolean emergencyPullUp = false;
+    private int pullUpTimer = 0;
+    private static final int LOOK_AHEAD_DISTANCE = 40; // blocks ahead to check
+    private static final int EMERGENCY_HEIGHT_CHECK = 15; // blocks below to check ground proximity
+    private static final int PULL_UP_DURATION = 30; // ticks of emergency climb
 
     // Anti-kick / anti-detection noise
     private boolean useFlightNoise = true;
@@ -85,6 +94,16 @@ public class ElytraBot {
         // Update anti-kick flight noise
         if (useFlightNoise) {
             updateFlightNoise();
+        }
+
+        // Obstacle avoidance - check terrain ahead
+        if (useObstacleAvoidance && isFlying && mc.player.isFallFlying()) {
+            checkObstacles();
+        }
+
+        // Handle emergency pull-up (overrides normal flight)
+        if (emergencyPullUp) {
+            handleEmergencyPullUp();
         }
 
         // Process pending firework use (delayed slot sync)
@@ -314,6 +333,83 @@ public class ElytraBot {
     private void initiateEmergencyLanding() {
         state = FlightState.DESCENDING;
         // The descending handler will transition to landing
+    }
+
+    // ===== OBSTACLE AVOIDANCE =====
+
+    /**
+     * Check for terrain ahead and below. If obstacles are detected, trigger emergency pull-up.
+     * Checks: forward raycast (velocity direction) and ground proximity.
+     */
+    private void checkObstacles() {
+        if (mc.player == null || mc.level == null) return;
+
+        Vec3 pos = mc.player.position();
+        Vec3 velocity = mc.player.getDeltaMovement();
+        double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        if (hSpeed < 0.1) return; // Not moving fast enough to worry
+
+        // Normalize horizontal velocity for look-ahead direction
+        double nx = velocity.x / hSpeed;
+        double nz = velocity.z / hSpeed;
+
+        // Forward raycast - check blocks ahead at current altitude and slightly below
+        for (int dist = 5; dist <= LOOK_AHEAD_DISTANCE; dist += 5) {
+            double checkX = pos.x + nx * dist;
+            double checkZ = pos.z + nz * dist;
+
+            // Check at current Y and Y-3 (below eye level)
+            for (int dy = -3; dy <= 2; dy++) {
+                BlockPos checkPos = BlockPos.containing(checkX, pos.y + dy, checkZ);
+                BlockState blockState = mc.level.getBlockState(checkPos);
+                if (!blockState.isAir() && !blockState.liquid()) {
+                    // Obstacle ahead!
+                    if (!emergencyPullUp) {
+                        LOGGER.warn("[ElytraBot] Obstacle detected {} blocks ahead at Y={}", dist, checkPos.getY());
+                        emergencyPullUp = true;
+                        pullUpTimer = 0;
+                    }
+                    return;
+                }
+            }
+        }
+
+        // Ground proximity check - check blocks directly below
+        boolean groundClose = false;
+        for (int dy = 1; dy <= EMERGENCY_HEIGHT_CHECK; dy++) {
+            BlockPos below = BlockPos.containing(pos.x, pos.y - dy, pos.z);
+            if (!mc.level.getBlockState(below).isAir()) {
+                if (dy <= 8 && state == FlightState.CRUISING) {
+                    // Too close to ground while cruising
+                    groundClose = true;
+                }
+                break;
+            }
+        }
+
+        if (groundClose && !emergencyPullUp) {
+            LOGGER.warn("[ElytraBot] Ground proximity warning - pulling up");
+            emergencyPullUp = true;
+            pullUpTimer = 0;
+        }
+    }
+
+    /**
+     * Handle emergency pull-up: pitch up sharply and use firework to gain altitude fast.
+     */
+    private void handleEmergencyPullUp() {
+        if (mc.player == null) return;
+
+        pullUpTimer++;
+        targetPitch = -60.0f; // Steep climb
+        applyRotation();
+        useFireworkIfNeeded();
+
+        if (pullUpTimer >= PULL_UP_DURATION) {
+            emergencyPullUp = false;
+            pullUpTimer = 0;
+            LOGGER.info("[ElytraBot] Emergency pull-up complete, Y={}", (int) mc.player.getY());
+        }
     }
 
     // ===== FLIGHT STATE HANDLERS =====
@@ -647,6 +743,7 @@ public class ElytraBot {
     public void setFireworkInterval(int ticks) { this.fireworkInterval = ticks; }
     public void setMinElytraDurability(int durability) { this.minElytraDurability = durability; }
     public void setUseFlightNoise(boolean v) { this.useFlightNoise = v; }
+    public void setUseObstacleAvoidance(boolean v) { this.useObstacleAvoidance = v; }
 
     public int getFireworkCount() {
         int count = 0;

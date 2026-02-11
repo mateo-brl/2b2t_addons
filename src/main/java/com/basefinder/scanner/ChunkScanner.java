@@ -238,6 +238,45 @@ public class ChunkScanner {
         };
     }
 
+    private int cleanupCounter = 0;
+    private static final int CLEANUP_INTERVAL = 600; // Every 30 seconds (at 1 call/sec)
+    private static final int MAX_ANALYSES_SIZE = 50000; // Max cached analyses before cleanup
+
+    /**
+     * Periodically clean up memory by removing old analysis data far from the player.
+     * Keeps scannedChunks (lightweight) but purges heavy allAnalyses entries.
+     * Call this every scan cycle.
+     */
+    public void cleanupMemory() {
+        cleanupCounter++;
+        if (cleanupCounter % CLEANUP_INTERVAL != 0) return;
+        if (allAnalyses.size() < MAX_ANALYSES_SIZE) return;
+
+        if (mc.player == null) return;
+
+        int playerChunkX = mc.player.chunkPosition().x;
+        int playerChunkZ = mc.player.chunkPosition().z;
+        int purgeDistance = 128; // chunks (2048 blocks)
+
+        int removed = 0;
+        var iterator = allAnalyses.entrySet().iterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            ChunkPos pos = entry.getKey();
+            int dx = Math.abs(pos.x - playerChunkX);
+            int dz = Math.abs(pos.z - playerChunkZ);
+            if (dx > purgeDistance || dz > purgeDistance) {
+                iterator.remove();
+                removed++;
+            }
+        }
+
+        if (removed > 0) {
+            LOGGER.info("[ChunkScanner] Memory cleanup: purged {} old analyses, {} remaining",
+                    removed, allAnalyses.size());
+        }
+    }
+
     public void reset() {
         scannedChunks.clear();
         interestingChunks.clear();
