@@ -107,7 +107,7 @@ public class BaseFinderCommand extends Command {
     }
 
     private BaseFinderModule getModule() {
-        IModule module = RusherHackAPI.getModuleManager().getFeature("BaseFinder").orElse(null);
+        IModule module = RusherHackAPI.getModuleManager().getFeature("BaseHunter").orElse(null);
         if (module instanceof BaseFinderModule bf) return bf;
         return null;
     }

@@ -2,10 +2,12 @@ package com.basefinder.elytra;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
+import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.client.api.utils.InventoryUtils;
 
 /**
@@ -123,22 +125,32 @@ public class ElytraBot {
 
         // Already flying? Go to climbing
         if (mc.player.isFallFlying()) {
-            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Elytra active! Taking control...");
+            ChatUtils.print("[ElytraBot] Elytra deployed! Climbing...");
             state = FlightState.CLIMBING;
             takeoffTimer = 0;
             return;
         }
 
-        // Just wait for player to deploy elytra manually
-        // Once flying, bot takes over
-        if (takeoffTimer == 1) {
-            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Deploy your elytra manually (double-tap SPACE while falling)");
-            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Once flying, I'll take control automatically!");
+        // Phase 1: Jump to get airborne
+        if (mc.player.onGround()) {
+            mc.player.jumpFromGround();
+            return;
         }
 
-        // Periodic reminder
-        if (takeoffTimer % 100 == 0) {
-            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Still waiting for elytra... Double-tap SPACE while in air!");
+        // Phase 2: Once in air and falling, send elytra activation packet
+        if (!mc.player.onGround() && !mc.player.isFallFlying() && mc.player.getDeltaMovement().y < 0) {
+            // Send the START_FALL_FLYING packet to deploy elytra
+            if (mc.getConnection() != null) {
+                mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                        mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
+                ));
+            }
+        }
+
+        // Timeout - retry the whole cycle
+        if (takeoffTimer > 40) {
+            takeoffTimer = 0;
+            LOGGER.info("[ElytraBot] Takeoff retry...");
         }
     }
 
@@ -159,7 +171,7 @@ public class ElytraBot {
 
         if (mc.player.getY() >= cruiseAltitude) {
             LOGGER.info("[ElytraBot] Reached cruise altitude {}, switching to cruise mode", cruiseAltitude);
-            org.rusherhack.client.api.utils.ChatUtils.print("[ElytraBot] Cruising at altitude " + (int)cruiseAltitude);
+            ChatUtils.print("[ElytraBot] Cruising at altitude " + (int)cruiseAltitude);
             state = FlightState.CRUISING;
         }
     }

@@ -56,7 +56,7 @@ public class BaseFinderModule extends ToggleableModule {
     private final NullSetting searchGroup = new NullSetting("Search Settings");
     private final StringSetting searchPattern = new StringSetting("Pattern", "SPIRAL");
     private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Scan Interval", 20, 5, 100);
-    private final NumberSetting<Double> minScore = new NumberSetting<>("Min Score", 20.0, 5.0, 200.0);
+    private final NumberSetting<Double> minScore = new NumberSetting<>("Min Score", 25.0, 5.0, 200.0);
     private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Waypoint Radius", 100.0, 20.0, 500.0);
 
     // Detection filters
@@ -96,7 +96,7 @@ public class BaseFinderModule extends ToggleableModule {
     }
 
     public BaseFinderModule() {
-        super("BaseFinder", "Automated base hunting - scans chunks, follows trails, flies with elytra", ModuleCategory.WORLD);
+        super("BaseHunter", "Automated base hunting - scans chunks, follows trails, flies with elytra", ModuleCategory.EXTERNAL);
 
         // Register settings with groups
         searchGroup.addSubSettings(searchPattern, scanIntervalSetting, minScore, waypointThreshold);
@@ -117,7 +117,7 @@ public class BaseFinderModule extends ToggleableModule {
     @Override
     public void onEnable() {
         if (mc.player == null || mc.level == null) {
-            ChatUtils.print("[BaseFinder] Must be in a world to enable!");
+            ChatUtils.print("[BaseHunter] Must be in a world to enable!");
             this.toggle();
             return;
         }
@@ -141,8 +141,8 @@ public class BaseFinderModule extends ToggleableModule {
         tickCounter = 0;
         scanner.reset(); // Reset scanner on enable
 
-        ChatUtils.print("[BaseFinder] Started! Pattern: " + pattern);
-        ChatUtils.print("[BaseFinder] Scanning chunks around you... Walk/fly to scan more.");
+        ChatUtils.print("[BaseHunter] Started! Pattern: " + pattern);
+        ChatUtils.print("[BaseHunter] Scanning chunks around you... Walk/fly to scan more.");
     }
 
     @Override
@@ -156,7 +156,7 @@ public class BaseFinderModule extends ToggleableModule {
         mc.options.keySprint.setDown(false);
 
         if (mc.level != null) {
-            ChatUtils.print("[BaseFinder] Stopped. Found " + logger.getCount() + " bases. Scanned " + scanner.getScannedCount() + " chunks.");
+            ChatUtils.print("[BaseHunter] Stopped. Found " + logger.getCount() + " bases. Scanned " + scanner.getScannedCount() + " chunks.");
         }
     }
 
@@ -186,19 +186,19 @@ public class BaseFinderModule extends ToggleableModule {
      * so it can use chunk age data for trail detection.
      */
     private void connectToNewChunksModule() {
-        IModule ncModule = RusherHackAPI.getModuleManager().getFeature("NewChunks").orElse(null);
+        IModule ncModule = RusherHackAPI.getModuleManager().getFeature("ChunkHistory").orElse(null);
         if (ncModule instanceof NewChunksModule newChunksModule) {
             if (useChunkTrails.getValue()) {
                 trailFollower.setNewChunkDetector(newChunksModule.getDetector());
-                ChatUtils.print("[BaseFinder] Connected to NewChunks - chunk trail detection enabled");
+                ChatUtils.print("[BaseHunter] Connected to NewChunks - chunk trail detection enabled");
             }
             if (useVersionBorders.getValue()) {
                 trailFollower.setChunkAgeAnalyzer(newChunksModule.getAgeAnalyzer());
-                ChatUtils.print("[BaseFinder] Connected to NewChunks - version border detection enabled");
+                ChatUtils.print("[BaseHunter] Connected to NewChunks - version border detection enabled");
             }
         } else {
             if (useChunkTrails.getValue() || useVersionBorders.getValue()) {
-                ChatUtils.print("[BaseFinder] Enable NewChunks module for chunk trail & version border detection");
+                ChatUtils.print("[BaseHunter] Enable NewChunks module for chunk trail & version border detection");
             }
         }
     }
@@ -225,22 +225,22 @@ public class BaseFinderModule extends ToggleableModule {
         // Scan chunks periodically
         if (tickCounter % scanInterval != 0) return;
 
-        LOGGER.info("[BaseFinder] handleScanning called, tickCounter={}", tickCounter);
+        LOGGER.info("[BaseHunter] handleScanning called, tickCounter={}", tickCounter);
 
         List<ChunkAnalysis> newFinds;
         try {
             newFinds = scanner.scanLoadedChunks();
-            LOGGER.info("[BaseFinder] scanLoadedChunks returned {} finds, total scanned: {}",
+            LOGGER.info("[BaseHunter] scanLoadedChunks returned {} finds, total scanned: {}",
                 newFinds != null ? newFinds.size() : "null", scanner.getScannedCount());
         } catch (Exception e) {
-            LOGGER.error("[BaseFinder] Error in scanLoadedChunks: {}", e.getMessage());
+            LOGGER.error("[BaseHunter] Error in scanLoadedChunks: {}", e.getMessage());
             e.printStackTrace();
             return;
         }
 
         // Periodic status update every 10 seconds
         if (tickCounter % 200 == 0) {
-            ChatUtils.print("[BaseFinder] Scanned: " + scanner.getScannedCount() + " chunks | Found: " + logger.getCount() + " bases");
+            ChatUtils.print("[BaseHunter] Scanned: " + scanner.getScannedCount() + " chunks | Found: " + logger.getCount() + " bases");
         }
 
         for (ChunkAnalysis analysis : newFinds) {
@@ -261,7 +261,7 @@ public class BaseFinderModule extends ToggleableModule {
         if (followTrails.getValue() && !scanner.getTrailChunks().isEmpty()) {
             if (trailFollower.detectTrail(scanner.getTrailChunks())) {
                 state = FinderState.TRAIL_FOLLOWING;
-                ChatUtils.print("[BaseFinder] Trail detected! Following...");
+                ChatUtils.print("[BaseHunter] Trail detected! Following...");
                 return;
             }
         }
@@ -278,7 +278,7 @@ public class BaseFinderModule extends ToggleableModule {
 
         if (target == null) {
             // Lost the trail
-            ChatUtils.print("[BaseFinder] Trail lost after " + trailFollower.getTrailLength() + " blocks. Resuming scan.");
+            ChatUtils.print("[BaseHunter] Trail lost after " + trailFollower.getTrailLength() + " blocks. Resuming scan.");
             trailFollower.stopFollowing();
             state = FinderState.SCANNING;
             return;
@@ -318,7 +318,7 @@ public class BaseFinderModule extends ToggleableModule {
                     if (analysis.getScore() >= minScore.getValue() * 2) {
                         state = FinderState.INVESTIGATING;
                         investigationStartTick = tickCounter;
-                        ChatUtils.print("[BaseFinder] Significant find! Investigating...");
+                        ChatUtils.print("[BaseHunter] Significant find! Investigating...");
                         return;
                     }
                 }
@@ -351,7 +351,7 @@ public class BaseFinderModule extends ToggleableModule {
                 if (trailFollower.detectTrail(scanner.getTrailChunks())) {
                     elytraBot.stop();
                     state = FinderState.TRAIL_FOLLOWING;
-                    ChatUtils.print("[BaseFinder] Trail detected while flying! Following...");
+                    ChatUtils.print("[BaseHunter] Trail detected while flying! Following...");
                     return;
                 }
             }
@@ -359,9 +359,9 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Check if we reached the waypoint
         if (navigation.isNearTarget(waypointThreshold.getValue())) {
-            ChatUtils.print("[BaseFinder] Reached waypoint " + (navigation.getCurrentWaypointIndex() + 1) + "/" + navigation.getWaypointCount());
+            ChatUtils.print("[BaseHunter] Reached waypoint " + (navigation.getCurrentWaypointIndex() + 1) + "/" + navigation.getWaypointCount());
             if (!navigation.advanceToNext()) {
-                ChatUtils.print("[BaseFinder] All waypoints visited! Total bases found: " + logger.getCount());
+                ChatUtils.print("[BaseHunter] All waypoints visited! Total bases found: " + logger.getCount());
                 this.toggle();
                 return;
             }
@@ -387,7 +387,7 @@ public class BaseFinderModule extends ToggleableModule {
         // Stay and investigate for 5 seconds (100 ticks), then continue
         if (tickCounter - investigationStartTick >= 100) {
             state = FinderState.SCANNING;
-            ChatUtils.print("[BaseFinder] Investigation complete. Continuing search.");
+            ChatUtils.print("[BaseHunter] Investigation complete. Continuing search.");
         }
     }
 
@@ -405,20 +405,20 @@ public class BaseFinderModule extends ToggleableModule {
             elytraBot.stop();
             mc.options.keyUp.setDown(false);
             mc.options.keySprint.setDown(false);
-            ChatUtils.print("[BaseFinder] Paused.");
+            ChatUtils.print("[BaseHunter] Paused.");
         }
     }
 
     public void resume() {
         if (state == FinderState.PAUSED) {
             state = FinderState.SCANNING;
-            ChatUtils.print("[BaseFinder] Resumed.");
+            ChatUtils.print("[BaseHunter] Resumed.");
         }
     }
 
     public void skipWaypoint() {
         if (navigation.advanceToNext()) {
-            ChatUtils.print("[BaseFinder] Skipped to waypoint " + (navigation.getCurrentWaypointIndex() + 1));
+            ChatUtils.print("[BaseHunter] Skipped to waypoint " + (navigation.getCurrentWaypointIndex() + 1));
             state = FinderState.SCANNING;
         }
     }
