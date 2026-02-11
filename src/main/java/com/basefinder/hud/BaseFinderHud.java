@@ -19,7 +19,7 @@ public class BaseFinderHud extends TextHudElement {
 
     @Override
     public String getText() {
-        IModule module = RusherHackAPI.getModuleManager().getFeature("BaseFinder").orElse(null);
+        IModule module = RusherHackAPI.getModuleManager().getFeature("BaseHunter").orElse(null);
         if (!(module instanceof BaseFinderModule baseFinder) || !baseFinder.isToggled()) {
             return "BaseFinder: OFF";
         }
@@ -45,7 +45,7 @@ public class BaseFinderHud extends TextHudElement {
         }
 
         // NewChunks info
-        IModule ncModule = RusherHackAPI.getModuleManager().getFeature("NewChunks").orElse(null);
+        IModule ncModule = RusherHackAPI.getModuleManager().getFeature("ChunkHistory").orElse(null);
         if (ncModule instanceof NewChunksModule nc && nc.isToggled()) {
             sb.append(" | NC: ").append(nc.getDetector().getNewChunkCount())
               .append("/").append(nc.getDetector().getOldChunkCount());
