@@ -24,8 +24,8 @@ public class BaseFinderCommand extends Command {
 
     @CommandExecutor
     private String base() {
-        return Lang.t("Commands: status, bases, goto, modes, export, pause, resume, skip, clear",
-                       "Commandes : status, bases, goto, modes, export, pause, resume, skip, clear");
+        return Lang.t("Commands: status, bases, goto, modes, export, waypoints, pause, resume, skip, clear",
+                       "Commandes : status, bases, goto, modes, export, waypoints, pause, resume, skip, clear");
     }
 
     @CommandExecutor(subCommand = "status")
@@ -140,6 +140,17 @@ public class BaseFinderCommand extends Command {
         if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
         module.skipWaypoint();
         return Lang.t("Skipped to next waypoint.", "Sauté au waypoint suivant.");
+    }
+
+    @CommandExecutor(subCommand = "waypoints")
+    @CommandExecutor.Argument({"format"})
+    private String waypoints(String format) {
+        BaseFinderModule module = getModule();
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
+
+        String fmt = (format != null && !format.isEmpty()) ? format : "all";
+        module.exportWaypoints(fmt);
+        return Lang.t("Exporting waypoints (format: " + fmt + ")", "Export waypoints (format : " + fmt + ")");
     }
 
     @CommandExecutor(subCommand = "clear")
