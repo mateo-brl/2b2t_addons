@@ -16,6 +16,7 @@ import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.render.IRenderer3D;
 import org.rusherhack.client.api.setting.ColorSetting;
+import com.basefinder.util.Lang;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.client.api.utils.WorldUtils;
 import org.rusherhack.core.event.subscribe.Subscribe;
@@ -64,6 +65,9 @@ public class NewChunksModule extends ToggleableModule {
 
     // Stats
     private final BooleanSetting logNewChunks = new BooleanSetting("Alertes chat", false);
+
+    // --- LANGUE / LANGUAGE ---
+    private final BooleanSetting langFr = new BooleanSetting("Français", true);
     private int lastNewCount = 0;
     private int lastOldCount = 0;
 
@@ -74,7 +78,7 @@ public class NewChunksModule extends ToggleableModule {
                 fillMode, newChunkColor, oldChunkColor, versionBorderColor, renderHeight, renderDistance);
         detectionGroup.addSubSettings(useLiquidDetection, useVersionDetection, classificationDelay);
 
-        this.registerSettings(renderGroup, detectionGroup, logNewChunks);
+        this.registerSettings(renderGroup, detectionGroup, logNewChunks, langFr);
     }
 
     @Override
@@ -82,9 +86,10 @@ public class NewChunksModule extends ToggleableModule {
         detector.setEnabled(true);
         detector.setClassificationDelay(classificationDelay.getValue());
 
+        Lang.setFrench(langFr.getValue());
         if (mc.level != null) {
-            ChatUtils.print("[NewChunks] Activé - suivi des chunks nouveaux/anciens");
-            ChatUtils.print("[NewChunks] Déplacez-vous pour détecter les chunks. Lignes à Y=" + renderHeight.getValue());
+            ChatUtils.print("[NewChunks] " + Lang.t("Enabled - tracking new/old chunks", "Activé - suivi des chunks nouveaux/anciens"));
+            ChatUtils.print("[NewChunks] " + Lang.t("Walk around to detect chunks. Lines at Y=", "Déplacez-vous pour détecter les chunks. Lignes à Y=") + renderHeight.getValue());
         }
     }
 
@@ -93,7 +98,7 @@ public class NewChunksModule extends ToggleableModule {
         detector.setEnabled(false);
         detector.reset();
         if (mc.level != null) {
-            ChatUtils.print("[NewChunks] Désactivé");
+            ChatUtils.print("[NewChunks] " + Lang.t("Disabled", "Désactivé"));
         }
     }
 
@@ -156,7 +161,7 @@ public class NewChunksModule extends ToggleableModule {
         int pendingCount = detector.getPendingCount();
 
         if (logNewChunks.getValue() && (newCount > lastNewCount || oldCount > lastOldCount)) {
-            ChatUtils.print("[NewChunks] Nouveaux : " + newCount + " | Anciens : " + oldCount + " | En attente : " + pendingCount);
+            ChatUtils.print("[NewChunks] " + Lang.t("New: ", "Nouveaux : ") + newCount + Lang.t(" | Old: ", " | Anciens : ") + oldCount + Lang.t(" | Pending: ", " | En attente : ") + pendingCount);
         }
         lastNewCount = newCount;
         lastOldCount = oldCount;

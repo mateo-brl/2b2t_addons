@@ -2,6 +2,7 @@ package com.basefinder.command;
 
 import com.basefinder.modules.BaseFinderModule;
 import com.basefinder.util.BaseRecord;
+import com.basefinder.util.Lang;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import org.rusherhack.client.api.RusherHackAPI;
@@ -18,19 +19,20 @@ import java.util.List;
 public class BaseFinderCommand extends Command {
 
     public BaseFinderCommand() {
-        super("basefinder", "Contrôler le module BaseFinder");
+        super("basefinder", "Control BaseFinder module");
     }
 
     @CommandExecutor
     private String base() {
-        return "Commandes : status, bases, goto, modes, export, pause, resume, skip, clear";
+        return Lang.t("Commands: status, bases, goto, modes, export, pause, resume, skip, clear",
+                       "Commandes : status, bases, goto, modes, export, pause, resume, skip, clear");
     }
 
     @CommandExecutor(subCommand = "status")
     private String status() {
         BaseFinderModule module = getModule();
-        if (module == null) return "Module BaseHunter introuvable !";
-        if (!module.isToggled()) return "BaseHunter est DÉSACTIVÉ";
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
+        if (!module.isToggled()) return Lang.t("BaseHunter is OFF", "BaseHunter est DÉSACTIVÉ");
 
         return String.format(
                 "State: %s | Chunks: %d | Bases: %d | WP: %d/%d | Dist: %.0f",
@@ -46,106 +48,107 @@ public class BaseFinderCommand extends Command {
     @CommandExecutor(subCommand = "bases")
     private String bases() {
         BaseFinderModule module = getModule();
-        if (module == null) return "Module BaseHunter introuvable !";
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
 
         List<BaseRecord> records = module.getBaseLogger().getRecords();
-        if (records.isEmpty()) return "Aucune base trouvée.";
+        if (records.isEmpty()) return Lang.t("No bases found yet.", "Aucune base trouvée.");
 
-        StringBuilder sb = new StringBuilder("Bases trouvées (" + records.size() + ") :\n");
+        StringBuilder sb = new StringBuilder(Lang.t("Found bases (", "Bases trouvées (") + records.size() + "):\n");
         int count = 0;
         for (BaseRecord record : records) {
             count++;
             sb.append("  #").append(count).append(" ").append(record.toShortString()).append("\n");
             if (count >= 20) {
-                sb.append("  ... et ").append(records.size() - 20).append(" de plus");
+                sb.append("  ... ").append(Lang.t("and ", "et ")).append(records.size() - 20).append(Lang.t(" more", " de plus"));
                 break;
             }
         }
         return sb.toString();
     }
 
-    /**
-     * Navigate to the most recently found base using Baritone.
-     * Opens chat with #goto x z pre-filled - press Enter to navigate.
-     */
     @CommandExecutor(subCommand = "goto")
     private String gotoBase() {
         BaseFinderModule module = getModule();
-        if (module == null) return "Module BaseHunter introuvable !";
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
 
         List<BaseRecord> records = module.getBaseLogger().getRecords();
-        if (records.isEmpty()) return "Aucune base trouvée.";
+        if (records.isEmpty()) return Lang.t("No bases found yet.", "Aucune base trouvée.");
 
         BaseRecord last = records.get(records.size() - 1);
         BlockPos pos = last.getPosition();
         int x = pos.getX();
         int z = pos.getZ();
 
-        // Open chat screen with Baritone command pre-filled
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
             mc.execute(() -> mc.setScreen(
                     new net.minecraft.client.gui.screens.ChatScreen("#goto " + x + " " + z)));
         }
 
-        return "Appuyez sur Entrée pour naviguer vers " + last.toShortString() + " via Baritone";
+        return Lang.t("Press Enter to navigate to ", "Appuyez sur Entrée pour naviguer vers ") + last.toShortString() + " via Baritone";
     }
 
-    /**
-     * Lists all available search modes with descriptions.
-     */
     @CommandExecutor(subCommand = "modes")
     private String modes() {
-        return """
-                Modes de recherche disponibles (dans les paramètres BaseHunter) :
-                  SPIRAL   - Spirale depuis votre position (défaut)
-                  HIGHWAYS - Suivre les 8 autoroutes (cardinales + diagonales)
-                  RANDOM   - Positions aléatoires dans une plage de distance
-                  RING     - Cercle à un rayon fixe depuis votre position""";
+        if (Lang.isFrench()) {
+            return """
+                    Modes de recherche disponibles (dans les paramètres BaseHunter) :
+                      SPIRAL   - Spirale depuis votre position (défaut)
+                      HIGHWAYS - Suivre les 8 autoroutes (cardinales + diagonales)
+                      RANDOM   - Positions aléatoires dans une plage de distance
+                      RING     - Cercle à un rayon fixe depuis votre position""";
+        } else {
+            return """
+                    Available search modes (set in BaseHunter settings):
+                      SPIRAL   - Spiral outward from your position (default)
+                      HIGHWAYS - Follow all 8 highways (cardinal + diagonal)
+                      RANDOM   - Random positions within min/max distance range
+                      RING     - Circle at a set radius from your position""";
+        }
     }
 
     @CommandExecutor(subCommand = "export")
     @CommandExecutor.Argument({"filename"})
     private String export(String filename) {
         BaseFinderModule module = getModule();
-        if (module == null) return "Module BaseHunter introuvable !";
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
 
         String file = (filename != null && !filename.isEmpty()) ? filename : "bases_export.txt";
         module.getBaseLogger().exportAll(file);
-        return "Export vers " + file;
+        return Lang.t("Exporting to ", "Export vers ") + file;
     }
 
     @CommandExecutor(subCommand = "pause")
     private String pause() {
         BaseFinderModule module = getModule();
-        if (module == null) return "Module BaseHunter introuvable !";
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
         module.pause();
-        return "BaseHunter en pause.";
+        return Lang.t("BaseHunter paused.", "BaseHunter en pause.");
     }
 
     @CommandExecutor(subCommand = "resume")
     private String resume() {
         BaseFinderModule module = getModule();
-        if (module == null) return "Module BaseHunter introuvable !";
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
         module.resume();
-        return "BaseHunter repris.";
+        return Lang.t("BaseHunter resumed.", "BaseHunter repris.");
     }
 
     @CommandExecutor(subCommand = "skip")
     private String skip() {
         BaseFinderModule module = getModule();
-        if (module == null) return "Module BaseHunter introuvable !";
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
         module.skipWaypoint();
-        return "Sauté au waypoint suivant.";
+        return Lang.t("Skipped to next waypoint.", "Sauté au waypoint suivant.");
     }
 
     @CommandExecutor(subCommand = "clear")
     private String clear() {
         BaseFinderModule module = getModule();
-        if (module == null) return "Module BaseHunter introuvable !";
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
         module.getBaseLogger().clear();
         module.getScanner().reset();
-        return "Données effacées.";
+        return Lang.t("Cleared all data.", "Données effacées.");
     }
 
     private BaseFinderModule getModule() {

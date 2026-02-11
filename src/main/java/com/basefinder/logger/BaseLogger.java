@@ -2,6 +2,7 @@ package com.basefinder.logger;
 
 import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BaseType;
+import com.basefinder.util.Lang;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -81,7 +82,7 @@ public class BaseLogger {
                         .withStyle(ChatFormatting.WHITE))
                 .append(Component.literal(String.format("(%.0f) ", record.getScore()))
                         .withStyle(ChatFormatting.GRAY))
-                .append(Component.literal("[ALLER]")
+                .append(Component.literal(Lang.t("[GOTO]", "[ALLER]"))
                         .withStyle(style -> style
                                 .withColor(ChatFormatting.GREEN)
                                 .withBold(true)
@@ -91,11 +92,11 @@ public class BaseLogger {
                                         "#goto " + x + " " + z))
                                 .withHoverEvent(new HoverEvent(
                                         HoverEvent.Action.SHOW_TEXT,
-                                        Component.literal("Cliquer pour naviguer avec Baritone\n")
+                                        Component.literal(Lang.t("Click to navigate with Baritone\n", "Cliquer pour naviguer avec Baritone\n"))
                                                 .append(Component.literal("#goto " + x + " " + z)
                                                         .withStyle(ChatFormatting.GRAY))))))
                 .append(Component.literal(" "))
-                .append(Component.literal("[COPIER]")
+                .append(Component.literal(Lang.t("[COPY]", "[COPIER]"))
                         .withStyle(style -> style
                                 .withColor(ChatFormatting.AQUA)
                                 .withUnderlined(true)
@@ -104,7 +105,7 @@ public class BaseLogger {
                                         x + " " + z))
                                 .withHoverEvent(new HoverEvent(
                                         HoverEvent.Action.SHOW_TEXT,
-                                        Component.literal("Copier les coordonnées")))));
+                                        Component.literal(Lang.t("Copy coordinates to clipboard", "Copier les coordonnées"))))));
 
         mc.player.displayClientMessage(message, false);
     }
@@ -123,7 +124,7 @@ public class BaseLogger {
             Path exportFile = logFile.getParent().resolve(filename);
             StringBuilder sb = new StringBuilder();
             sb.append("=== BaseFinder Export ===\n");
-            sb.append("Bases trouvées : ").append(records.size()).append("\n\n");
+            sb.append(Lang.t("Total bases found: ", "Bases trouvées : ")).append(records.size()).append("\n\n");
 
             synchronized (records) {
                 for (BaseRecord record : records) {
@@ -133,9 +134,9 @@ public class BaseLogger {
 
             Files.writeString(exportFile, sb.toString(),
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            ChatUtils.print("[BaseHunter] " + records.size() + " bases exportées vers " + exportFile);
+            ChatUtils.print("[BaseHunter] " + Lang.t("Exported " + records.size() + " bases to ", records.size() + " bases exportées vers ") + exportFile);
         } catch (IOException e) {
-            ChatUtils.print("[BaseHunter] Échec de l'export : " + e.getMessage());
+            ChatUtils.print("[BaseHunter] " + Lang.t("Failed to export: ", "Échec de l'export : ") + e.getMessage());
         }
     }
 
