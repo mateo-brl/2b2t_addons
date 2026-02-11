@@ -51,6 +51,12 @@ Systemes automatiques pour fonctionner sans surveillance :
 - **Evitement d'obstacles** : raycast terrain devant + detection proximite sol
 - **Sauvegarde automatique** : sauvegarde l'etat toutes les 5 minutes, restauration apres crash
 - **Nettoyage memoire** : purge automatique des anciennes donnees pour eviter les fuites memoire
+- **Compensation lag 2b2t** : adapte tous les timings au TPS reel du serveur
+  - Estimation TPS en temps reel (2b2t tourne souvent a 10-15 TPS au lieu de 20)
+  - Timeouts adaptatifs pour la resupply (x2 a 10 TPS, x4 a 5 TPS)
+  - Skip des chunks partiellement charges (evite les faux scans)
+  - Altitude de securite automatique quand les chunks devant ne sont pas charges
+  - Affichage TPS + alerte lag dans le HUD
 
 ### Navigation intelligente
 - **Spirale** : recherche en spirale depuis la position actuelle
@@ -116,6 +122,7 @@ Le module principal. Active-le et il fait tout automatiquement.
 | Seuil sante | 10 | PV avant actions d'urgence |
 | Evitement obstacles | ON | Detection terrain devant |
 | Sauvegarde auto | ON | Sauvegarder l'etat toutes les 5 min |
+| Compensation lag 2b2t | ON | Adapter les timings au TPS du serveur |
 
 **Parametres Elytra :**
 | Parametre | Defaut | Description |
@@ -177,6 +184,8 @@ Le HUD affiche en temps reel :
 - **Nombre de totems restants**
 - **Alerte PV bas**
 - **Statut reapprovisionnement**
+- **TPS serveur + alerte lag**
+- **Alerte chunks non charges devant**
 - **Temps en ligne (uptime)**
 
 ## Installation
@@ -264,6 +273,12 @@ Automatic systems for unattended operation:
 - **Obstacle avoidance**: forward terrain raycast + ground proximity detection
 - **Auto save**: saves state every 5 minutes, restores after crash
 - **Memory cleanup**: automatic purge of old data to prevent memory leaks
+- **2b2t lag compensation**: adapts all timings to actual server TPS
+  - Real-time TPS estimation (2b2t often runs at 10-15 TPS instead of 20)
+  - Adaptive timeouts for resupply (x2 at 10 TPS, x4 at 5 TPS)
+  - Skip partially loaded chunks (avoids false scans)
+  - Automatic safety altitude when chunks ahead are not loaded
+  - TPS display + lag alert in HUD
 
 ### Smart navigation
 - **Spiral**: spiral search from current position
@@ -306,6 +321,7 @@ The main module. Enable it and it does everything automatically.
 | Health threshold | 10 | HP before emergency actions |
 | Obstacle avoidance | ON | Terrain detection ahead |
 | Auto save | ON | Save state every 5 min |
+| 2b2t lag compensation | ON | Adapt timings to server TPS |
 
 **Search settings:**
 | Setting | Default | Description |
@@ -370,6 +386,8 @@ The HUD displays in real-time:
 - **Totem count**
 - **Low HP alert**
 - **Resupply status**
+- **Server TPS + lag alert**
+- **Unloaded chunks ahead warning**
 - **Uptime**
 
 ## Installation

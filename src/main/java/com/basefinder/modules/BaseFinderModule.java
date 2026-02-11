@@ -11,6 +11,7 @@ import com.basefinder.trail.TrailFollower;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BaseType;
 import com.basefinder.util.ChunkAnalysis;
+import com.basefinder.util.LagDetector;
 import com.basefinder.util.Lang;
 import com.basefinder.util.WaypointExporter;
 import net.minecraft.core.BlockPos;
@@ -53,6 +54,7 @@ public class BaseFinderModule extends ToggleableModule {
     private final FreshnessEstimator freshnessEstimator = new FreshnessEstimator();
     private final SurvivalManager survivalManager = new SurvivalManager();
     private final StateManager stateManager = new StateManager();
+    private final LagDetector lagDetector = new LagDetector();
 
     // State
     private FinderState state = FinderState.IDLE;
@@ -93,6 +95,7 @@ public class BaseFinderModule extends ToggleableModule {
     private final NumberSetting<Integer> healthThreshold = new NumberSetting<>("Seuil santé", 10, 2, 20);
     private final BooleanSetting enableObstacleAvoidance = new BooleanSetting("Évitement obstacles", "Détecter le terrain devant", true);
     private final BooleanSetting enableAutoSave = new BooleanSetting("Sauvegarde auto", "Sauvegarder l'état toutes les 5 min", true);
+    private final BooleanSetting enable2b2tLag = new BooleanSetting("Compensation lag 2b2t", "Adapter les timings au TPS du serveur", true);
 
     // --- VOL : Paramètres elytra ---
     private final NullSetting flightGroup = new NullSetting("Vol");
@@ -139,7 +142,8 @@ public class BaseFinderModule extends ToggleableModule {
         detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails, minScore);
         optimGroup.addSubSettings(useEntityScanning, useClusterScoring, autoScreenshot, antiKickNoise);
         survivalGroup.addSubSettings(enableAutoTotem, enableAutoEat, enablePlayerDetection, playerDetectRange,
-                enableFireworkResupply, resupplyThreshold, healthThreshold, enableObstacleAvoidance, enableAutoSave);
+                enableFireworkResupply, resupplyThreshold, healthThreshold, enableObstacleAvoidance, enableAutoSave,
+                enable2b2tLag);
         flightGroup.addSubSettings(cruiseAltitude, minAltitude, fireworkInterval, minElytraDurability);
         advancedGroup.addSubSettings(followTrails, useChunkTrails, useVersionBorders, scanIntervalSetting,
                 waypointThreshold, spiralStep, spiralRadius, searchMinDist, searchMaxDist, highwayDist, highwayInterval);
@@ -306,6 +310,17 @@ public class BaseFinderModule extends ToggleableModule {
         // Obstacle avoidance
         elytraBot.setUseObstacleAvoidance(enableObstacleAvoidance.getValue());
 
+        // 2b2t lag compensation
+        if (enable2b2tLag.getValue()) {
+            scanner.setLagDetector(lagDetector);
+            elytraBot.setLagDetector(lagDetector);
+            survivalManager.getFireworkResupply().setLagDetector(lagDetector);
+        } else {
+            scanner.setLagDetector(null);
+            elytraBot.setLagDetector(null);
+            survivalManager.getFireworkResupply().setLagDetector(null);
+        }
+
         scanInterval = scanIntervalSetting.getValue();
     }
 
@@ -345,6 +360,11 @@ public class BaseFinderModule extends ToggleableModule {
 
         tickCounter++;
         navigation.updateTracking();
+
+        // Lag detection tick (TPS estimation)
+        if (enable2b2tLag.getValue()) {
+            lagDetector.tick();
+        }
 
         // Survival systems tick (highest priority)
         boolean disconnected = survivalManager.tick();
@@ -609,6 +629,7 @@ public class BaseFinderModule extends ToggleableModule {
     public BaseLogger getBaseLogger() { return logger; }
     public SurvivalManager getSurvivalManager() { return survivalManager; }
     public StateManager getStateManager() { return stateManager; }
+    public LagDetector getLagDetector() { return lagDetector; }
 
     private String formatUptime(long seconds) {
         long hours = seconds / 3600;

@@ -8,7 +8,9 @@ import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.Vec3;
+import com.basefinder.util.LagDetector;
 import com.basefinder.util.Lang;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.client.api.utils.InventoryUtils;
@@ -46,6 +48,11 @@ public class ElytraBot {
     // Firework monitoring
     private int lastFireworkCount = -1;
     private boolean lowFireworkWarned = false;
+
+    // Lag detection - 2b2t chunk loading safety
+    private LagDetector lagDetector;
+    private boolean unloadedChunksAhead = false;
+    private double safeAltitudeBoost = 0; // Extra altitude when chunks not loaded
 
     // Obstacle avoidance
     private boolean useObstacleAvoidance = true;
@@ -486,8 +493,11 @@ public class ElytraBot {
             targetYaw = calculateYawToTarget(destination);
         }
 
-        // Maintain altitude (with noise variation for anti-detection)
-        double effectiveCruise = cruiseAltitude + (useFlightNoise ? altitudeNoise : 0);
+        // 2b2t lag safety: check if chunks ahead are loaded
+        updateChunkLoadingSafety();
+
+        // Maintain altitude (with noise variation for anti-detection + lag safety boost)
+        double effectiveCruise = cruiseAltitude + (useFlightNoise ? altitudeNoise : 0) + safeAltitudeBoost;
         double y = mc.player.getY();
         if (y < effectiveCruise - 10) {
             targetPitch = -20.0f; // nose up
@@ -607,6 +617,69 @@ public class ElytraBot {
         if (currentCount <= 2 && mc.player.getY() > minAltitude + 30) {
             ChatUtils.print("[ElytraBot] " + Lang.t("Almost out of fireworks (" + currentCount + ")! Descending...", "Presque plus de fusées (" + currentCount + ") ! Descente..."));
             state = FlightState.DESCENDING;
+        }
+    }
+
+    // ===== 2B2T LAG SAFETY =====
+
+    /**
+     * Check if chunks ahead of our flight path are loaded.
+     * On 2b2t, the server lags and chunks may not load fast enough
+     * when flying at high speed. If we detect unloaded chunks ahead,
+     * we gain extra altitude as a safety margin (terrain we can't see
+     * could be mountains or builds).
+     */
+    private void updateChunkLoadingSafety() {
+        if (mc.player == null || mc.level == null) return;
+
+        // Use LagDetector if available
+        if (lagDetector != null && !lagDetector.isFlightPathLoaded()) {
+            unloadedChunksAhead = true;
+            // Gain 50 extra blocks altitude per unloaded chunk (max 150)
+            double boost = Math.min(150.0, lagDetector.getUnloadedChunksAhead() * 50.0);
+            safeAltitudeBoost = Math.max(safeAltitudeBoost, boost);
+            return;
+        }
+
+        // Fallback: manual check of chunks in flight direction
+        Vec3 velocity = mc.player.getDeltaMovement();
+        double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        if (hSpeed < 0.5) {
+            unloadedChunksAhead = false;
+            safeAltitudeBoost = Math.max(0, safeAltitudeBoost - 2); // Decay slowly
+            return;
+        }
+
+        double nx = velocity.x / hSpeed;
+        double nz = velocity.z / hSpeed;
+        double px = mc.player.getX();
+        double pz = mc.player.getZ();
+
+        int unloaded = 0;
+        var chunkSource = mc.level.getChunkSource();
+
+        // Check 3 chunks ahead
+        for (int i = 1; i <= 3; i++) {
+            double checkX = px + nx * i * 48;
+            double checkZ = pz + nz * i * 48;
+            int chunkX = (int) Math.floor(checkX) >> 4;
+            int chunkZ = (int) Math.floor(checkZ) >> 4;
+
+            LevelChunk chunk = chunkSource.getChunk(chunkX, chunkZ, false);
+            if (chunk == null) {
+                unloaded++;
+            }
+        }
+
+        if (unloaded >= 2) {
+            if (!unloadedChunksAhead) {
+                LOGGER.warn("[ElytraBot] Unloaded chunks ahead ({})! Gaining altitude for safety", unloaded);
+            }
+            unloadedChunksAhead = true;
+            safeAltitudeBoost = Math.min(150.0, unloaded * 50.0);
+        } else {
+            unloadedChunksAhead = false;
+            safeAltitudeBoost = Math.max(0, safeAltitudeBoost - 2); // Decay slowly
         }
     }
 
@@ -744,6 +817,8 @@ public class ElytraBot {
     public void setMinElytraDurability(int durability) { this.minElytraDurability = durability; }
     public void setUseFlightNoise(boolean v) { this.useFlightNoise = v; }
     public void setUseObstacleAvoidance(boolean v) { this.useObstacleAvoidance = v; }
+    public void setLagDetector(LagDetector detector) { this.lagDetector = detector; }
+    public boolean hasUnloadedChunksAhead() { return unloadedChunksAhead; }
 
     public int getFireworkCount() {
         int count = 0;

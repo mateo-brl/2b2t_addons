@@ -1,5 +1,6 @@
 package com.basefinder.survival;
 
+import com.basefinder.util.LagDetector;
 import com.basefinder.util.Lang;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -32,6 +33,9 @@ public class FireworkResupply {
     private int resupplyThreshold = 16; // Resupply when < this many fireworks
     private BlockPos placedShulkerPos = null;
     private int shulkerSlot = -1;
+
+    // 2b2t lag compensation
+    private LagDetector lagDetector;
 
     public enum ResupplyState {
         IDLE,
@@ -75,7 +79,9 @@ public class FireworkResupply {
         }
 
         // Safety timeout - if stuck in any state for too long, abort
-        if (state != ResupplyState.IDLE && state != ResupplyState.NEEDS_RESUPPLY && stateTimer > 200) {
+        // Adjusted for 2b2t lag (default 200, up to 600 at 5 TPS)
+        int safetyTimeout = adjustForLag(200);
+        if (state != ResupplyState.IDLE && state != ResupplyState.NEEDS_RESUPPLY && stateTimer > safetyTimeout) {
             LOGGER.warn("[FireworkResupply] Timeout in state {}, aborting", state);
             ChatUtils.print("[Survival] " + Lang.t("Resupply timeout, aborting.", "Timeout réapprovisionnement, abandon."));
             abort();
@@ -138,13 +144,13 @@ public class FireworkResupply {
     }
 
     private void waitForPlacement() {
-        if (stateTimer < 5) return; // Wait a few ticks
+        if (stateTimer < adjustForLag(5)) return; // Wait a few ticks (lag-adjusted)
 
         // Check if shulker was placed
         if (placedShulkerPos != null && mc.level.getBlockState(placedShulkerPos).getBlock() instanceof ShulkerBoxBlock) {
             state = ResupplyState.OPENING;
             stateTimer = 0;
-        } else if (stateTimer > 20) {
+        } else if (stateTimer > adjustForLag(20)) {
             // Try alternate position
             LOGGER.warn("[FireworkResupply] Shulker placement failed");
             abort();
@@ -167,13 +173,13 @@ public class FireworkResupply {
     }
 
     private void waitForOpen() {
-        if (stateTimer < 5) return;
+        if (stateTimer < adjustForLag(5)) return; // Lag-adjusted wait
 
         // Check if a container screen is open
         if (mc.player.containerMenu != mc.player.inventoryMenu) {
             state = ResupplyState.TRANSFERRING;
             stateTimer = 0;
-        } else if (stateTimer > 20) {
+        } else if (stateTimer > adjustForLag(20)) {
             LOGGER.warn("[FireworkResupply] Failed to open shulker");
             abort();
         }
@@ -232,8 +238,8 @@ public class FireworkResupply {
             stateTimer = 0;
         }
 
-        // Timeout - try harder or abort
-        if (stateTimer > 60) {
+        // Timeout - try harder or abort (lag-adjusted)
+        if (stateTimer > adjustForLag(60)) {
             LOGGER.warn("[FireworkResupply] Breaking shulker taking too long");
             state = ResupplyState.COLLECTING;
             stateTimer = 0;
@@ -241,8 +247,8 @@ public class FireworkResupply {
     }
 
     private void waitForCollection() {
-        // Wait 20 ticks (1 second) for item to be picked up
-        if (stateTimer >= 20) {
+        // Wait for item to be picked up (lag-adjusted)
+        if (stateTimer >= adjustForLag(20)) {
             state = ResupplyState.DONE;
             placedShulkerPos = null;
             ChatUtils.print("[Survival] " + Lang.t("Resupply complete! Resuming...", "Réapprovisionnement terminé ! Reprise..."));
@@ -284,10 +290,20 @@ public class FireworkResupply {
         return -1;
     }
 
+    /**
+     * Adjust a timeout value based on current server lag.
+     * At 20 TPS: returns base value. At 10 TPS: doubles it. At 5 TPS: quadruples.
+     */
+    private int adjustForLag(int baseTicks) {
+        if (lagDetector == null) return baseTicks;
+        return lagDetector.adjustTimeout(baseTicks);
+    }
+
     // Public API
     public ResupplyState getState() { return state; }
     public boolean needsResupply() { return state == ResupplyState.NEEDS_RESUPPLY; }
     public boolean isResupplying() { return state != ResupplyState.IDLE && state != ResupplyState.NEEDS_RESUPPLY && state != ResupplyState.DONE; }
     public void startResupply() { if (state == ResupplyState.NEEDS_RESUPPLY) { state = ResupplyState.WAITING_GROUND; stateTimer = 0; } }
     public void setResupplyThreshold(int threshold) { this.resupplyThreshold = threshold; }
+    public void setLagDetector(LagDetector detector) { this.lagDetector = detector; }
 }
