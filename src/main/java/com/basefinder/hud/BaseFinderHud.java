@@ -3,6 +3,7 @@ package com.basefinder.hud;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.modules.BaseFinderModule;
 import com.basefinder.modules.NewChunksModule;
+import com.basefinder.survival.SurvivalManager;
 import com.basefinder.trail.TrailFollower;
 import com.basefinder.util.Lang;
 import org.rusherhack.client.api.RusherHackAPI;
@@ -70,6 +71,31 @@ public class BaseFinderHud extends TextHudElement {
                 sb.append(Lang.t(" | Travel: ", " | Parcouru: ")).append(String.format("%.1fk", dist / 1000));
             } else {
                 sb.append(Lang.t(" | Travel: ", " | Parcouru: ")).append(String.format("%.0f", dist));
+            }
+        }
+
+        // Survival stats
+        SurvivalManager survival = baseFinder.getSurvivalManager();
+        int totems = survival.getTotemCount();
+        sb.append(Lang.t(" | Totems: ", " | Totems: ")).append(totems);
+
+        if (survival.isEmergencyLanding()) {
+            sb.append(Lang.t(" | HP LOW!", " | PV BAS !"));
+        }
+
+        if (survival.isResupplying()) {
+            sb.append(Lang.t(" | RESUPPLY", " | RÉAPPRO"));
+        }
+
+        // Uptime
+        long uptime = survival.getUptimeSeconds();
+        if (uptime > 0) {
+            long hours = uptime / 3600;
+            long minutes = (uptime % 3600) / 60;
+            if (hours > 0) {
+                sb.append(" | ").append(hours).append("h").append(minutes).append("m");
+            } else {
+                sb.append(" | ").append(minutes).append("m");
             }
         }
 

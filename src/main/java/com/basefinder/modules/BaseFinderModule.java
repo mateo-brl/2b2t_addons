@@ -3,8 +3,10 @@ package com.basefinder.modules;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.navigation.NavigationHelper;
+import com.basefinder.persistence.StateManager;
 import com.basefinder.scanner.ChunkScanner;
 import com.basefinder.scanner.FreshnessEstimator;
+import com.basefinder.survival.SurvivalManager;
 import com.basefinder.trail.TrailFollower;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BaseType;
@@ -49,6 +51,8 @@ public class BaseFinderModule extends ToggleableModule {
     private final NavigationHelper navigation = new NavigationHelper();
     private final BaseLogger logger = new BaseLogger();
     private final FreshnessEstimator freshnessEstimator = new FreshnessEstimator();
+    private final SurvivalManager survivalManager = new SurvivalManager();
+    private final StateManager stateManager = new StateManager();
 
     // State
     private FinderState state = FinderState.IDLE;
@@ -77,6 +81,18 @@ public class BaseFinderModule extends ToggleableModule {
     private final BooleanSetting useClusterScoring = new BooleanSetting("Score cluster", true);
     private final BooleanSetting autoScreenshot = new BooleanSetting("Auto capture", false);
     private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick bruit", true);
+
+    // --- SURVIE 24/7 : Système de survie automatique ---
+    private final NullSetting survivalGroup = new NullSetting("Survie 24/7");
+    private final BooleanSetting enableAutoTotem = new BooleanSetting("Auto totem", "Garder un totem en offhand", true);
+    private final BooleanSetting enableAutoEat = new BooleanSetting("Auto manger", "Manger quand la faim est basse", true);
+    private final BooleanSetting enablePlayerDetection = new BooleanSetting("Radar joueurs", "Déconnexion auto si joueur détecté", true);
+    private final NumberSetting<Double> playerDetectRange = new NumberSetting<>("Portée radar", 200.0, 50.0, 500.0);
+    private final BooleanSetting enableFireworkResupply = new BooleanSetting("Réappro fusées", "Réappro depuis shulkers", true);
+    private final NumberSetting<Integer> resupplyThreshold = new NumberSetting<>("Seuil réappro", 16, 4, 64);
+    private final NumberSetting<Integer> healthThreshold = new NumberSetting<>("Seuil santé", 10, 2, 20);
+    private final BooleanSetting enableObstacleAvoidance = new BooleanSetting("Évitement obstacles", "Détecter le terrain devant", true);
+    private final BooleanSetting enableAutoSave = new BooleanSetting("Sauvegarde auto", "Sauvegarder l'état toutes les 5 min", true);
 
     // --- VOL : Paramètres elytra ---
     private final NullSetting flightGroup = new NullSetting("Vol");
@@ -122,6 +138,8 @@ public class BaseFinderModule extends ToggleableModule {
         modeGroup.addSubSettings(useElytra, searchMode);
         detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails, minScore);
         optimGroup.addSubSettings(useEntityScanning, useClusterScoring, autoScreenshot, antiKickNoise);
+        survivalGroup.addSubSettings(enableAutoTotem, enableAutoEat, enablePlayerDetection, playerDetectRange,
+                enableFireworkResupply, resupplyThreshold, healthThreshold, enableObstacleAvoidance, enableAutoSave);
         flightGroup.addSubSettings(cruiseAltitude, minAltitude, fireworkInterval, minElytraDurability);
         advancedGroup.addSubSettings(followTrails, useChunkTrails, useVersionBorders, scanIntervalSetting,
                 waypointThreshold, spiralStep, spiralRadius, searchMinDist, searchMaxDist, highwayDist, highwayInterval);
@@ -130,6 +148,7 @@ public class BaseFinderModule extends ToggleableModule {
                 modeGroup,
                 detectGroup,
                 optimGroup,
+                survivalGroup,
                 flightGroup,
                 advancedGroup,
                 logToChat,
@@ -181,6 +200,17 @@ public class BaseFinderModule extends ToggleableModule {
         ChatUtils.print("[BaseHunter] " + Lang.t("Started! Mode: ", "Démarré ! Mode : ") + pattern.name());
         ChatUtils.print("[BaseHunter] " + modeDesc);
 
+        // Initialize survival systems
+        survivalManager.onEnable();
+
+        // Try to load previous session state
+        if (enableAutoSave.getValue()) {
+            StateManager.SessionData savedState = stateManager.loadState();
+            if (savedState != null && !savedState.bases.isEmpty()) {
+                ChatUtils.print("[BaseHunter] " + Lang.t("Previous session restored!", "Session précédente restaurée !"));
+            }
+        }
+
         // Show optimization status
         StringBuilder optimStatus = new StringBuilder();
         if (useEntityScanning.getValue()) optimStatus.append(Lang.t("Entities", "Entités")).append(" ");
@@ -189,6 +219,18 @@ public class BaseFinderModule extends ToggleableModule {
         if (antiKickNoise.getValue()) optimStatus.append(Lang.t("AntiKick", "AntiKick")).append(" ");
         if (!optimStatus.isEmpty()) {
             ChatUtils.print("[BaseHunter] " + Lang.t("Optimizations: ", "Optimisations : ") + optimStatus.toString().trim());
+        }
+
+        // Show survival status
+        StringBuilder survivalStatus = new StringBuilder();
+        if (enableAutoTotem.getValue()) survivalStatus.append(Lang.t("Totem", "Totem")).append(" ");
+        if (enableAutoEat.getValue()) survivalStatus.append(Lang.t("Eat", "Manger")).append(" ");
+        if (enablePlayerDetection.getValue()) survivalStatus.append(Lang.t("Radar", "Radar")).append(" ");
+        if (enableFireworkResupply.getValue()) survivalStatus.append(Lang.t("Resupply", "Réappro")).append(" ");
+        if (enableObstacleAvoidance.getValue()) survivalStatus.append(Lang.t("Avoid", "Éviter")).append(" ");
+        if (enableAutoSave.getValue()) survivalStatus.append(Lang.t("Save", "Sauvegarde")).append(" ");
+        if (!survivalStatus.isEmpty()) {
+            ChatUtils.print("[BaseHunter] " + Lang.t("Survival 24/7: ", "Survie 24/7 : ") + survivalStatus.toString().trim());
         }
 
         ChatUtils.print("[BaseHunter] " + navigation.getWaypointCount() + Lang.t(" waypoints generated. Click [GOTO] on alerts to navigate with Baritone.", " waypoints générés. Cliquez [ALLER] sur les alertes pour naviguer avec Baritone."));
@@ -204,8 +246,23 @@ public class BaseFinderModule extends ToggleableModule {
         mc.options.keyUp.setDown(false);
         mc.options.keySprint.setDown(false);
 
+        // Save state on disable
+        if (enableAutoSave.getValue()) {
+            stateManager.saveState(
+                    logger.getRecords(),
+                    navigation.getCurrentWaypointIndex(),
+                    navigation.getTotalDistanceTraveled(),
+                    scanner.getScannedCount(),
+                    searchMode.getValue()
+            );
+        }
+
         if (mc.level != null) {
             ChatUtils.print("[BaseHunter] " + Lang.t("Stopped. Found ", "Arrêté. ") + logger.getCount() + Lang.t(" bases. Scanned ", " bases trouvées. ") + scanner.getScannedCount() + Lang.t(" chunks.", " chunks scannés."));
+            long uptime = survivalManager.getUptimeSeconds();
+            if (uptime > 60) {
+                ChatUtils.print("[BaseHunter] " + Lang.t("Uptime: ", "Temps en ligne : ") + formatUptime(uptime));
+            }
         }
     }
 
@@ -236,6 +293,18 @@ public class BaseFinderModule extends ToggleableModule {
         logger.setLogToChat(logToChat.getValue());
         logger.setLogToFile(logToFile.getValue());
         logger.setAutoScreenshot(autoScreenshot.getValue());
+
+        // Survival settings
+        survivalManager.setEnableAutoTotem(enableAutoTotem.getValue());
+        survivalManager.setEnableAutoEat(enableAutoEat.getValue());
+        survivalManager.setEnablePlayerDetection(enablePlayerDetection.getValue());
+        survivalManager.setPlayerDetectRange(playerDetectRange.getValue());
+        survivalManager.setEnableFireworkResupply(enableFireworkResupply.getValue());
+        survivalManager.setResupplyThreshold(resupplyThreshold.getValue());
+        survivalManager.setHealthThreshold(healthThreshold.getValue());
+
+        // Obstacle avoidance
+        elytraBot.setUseObstacleAvoidance(enableObstacleAvoidance.getValue());
 
         scanInterval = scanIntervalSetting.getValue();
     }
@@ -276,6 +345,42 @@ public class BaseFinderModule extends ToggleableModule {
 
         tickCounter++;
         navigation.updateTracking();
+
+        // Survival systems tick (highest priority)
+        boolean disconnected = survivalManager.tick();
+        if (disconnected) {
+            // Player detected - we disconnected, stop everything
+            state = FinderState.PAUSED;
+            elytraBot.stop();
+            return;
+        }
+
+        // Handle firework resupply coordination with ElytraBot
+        if (survivalManager.needsFireworkResupply() && elytraBot.isFlying()) {
+            // Signal elytrabot to land for resupply
+            ChatUtils.print("[BaseHunter] " + Lang.t("Landing for firework resupply...", "Atterrissage pour réapprovisionnement en fusées..."));
+            elytraBot.stop();
+            survivalManager.getFireworkResupply().startResupply();
+        }
+
+        // If resupplying, don't fly
+        if (survivalManager.isResupplying()) {
+            return;
+        }
+
+        // Auto-save state periodically
+        if (enableAutoSave.getValue() && stateManager.shouldAutoSave()) {
+            stateManager.saveState(
+                    logger.getRecords(),
+                    navigation.getCurrentWaypointIndex(),
+                    navigation.getTotalDistanceTraveled(),
+                    scanner.getScannedCount(),
+                    searchMode.getValue()
+            );
+        }
+
+        // Memory cleanup
+        scanner.cleanupMemory();
 
         switch (state) {
             case SCANNING -> handleScanning();
@@ -502,6 +607,17 @@ public class BaseFinderModule extends ToggleableModule {
     public ElytraBot getElytraBot() { return elytraBot; }
     public NavigationHelper getNavigation() { return navigation; }
     public BaseLogger getBaseLogger() { return logger; }
+    public SurvivalManager getSurvivalManager() { return survivalManager; }
+    public StateManager getStateManager() { return stateManager; }
+
+    private String formatUptime(long seconds) {
+        long hours = seconds / 3600;
+        long minutes = (seconds % 3600) / 60;
+        if (hours > 0) {
+            return hours + "h " + minutes + "m";
+        }
+        return minutes + "m";
+    }
 
     public void pause() {
         if (state != FinderState.IDLE && state != FinderState.PAUSED) {
