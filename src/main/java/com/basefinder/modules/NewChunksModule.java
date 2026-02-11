@@ -47,10 +47,10 @@ public class NewChunksModule extends ToggleableModule {
 
     // Paramètres d'affichage
     private final NullSetting renderGroup = new NullSetting("Affichage");
-    private final BooleanSetting showNewChunks = new BooleanSetting("Afficher nouveaux", true);
-    private final BooleanSetting showOldChunks = new BooleanSetting("Afficher anciens", true);
-    private final BooleanSetting showVersionBorders = new BooleanSetting("Bordures version", true);
-    private final BooleanSetting fillMode = new BooleanSetting("Remplir chunks", true);
+    private final BooleanSetting showNewChunks = new BooleanSetting("Afficher nouveaux", "Overlay rouge sur les chunks récents", true);
+    private final BooleanSetting showOldChunks = new BooleanSetting("Afficher anciens", "Overlay vert sur les chunks déjà visités", true);
+    private final BooleanSetting showVersionBorders = new BooleanSetting("Bordures version", "Overlay jaune pour les frontières de version MC", true);
+    private final BooleanSetting fillMode = new BooleanSetting("Remplir chunks", "Remplir l'intérieur des chunks avec des lignes", true);
     private final ColorSetting newChunkColor = new ColorSetting("Couleur nouveaux", new Color(255, 30, 30, 200));
     private final ColorSetting oldChunkColor = new ColorSetting("Couleur anciens", new Color(30, 255, 30, 160));
     private final ColorSetting versionBorderColor = new ColorSetting("Couleur version", new Color(255, 255, 0, 180));
@@ -59,15 +59,15 @@ public class NewChunksModule extends ToggleableModule {
 
     // Paramètres de détection
     private final NullSetting detectionGroup = new NullSetting("Détection");
-    private final BooleanSetting useLiquidDetection = new BooleanSetting("Détection liquides", true);
-    private final BooleanSetting useVersionDetection = new BooleanSetting("Détection version", true);
+    private final BooleanSetting useLiquidDetection = new BooleanSetting("Détection liquides", "Détecter les nouveaux chunks via les flux de liquide", true);
+    private final BooleanSetting useVersionDetection = new BooleanSetting("Détection version", "Détecter l'âge via les blocs spécifiques à chaque version", true);
     private final NumberSetting<Integer> classificationDelay = new NumberSetting<>("Délai classification", 5, 1, 100); // 5 ticks = 0.25 sec
 
     // Stats
-    private final BooleanSetting logNewChunks = new BooleanSetting("Alertes chat", false);
+    private final BooleanSetting logNewChunks = new BooleanSetting("Alertes chat", "Afficher les détections dans le chat", false);
 
     // --- LANGUE / LANGUAGE ---
-    private final BooleanSetting langFr = new BooleanSetting("Français", true);
+    private final BooleanSetting langFr = new BooleanSetting("Français", "Interface en français (off = English)", true);
     private int lastNewCount = 0;
     private int lastOldCount = 0;
 
