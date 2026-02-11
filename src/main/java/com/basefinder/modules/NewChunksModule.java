@@ -67,7 +67,7 @@ public class NewChunksModule extends ToggleableModule {
     private int lastOldCount = 0;
 
     public NewChunksModule() {
-        super("NewChunks", "Detects and highlights new vs old chunks (liquid flow + version detection)", ModuleCategory.RENDER);
+        super("ChunkHistory", "Detects and highlights new vs old chunks (liquid flow + version detection)", ModuleCategory.EXTERNAL);
 
         renderGroup.addSubSettings(showNewChunks, showOldChunks, showVersionBorders,
                 newChunkColor, oldChunkColor, versionBorderColor, renderHeight, renderDistance);

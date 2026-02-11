@@ -24,7 +24,7 @@ public class BaseFinderPlugin extends Plugin {
         try {
             NewChunksModule newChunksModule = new NewChunksModule();
             RusherHackAPI.getModuleManager().registerFeature(newChunksModule);
-            this.getLogger().info("NewChunks module registered (Render category)");
+            this.getLogger().info("ChunkHistory module registered (External category)");
         } catch (Exception e) {
             this.getLogger().error("Failed to register NewChunks module: {}", e.getMessage());
             e.printStackTrace();
@@ -33,7 +33,7 @@ public class BaseFinderPlugin extends Plugin {
         try {
             BaseFinderModule baseFinderModule = new BaseFinderModule();
             RusherHackAPI.getModuleManager().registerFeature(baseFinderModule);
-            this.getLogger().info("BaseFinder module registered (World category)");
+            this.getLogger().info("BaseHunter module registered (External category)");
         } catch (Exception e) {
             this.getLogger().error("Failed to register BaseFinder module: {}", e.getMessage());
             e.printStackTrace();
@@ -42,7 +42,7 @@ public class BaseFinderPlugin extends Plugin {
         try {
             ElytraBotModule elytraBotModule = new ElytraBotModule();
             RusherHackAPI.getModuleManager().registerFeature(elytraBotModule);
-            this.getLogger().info("ElytraBot module registered (Movement category)");
+            this.getLogger().info("ElytraBot module registered (External category)");
         } catch (Exception e) {
             this.getLogger().error("Failed to register ElytraBot module: {}", e.getMessage());
             e.printStackTrace();
