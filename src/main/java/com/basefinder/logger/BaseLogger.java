@@ -127,6 +127,29 @@ public class BaseLogger {
             default -> ChatFormatting.WHITE;
         };
 
+        // Score color based on strength
+        double score = record.getScore();
+        ChatFormatting scoreColor;
+        if (score >= 100) {
+            scoreColor = ChatFormatting.GREEN; // Very strong detection
+        } else if (score >= 50) {
+            scoreColor = ChatFormatting.YELLOW; // Good detection
+        } else {
+            scoreColor = ChatFormatting.GRAY; // Weak detection
+        }
+
+        // Build detail string (shulkers, blocks, signs)
+        StringBuilder details = new StringBuilder();
+        if (record.getShulkerCount() > 0) {
+            details.append(record.getShulkerCount()).append(" shulkers ");
+        }
+        if (record.getPlayerBlockCount() > 0) {
+            details.append(record.getPlayerBlockCount()).append(" blocs ");
+        }
+        if (record.getStorageCount() > 0) {
+            details.append(record.getStorageCount()).append(" stockage ");
+        }
+
         // Build freshness tag if available
         String notesTag = "";
         if (record.getNotes() != null && !record.getNotes().isEmpty()) {
@@ -139,8 +162,14 @@ public class BaseLogger {
                         .withStyle(typeColor, ChatFormatting.BOLD))
                 .append(Component.literal(String.format(" @ %d, %d ", x, z))
                         .withStyle(ChatFormatting.WHITE))
-                .append(Component.literal(String.format("(%.0f) ", record.getScore()))
-                        .withStyle(ChatFormatting.GRAY));
+                .append(Component.literal(String.format("Score: %.0f ", score))
+                        .withStyle(scoreColor, ChatFormatting.BOLD));
+
+        // Add detail counts
+        if (!details.isEmpty()) {
+            message.append(Component.literal("(" + details.toString().trim() + ") ")
+                    .withStyle(ChatFormatting.GRAY));
+        }
 
         // Add freshness/notes tag
         if (!notesTag.isEmpty()) {
