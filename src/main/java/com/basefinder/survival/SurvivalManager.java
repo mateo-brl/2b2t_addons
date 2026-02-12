@@ -118,6 +118,15 @@ public class SurvivalManager {
         lastHealth = health;
     }
 
+    /**
+     * Stop all survival subsystems and release resources.
+     * Call on module disable.
+     */
+    public void stop() {
+        autoEat.stop();
+        emergencyLanding = false;
+    }
+
     // Public API
     public AutoTotem getAutoTotem() { return autoTotem; }
     public AutoEat getAutoEat() { return autoEat; }

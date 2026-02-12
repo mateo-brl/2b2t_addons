@@ -312,10 +312,15 @@ public class BaseFinderModule extends ToggleableModule {
         state = FinderState.IDLE;
         elytraBot.stop();
         trailFollower.stopFollowing();
+        survivalManager.stop();
 
-        // Release movement keys
-        mc.options.keyUp.setDown(false);
-        mc.options.keySprint.setDown(false);
+        // Release movement keys safely
+        try {
+            mc.options.keyUp.setDown(false);
+            mc.options.keySprint.setDown(false);
+        } catch (Exception e) {
+            // Ignore - game may be closing
+        }
 
         // Save state on disable
         if (enableAutoSave.getValue()) {
@@ -717,8 +722,12 @@ public class BaseFinderModule extends ToggleableModule {
         if (state != FinderState.IDLE && state != FinderState.PAUSED) {
             state = FinderState.PAUSED;
             elytraBot.stop();
-            mc.options.keyUp.setDown(false);
-            mc.options.keySprint.setDown(false);
+            try {
+                mc.options.keyUp.setDown(false);
+                mc.options.keySprint.setDown(false);
+            } catch (Exception e) {
+                // Ignore
+            }
             ChatUtils.print("[BaseHunter] " + Lang.t("Paused.", "En pause."));
         }
     }
