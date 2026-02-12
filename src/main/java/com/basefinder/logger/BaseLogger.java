@@ -53,7 +53,18 @@ public class BaseLogger {
         }
     }
 
+    private static final int MAX_RECORDS = 10000;
+
     public void logBase(BaseRecord record) {
+        // Prevent unbounded memory growth on long sessions
+        if (records.size() >= MAX_RECORDS) {
+            synchronized (records) {
+                if (records.size() >= MAX_RECORDS) {
+                    records.subList(0, 1000).clear(); // Remove oldest 1000
+                    LOGGER.info("[BaseLogger] Purged oldest 1000 records (limit: {})", MAX_RECORDS);
+                }
+            }
+        }
         records.add(record);
 
         if (logToChat) {

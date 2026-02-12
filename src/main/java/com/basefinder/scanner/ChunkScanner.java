@@ -143,7 +143,10 @@ public class ChunkScanner {
                         // 2b2t lag protection: verify chunk is fully loaded before scanning
                         if (lagDetector != null && !lagDetector.isChunkFullyLoaded(chunk)) {
                             // Defer this chunk - it may be partially loaded due to lag
-                            deferredChunks.add(pos);
+                            // Cap deferred size to prevent unbounded memory growth
+                            if (deferredChunks.size() < 5000) {
+                                deferredChunks.add(pos);
+                            }
                             skippedCount++;
                             continue;
                         }

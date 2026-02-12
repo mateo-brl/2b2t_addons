@@ -99,6 +99,7 @@ public class FireworkResupply {
     }
 
     private void waitForGround() {
+        if (mc.player == null) { abort(); return; }
         if (mc.player.onGround()) {
             state = ResupplyState.PLACING;
             stateTimer = 0;
@@ -106,6 +107,8 @@ public class FireworkResupply {
     }
 
     private void placeShulker() {
+        if (mc.player == null || mc.gameMode == null) { abort(); return; }
+
         // Find a shulker with fireworks
         shulkerSlot = findShulkerWithFireworks();
         if (shulkerSlot < 0) {
@@ -158,7 +161,7 @@ public class FireworkResupply {
     }
 
     private void openShulker() {
-        if (placedShulkerPos == null) { abort(); return; }
+        if (placedShulkerPos == null || mc.player == null || mc.gameMode == null) { abort(); return; }
 
         // Look at shulker and right-click
         BlockHitResult hitResult = new BlockHitResult(
@@ -173,6 +176,7 @@ public class FireworkResupply {
     }
 
     private void waitForOpen() {
+        if (mc.player == null) { abort(); return; }
         if (stateTimer < adjustForLag(5)) return; // Lag-adjusted wait
 
         // Check if a container screen is open
@@ -186,6 +190,7 @@ public class FireworkResupply {
     }
 
     private void transferFireworks() {
+        if (mc.player == null || mc.gameMode == null) { abort(); return; }
         if (mc.player.containerMenu == mc.player.inventoryMenu) {
             abort();
             return;
@@ -216,13 +221,14 @@ public class FireworkResupply {
     }
 
     private void closeShulker() {
+        if (mc.player == null) { abort(); return; }
         mc.player.closeContainer();
         state = ResupplyState.BREAKING;
         stateTimer = 0;
     }
 
     private void breakShulker() {
-        if (placedShulkerPos == null) { state = ResupplyState.DONE; return; }
+        if (placedShulkerPos == null || mc.player == null || mc.gameMode == null) { state = ResupplyState.DONE; return; }
 
         // Start breaking the shulker
         if (stateTimer == 1) {
