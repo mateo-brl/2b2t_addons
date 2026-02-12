@@ -67,6 +67,10 @@ public class StateManager {
      */
     public void saveState(List<BaseRecord> bases, int waypointIndex, double distanceTraveled,
                           int chunksScanned, String searchMode) {
+        if (stateFile == null) {
+            LOGGER.warn("[StateManager] Cannot save: state directory not initialized");
+            return;
+        }
         try {
             Properties props = new Properties();
             props.setProperty("waypointIndex", String.valueOf(waypointIndex));
@@ -106,7 +110,7 @@ public class StateManager {
      * Returns a SessionData object with the loaded state, or null if no saved state.
      */
     public SessionData loadState() {
-        if (!Files.exists(stateFile)) return null;
+        if (stateFile == null || !Files.exists(stateFile)) return null;
 
         try {
             Properties props = new Properties();
@@ -168,9 +172,10 @@ public class StateManager {
      * Delete saved state (fresh start).
      */
     public void clearState() {
+        if (stateFile == null) return;
         try {
             Files.deleteIfExists(stateFile);
-            Files.deleteIfExists(chunksFile);
+            if (chunksFile != null) Files.deleteIfExists(chunksFile);
             ChatUtils.print("[StateManager] " + Lang.t("State cleared.", "État effacé."));
         } catch (IOException e) {
             LOGGER.error("[StateManager] Failed to clear state: {}", e.getMessage());

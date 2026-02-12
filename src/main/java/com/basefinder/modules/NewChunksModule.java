@@ -142,6 +142,7 @@ public class NewChunksModule extends ToggleableModule {
         // Version-based detection on loaded chunks
         if (useVersionDetection.getValue() && mc.level != null) {
             var chunks = WorldUtils.getChunks();
+            if (chunks == null) return;
             int scanned = 0;
             for (var chunk : chunks) {
                 if (scanned >= 2) break;
