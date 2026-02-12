@@ -20,6 +20,10 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
+          cache: 'gradle'
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -27,13 +31,26 @@ jobs:
       - name: Build
         run: ./gradlew build
 
+      - name: List build output
+        run: ls -la build/libs/ || echo "No build/libs directory!"
+
+      - name: Verify JAR exists
+        run: |
+          JAR_COUNT=$(find build/libs -name "*.jar" | wc -l)
+          if [ "$JAR_COUNT" -eq 0 ]; then
+            echo "ERROR: No JAR files found in build/libs/"
+            exit 1
+          fi
+          echo "Found $JAR_COUNT JAR files:"
+          find build/libs -name "*.jar"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: BaseFinder
           path: build/libs/*.jar
+          if-no-files-found: error
 
-  # Cree une Release automatiquement quand tu push un tag v*
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -49,6 +66,9 @@ jobs:
           name: BaseFinder
           path: artifacts/
 
+      - name: List artifacts
+        run: ls -la artifacts/
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -61,3 +81,9 @@ jobs:
             3. Lancer Minecraft avec RusherHack
 
             **Requis :** RusherHack + Minecraft 1.21.4
+
+            ## Modules inclus
+            - **BaseHunter** - Scanner automatique de bases
+            - **ChunkHistory** - Detection de nouveaux chunks
+            - **ElytraBot** - Vol elytra automatique
+            - **AutoTravel** - Voyage intelligent via Nether/Elytra/Marche
