@@ -557,6 +557,12 @@ public class BaseFinderModule extends ToggleableModule {
             notes.append("cluster:").append(analysis.getClusterSize());
         }
 
+        // Signs with text
+        if (analysis.getSignCount() > 0) {
+            if (!notes.isEmpty()) notes.append(", ");
+            notes.append("signs:").append(analysis.getSignCount());
+        }
+
         // Distance from spawn
         if (analysis.getDistanceFromSpawn() > 0) {
             if (!notes.isEmpty()) notes.append(", ");

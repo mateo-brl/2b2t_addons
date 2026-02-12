@@ -54,8 +54,12 @@ public class ChunkScanner {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("BaseFinder");
     private int debugCounter = 0;
 
+    private int deferredRetryCounter = 0;
+    private static final int DEFERRED_RETRY_INTERVAL = 10; // Retry deferred chunks every 10 scan cycles
+
     /**
      * Scan all currently loaded chunks that haven't been scanned yet.
+     * Also retries previously deferred chunks (skipped due to 2b2t lag).
      * Returns newly found interesting chunks.
      */
     public List<ChunkAnalysis> scanLoadedChunks() {
@@ -79,6 +83,50 @@ public class ChunkScanner {
             debugCounter++;
             if (debugCounter % 10 == 1) {
                 LOGGER.info("[ChunkScanner] Player at chunk ({}, {}), render distance: {}", playerChunkX, playerChunkZ, renderDist);
+            }
+
+            // Retry deferred chunks periodically - these were skipped due to 2b2t lag
+            deferredRetryCounter++;
+            if (deferredRetryCounter >= DEFERRED_RETRY_INTERVAL && !deferredChunks.isEmpty()) {
+                deferredRetryCounter = 0;
+                List<ChunkPos> toRetry = new ArrayList<>(deferredChunks);
+                int retried = 0;
+                for (ChunkPos deferredPos : toRetry) {
+                    if (scannedChunks.contains(deferredPos)) {
+                        deferredChunks.remove(deferredPos);
+                        continue;
+                    }
+                    LevelChunk deferredChunk = chunkSource.getChunk(deferredPos.x, deferredPos.z, false);
+                    if (deferredChunk != null) {
+                        boolean fullyLoaded = lagDetector == null || lagDetector.isChunkFullyLoaded(deferredChunk);
+                        if (fullyLoaded) {
+                            deferredChunks.remove(deferredPos);
+                            scannedChunks.add(deferredPos);
+                            ChunkAnalysis analysis = BlockAnalyzer.analyzeChunk(mc.level, deferredChunk);
+                            if (useEntityScanning) {
+                                entityScanner.scanEntities(analysis);
+                            }
+                            allAnalyses.put(deferredPos, analysis);
+                            newlyScanned.add(analysis);
+                            if (freshnessEstimator != null && analysis.isInteresting()) {
+                                freshnessEstimator.estimateFreshness(analysis);
+                            }
+                            if (analysis.getScore() >= minScore && analysis.isInteresting()) {
+                                if (shouldDetect(analysis.getBaseType())) {
+                                    interestingChunks.add(analysis);
+                                    newFinds.add(analysis);
+                                    if (analysis.getBaseType() == BaseType.TRAIL) {
+                                        trailChunks.add(analysis);
+                                    }
+                                }
+                            }
+                            retried++;
+                        }
+                    }
+                }
+                if (retried > 0) {
+                    LOGGER.info("[ChunkScanner] Retried {} deferred chunks, {} remaining", retried, deferredChunks.size());
+                }
             }
 
             for (int x = playerChunkX - renderDist; x <= playerChunkX + renderDist; x++) {
