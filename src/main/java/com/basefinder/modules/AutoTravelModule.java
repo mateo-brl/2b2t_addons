@@ -32,13 +32,13 @@ public class AutoTravelModule extends ToggleableModule {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("AutoTravel");
 
     // === SETTINGS ===
-    private final NumberSetting<Integer> targetX = new NumberSetting<>("Cible X", 0, -30000000, 30000000).incremental();
-    private final NumberSetting<Integer> targetZ = new NumberSetting<>("Cible Z", 0, -30000000, 30000000).incremental();
+    private final NumberSetting<Integer> targetX = new NumberSetting<>("Cible X", 0, -30000000, 30000000).incremental(100);
+    private final NumberSetting<Integer> targetZ = new NumberSetting<>("Cible Z", 0, -30000000, 30000000).incremental(100);
     private final EnumSetting<TargetDimension> targetDimension = new EnumSetting<>("Dimension", TargetDimension.OVERWORLD);
     private final EnumSetting<TravelMode> travelMode = new EnumSetting<>("Mode", TravelMode.AUTO);
     private final BooleanSetting useNetherShortcut = new BooleanSetting("Raccourci Nether",
             "Utilise le Nether pour les longs trajets Overworld (x8 plus rapide)", true);
-    private final NumberSetting<Integer> netherThreshold = new NumberSetting<>("Seuil Nether", 1000, 100, 100000).incremental();
+    private final NumberSetting<Integer> netherThreshold = new NumberSetting<>("Seuil Nether", 1000, 100, 100000).incremental(100);
 
     private final NullSetting elytraGroup = new NullSetting("Elytra");
     private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Altitude croisière", 200.0, 50.0, 350.0);

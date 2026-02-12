@@ -72,15 +72,15 @@ public class BaseFinderModule extends ToggleableModule {
     private final NumberSetting<Double> spiralStep = new NumberSetting<>("Espacement spiral", 500.0, 100.0, 5000.0);
 
     // Paramètres GRID (quadrillage) - simple : taille d'un carré + rayon total
-    private final NumberSetting<Integer> gridSize = new NumberSetting<>("Taille carrés", 5000, 500, 50000).incremental();
-    private final NumberSetting<Integer> gridRange = new NumberSetting<>("Rayon total", 100000, 5000, 500000).incremental();
+    private final NumberSetting<Integer> gridSize = new NumberSetting<>("Taille carrés", 5000, 500, 50000).incremental(500);
+    private final NumberSetting<Integer> gridRange = new NumberSetting<>("Rayon total", 100000, 5000, 500000).incremental(5000);
 
     // Paramètres ZONE - intuitif : "de X à X, de Z à Z"
-    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("X début", 0, -30000000, 30000000).incremental();
-    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("X fin", 500000, -30000000, 30000000).incremental();
-    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Z début", 0, -30000000, 30000000).incremental();
-    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Z fin", 500000, -30000000, 30000000).incremental();
-    private final NumberSetting<Integer> zoneSpacing = new NumberSetting<>("Espacement zone", 1000, 200, 10000).incremental();
+    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("X début", 0, -30000000, 30000000).incremental(1000);
+    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("X fin", 500000, -30000000, 30000000).incremental(1000);
+    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Z début", 0, -30000000, 30000000).incremental(1000);
+    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Z fin", 500000, -30000000, 30000000).incremental(1000);
+    private final NumberSetting<Integer> zoneSpacing = new NumberSetting<>("Espacement zone", 1000, 200, 10000).incremental(100);
 
     // Paramètres RANDOM
     private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Distance min", 5000, 100, 50000);
