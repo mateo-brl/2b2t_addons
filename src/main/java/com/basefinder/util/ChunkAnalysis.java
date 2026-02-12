@@ -18,6 +18,7 @@ public class ChunkAnalysis {
     private int trailBlockCount;
     private int mapArtBlockCount;
     private int shulkerCount;
+    private int signCount;
     private double score;
     private BaseType baseType = BaseType.NONE;
     private final List<SignificantBlock> significantBlocks = new ArrayList<>();
@@ -70,6 +71,8 @@ public class ChunkAnalysis {
     public void setMapArtBlockCount(int count) { this.mapArtBlockCount = count; }
     public int getShulkerCount() { return shulkerCount; }
     public void setShulkerCount(int count) { this.shulkerCount = count; }
+    public int getSignCount() { return signCount; }
+    public void setSignCount(int count) { this.signCount = count; }
     public double getScore() { return score; }
     public void setScore(double score) { this.score = score; }
     public BaseType getBaseType() { return baseType; }
