@@ -10,6 +10,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.block.entity.SignText;
+
 import java.util.*;
 
 /**
@@ -97,6 +100,18 @@ public class BlockAnalyzer {
     ));
 
     /**
+     * Concrete blocks - player-placed, also used in map art.
+     */
+    private static final Set<Block> CONCRETE_BLOCKS = new HashSet<>(Arrays.asList(
+            Blocks.WHITE_CONCRETE, Blocks.ORANGE_CONCRETE, Blocks.MAGENTA_CONCRETE,
+            Blocks.LIGHT_BLUE_CONCRETE, Blocks.YELLOW_CONCRETE, Blocks.LIME_CONCRETE,
+            Blocks.PINK_CONCRETE, Blocks.GRAY_CONCRETE, Blocks.LIGHT_GRAY_CONCRETE,
+            Blocks.CYAN_CONCRETE, Blocks.PURPLE_CONCRETE, Blocks.BLUE_CONCRETE,
+            Blocks.BROWN_CONCRETE, Blocks.GREEN_CONCRETE, Blocks.RED_CONCRETE,
+            Blocks.BLACK_CONCRETE
+    ));
+
+    /**
      * Trail blocks - only blocks that strongly indicate player-made paths.
      * Removed: cobblestone (natural), torch (mineshafts), netherrack (nether).
      */
@@ -150,8 +165,8 @@ public class BlockAnalyzer {
     public static boolean isMapArtBlock(Block block) {
         return block instanceof ConcretePowderBlock
                 || block instanceof StainedGlassBlock
-                || STRONG_PLAYER_BLOCKS.contains(block) && block.defaultBlockState().is(Blocks.WHITE_CONCRETE.defaultBlockState().getBlock())
-                || WOOL_BLOCKS.contains(block);
+                || WOOL_BLOCKS.contains(block)
+                || CONCRETE_BLOCKS.contains(block);
     }
 
     /**
@@ -250,7 +265,7 @@ public class BlockAnalyzer {
         int trailBlockCount = 0;
         int mapArtBlockCount = 0;
         int shulkerCount = 0;
-        int highYColoredBlocks = 0;
+        int signWithTextCount = 0;
 
         // Multi-Y scanning: track blocks at special Y levels
         int bedrockLayerBlocks = 0;  // Y 0-10: hidden stashes in bedrock
@@ -295,9 +310,19 @@ public class BlockAnalyzer {
                             trailBlockCount++;
                         }
 
-                        if (isMapArtBlock(block) && worldY > 200) {
-                            highYColoredBlocks++;
+                        if (isMapArtBlock(block)) {
                             mapArtBlockCount++;
+                        }
+
+                        // Sign text detection - signs with text are strong base indicators
+                        if (block instanceof SignBlock || block instanceof WallSignBlock) {
+                            BlockPos signPos = new BlockPos(minX + x, worldY, minZ + z);
+                            if (chunk.getBlockEntity(signPos) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+                                if (hasSignText(sign)) {
+                                    signWithTextCount++;
+                                    analysis.addSignificantBlock(signPos, block);
+                                }
+                            }
                         }
 
                         // Multi-Y: track strong/storage blocks at special Y levels
@@ -321,8 +346,10 @@ public class BlockAnalyzer {
         analysis.setMapArtBlockCount(mapArtBlockCount);
         analysis.setShulkerCount(shulkerCount);
 
+        analysis.setSignCount(signWithTextCount);
+
         // Determine base type - only flag if strong indicators present
-        if (highYColoredBlocks > 50) {
+        if (mapArtBlockCount > 50) {
             analysis.setBaseType(BaseType.MAP_ART);
         } else if (shulkerCount >= 1) {
             analysis.setBaseType(BaseType.STORAGE);
@@ -342,7 +369,8 @@ public class BlockAnalyzer {
                 + strongBlockCount * 5.0
                 + significantObsidian * 2.0
                 + mapArtBlockCount * 1.0
-                + trailBlockCount * 0.5;
+                + trailBlockCount * 0.5
+                + signWithTextCount * 15.0; // Signs with text = very strong base indicator
 
         // Multi-Y bonuses: hidden stashes at bedrock or sky level are more significant
         if (bedrockLayerBlocks >= 1) {
@@ -374,5 +402,25 @@ public class BlockAnalyzer {
 
         analysis.setScore(score);
         return analysis;
+    }
+
+    /**
+     * Check if a sign has any non-empty text on it.
+     * Signs with text are a very strong indicator of a player base on 2b2t.
+     */
+    private static boolean hasSignText(SignBlockEntity sign) {
+        try {
+            SignText front = sign.getFrontText();
+            SignText back = sign.getBackText();
+            for (int i = 0; i < 4; i++) {
+                String frontLine = front.getMessage(i, false).getString().trim();
+                if (!frontLine.isEmpty()) return true;
+                String backLine = back.getMessage(i, false).getString().trim();
+                if (!backLine.isEmpty()) return true;
+            }
+        } catch (Exception e) {
+            // Silently fail - sign may not be fully loaded
+        }
+        return false;
     }
 }
