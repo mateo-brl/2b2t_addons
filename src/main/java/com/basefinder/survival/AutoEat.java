@@ -126,6 +126,21 @@ public class AutoEat {
         return -1;
     }
 
+    /**
+     * Stop eating and release held keys. Call on module disable.
+     */
+    public void stop() {
+        if (isEating) {
+            mc.options.keyUse.setDown(false);
+            if (previousSlot >= 0 && mc.player != null) {
+                mc.player.getInventory().selected = previousSlot;
+            }
+            isEating = false;
+            previousSlot = -1;
+            eatTimer = 0;
+        }
+    }
+
     public boolean isCurrentlyEating() { return isEating; }
     public void setHungerThreshold(int threshold) { this.hungerThreshold = threshold; }
 }

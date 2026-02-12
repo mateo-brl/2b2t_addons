@@ -133,6 +133,18 @@ public class AutoTravelModule extends ToggleableModule {
         elytraBot.stop();
         releaseMovementKeys();
         travelState = TravelState.IDLE;
+        // Reset all internal state for clean re-enable
+        currentTarget = null;
+        finalTarget = null;
+        portalPos = null;
+        usingElytra = false;
+        usingNetherRoute = false;
+        tickCounter = 0;
+        stuckTimer = 0;
+        lastPos = null;
+        portalWaitTimer = 0;
+        messageThrottle = 0;
+        jumpCooldown = 0;
         if (mc.level != null) {
             ChatUtils.print("[AutoTravel] " + Lang.t("Stopped.", "Arrêté."));
         }
@@ -181,22 +193,27 @@ public class AutoTravelModule extends ToggleableModule {
             logProgress();
         }
 
-        switch (travelState) {
-            case IDLE -> {}
-            case FINDING_PORTAL -> handleFindingPortal();
-            case GOING_TO_PORTAL -> handleGoingToPortal();
-            case ENTERING_PORTAL -> handleEnteringPortal();
-            case NETHER_TRAVEL -> handleNetherTravel();
-            case FINDING_EXIT_PORTAL -> handleFindingExitPortal();
-            case GOING_TO_EXIT -> handleGoingToExit();
-            case EXITING_PORTAL -> handleExitingPortal();
-            case DIRECT_TRAVEL -> handleDirectTravel();
-            case ARRIVED -> {
-                releaseMovementKeys();
-                elytraBot.stop();
-                ChatUtils.print("[AutoTravel] " + Lang.t("Arrived at destination!", "Arrivé à destination !"));
-                this.toggle();
+        try {
+            switch (travelState) {
+                case IDLE -> {}
+                case FINDING_PORTAL -> handleFindingPortal();
+                case GOING_TO_PORTAL -> handleGoingToPortal();
+                case ENTERING_PORTAL -> handleEnteringPortal();
+                case NETHER_TRAVEL -> handleNetherTravel();
+                case FINDING_EXIT_PORTAL -> handleFindingExitPortal();
+                case GOING_TO_EXIT -> handleGoingToExit();
+                case EXITING_PORTAL -> handleExitingPortal();
+                case DIRECT_TRAVEL -> handleDirectTravel();
+                case ARRIVED -> {
+                    releaseMovementKeys();
+                    elytraBot.stop();
+                    ChatUtils.print("[AutoTravel] " + Lang.t("Arrived at destination!", "Arrivé à destination !"));
+                    this.toggle();
+                }
             }
+        } catch (Exception e) {
+            LOGGER.error("[AutoTravel] Error in state {}: {}", travelState, e.getMessage());
+            releaseMovementKeys();
         }
     }
 
