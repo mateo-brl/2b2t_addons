@@ -67,21 +67,28 @@ public class BaseFinderModule extends ToggleableModule {
     // --- MODE DE RECHERCHE ---
     private final NullSetting modeGroup = new NullSetting("Mode de recherche");
     private final EnumSetting<NavigationHelper.SearchPattern> searchMode = new EnumSetting<>("Mode", NavigationHelper.SearchPattern.SPIRAL);
+
     // Paramètres SPIRAL
     private final NumberSetting<Double> spiralStep = new NumberSetting<>("Espacement spiral", 500.0, 100.0, 5000.0);
-    // Paramètres GRID (quadrillage)
-    private final NumberSetting<Integer> gridSize = new NumberSetting<>("Taille carrés", 1000, 200, 10000);
-    private final NumberSetting<Integer> gridRange = new NumberSetting<>("Zone totale", 50000, 5000, 500000);
-    // Paramètres ZONE (coordonnées exactes) - incremental pour pouvoir taper la valeur
-    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("Zone min X", -10000, -30000000, 30000000).incremental(1.0);
-    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("Zone max X", 10000, -30000000, 30000000).incremental(1.0);
-    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Zone min Z", -10000, -30000000, 30000000).incremental(1.0);
-    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Zone max Z", 10000, -30000000, 30000000).incremental(1.0);
+
+    // Paramètres GRID (quadrillage) - simple : taille d'un carré + rayon total
+    private final NumberSetting<Integer> gridSize = new NumberSetting<>("Taille carrés", 5000, 500, 50000).incremental();
+    private final NumberSetting<Integer> gridRange = new NumberSetting<>("Rayon total", 100000, 5000, 500000).incremental();
+
+    // Paramètres ZONE - intuitif : "de X à X, de Z à Z"
+    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("X début", 0, -30000000, 30000000).incremental();
+    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("X fin", 500000, -30000000, 30000000).incremental();
+    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Z début", 0, -30000000, 30000000).incremental();
+    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Z fin", 500000, -30000000, 30000000).incremental();
+    private final NumberSetting<Integer> zoneSpacing = new NumberSetting<>("Espacement zone", 1000, 200, 10000).incremental();
+
     // Paramètres RANDOM
     private final NumberSetting<Integer> searchMinDist = new NumberSetting<>("Distance min", 5000, 100, 50000);
     private final NumberSetting<Integer> searchMaxDist = new NumberSetting<>("Distance max", 100000, 10000, 500000);
+
     // Paramètres RING
     private final NumberSetting<Double> spiralRadius = new NumberSetting<>("Rayon anneau", 5000.0, 500.0, 200000.0);
+
     // Paramètres HIGHWAYS
     private final NumberSetting<Integer> highwayDist = new NumberSetting<>("Distance autoroute", 100000, 10000, 500000);
     private final NumberSetting<Integer> highwayInterval = new NumberSetting<>("Intervalle scan", 1000, 100, 10000);
@@ -102,7 +109,7 @@ public class BaseFinderModule extends ToggleableModule {
     private final BooleanSetting detectStorage = new BooleanSetting("Stashes", "Shulkers, ender chests, stockage", true);
     private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", "Détecter les map arts au sol", true);
     private final BooleanSetting detectTrails = new BooleanSetting("Pistes", "Autoroutes de glace, chemins d'obsidienne", true);
-    private final NumberSetting<Double> minScore = new NumberSetting<>("Sensibilité", 25.0, 5.0, 200.0);
+    private final NumberSetting<Double> minScore = new NumberSetting<>("Sensibilité", 30.0, 5.0, 200.0);
     private final BooleanSetting useEntityScanning = new BooleanSetting("Scan entités", "Scanner véhicules, animaux dressés, armures", true);
     private final BooleanSetting useClusterScoring = new BooleanSetting("Score cluster", "Regrouper les blocs proches pour un meilleur score", true);
     private final BooleanSetting followTrails = new BooleanSetting("Suivre les pistes", "Suivre automatiquement les pistes détectées", true);
@@ -149,7 +156,7 @@ public class BaseFinderModule extends ToggleableModule {
         // Mode de recherche avec paramètres spécifiques par mode
         modeGroup.addSubSettings(searchMode, spiralStep,
                 gridSize, gridRange,
-                zoneMinX, zoneMaxX, zoneMinZ, zoneMaxZ,
+                zoneMinX, zoneMaxX, zoneMinZ, zoneMaxZ, zoneSpacing,
                 searchMinDist, searchMaxDist,
                 spiralRadius,
                 highwayDist, highwayInterval);
@@ -210,6 +217,7 @@ public class BaseFinderModule extends ToggleableModule {
         navigation.setGridSize(gridSize.getValue());
         navigation.setGridRange(gridRange.getValue());
         navigation.setZoneBounds(zoneMinX.getValue(), zoneMaxX.getValue(), zoneMinZ.getValue(), zoneMaxZ.getValue());
+        navigation.setZoneSpacing(zoneSpacing.getValue());
 
         navigation.initializeSearch(pattern, mc.player.blockPosition());
 
@@ -217,21 +225,50 @@ public class BaseFinderModule extends ToggleableModule {
         tickCounter = 0;
         scanner.reset();
 
-        // Show mode info
-        String modeDesc = switch (pattern) {
-            case SPIRAL -> Lang.t("Spiral outward from your position", "Spirale depuis votre position");
-            case GRID -> Lang.t("Grid: " + gridSize.getValue() + "x" + gridSize.getValue() + " squares over " + gridRange.getValue() + " blocks",
-                    "Grille : carrés de " + gridSize.getValue() + "x" + gridSize.getValue() + " sur " + gridRange.getValue() + " blocs");
-            case ZONE -> Lang.t("Zone: X[" + zoneMinX.getValue() + " to " + zoneMaxX.getValue() + "] Z[" + zoneMinZ.getValue() + " to " + zoneMaxZ.getValue() + "]",
-                    "Zone : X[" + zoneMinX.getValue() + " à " + zoneMaxX.getValue() + "] Z[" + zoneMinZ.getValue() + " à " + zoneMaxZ.getValue() + "]");
-            case HIGHWAYS -> Lang.t("Follow all 8 highways", "Suivre les 8 autoroutes");
-            case RANDOM -> Lang.t("Random within " + searchMinDist.getValue() + "-" + searchMaxDist.getValue() + " blocks",
-                    "Aléatoire entre " + searchMinDist.getValue() + " et " + searchMaxDist.getValue() + " blocs");
-            case RING -> Lang.t("Ring at " + String.format("%.0f", spiralRadius.getValue()) + " blocks radius",
-                    "Anneau à " + String.format("%.0f", spiralRadius.getValue()) + " blocs de rayon");
-            case CUSTOM -> Lang.t("Custom waypoints", "Waypoints personnalisés");
-        };
-        ChatUtils.print("[BaseHunter] " + Lang.t("Started! Mode: ", "Démarré ! Mode : ") + pattern.name());
+        // Show mode info with clear description
+        String modeName;
+        String modeDesc;
+        switch (pattern) {
+            case SPIRAL -> {
+                modeName = Lang.t("Spiral", "Spirale");
+                modeDesc = Lang.t("Spiral outward from your position, " + String.format("%.0f", spiralStep.getValue()) + " blocks apart",
+                        "Spirale depuis votre position, " + String.format("%.0f", spiralStep.getValue()) + " blocs d'espacement");
+            }
+            case GRID -> {
+                modeName = Lang.t("Grid", "Quadrillage");
+                int totalArea = gridRange.getValue() * 2;
+                int numSquares = totalArea / gridSize.getValue();
+                modeDesc = Lang.t("Squares of " + gridSize.getValue() + "x" + gridSize.getValue() + " blocks, " + numSquares + "x" + numSquares + " squares (" + totalArea + "x" + totalArea + " total)",
+                        "Carrés de " + gridSize.getValue() + "x" + gridSize.getValue() + " blocs, " + numSquares + "x" + numSquares + " carrés (" + totalArea + "x" + totalArea + " total)");
+            }
+            case ZONE -> {
+                modeName = "Zone";
+                int spanX = Math.abs(zoneMaxX.getValue() - zoneMinX.getValue());
+                int spanZ = Math.abs(zoneMaxZ.getValue() - zoneMinZ.getValue());
+                modeDesc = Lang.t("X from " + zoneMinX.getValue() + " to " + zoneMaxX.getValue() + ", Z from " + zoneMinZ.getValue() + " to " + zoneMaxZ.getValue() + " (" + spanX + "x" + spanZ + " area, spacing " + zoneSpacing.getValue() + ")",
+                        "X de " + zoneMinX.getValue() + " à " + zoneMaxX.getValue() + ", Z de " + zoneMinZ.getValue() + " à " + zoneMaxZ.getValue() + " (" + spanX + "x" + spanZ + " blocs, espacement " + zoneSpacing.getValue() + ")");
+            }
+            case HIGHWAYS -> {
+                modeName = Lang.t("Highways", "Autoroutes");
+                modeDesc = Lang.t("Following all 8 highways up to " + highwayDist.getValue() + " blocks",
+                        "Suivi des 8 autoroutes jusqu'à " + highwayDist.getValue() + " blocs");
+            }
+            case RANDOM -> {
+                modeName = Lang.t("Random", "Aléatoire");
+                modeDesc = Lang.t("Random points between " + searchMinDist.getValue() + " and " + searchMaxDist.getValue() + " blocks",
+                        "Points aléatoires entre " + searchMinDist.getValue() + " et " + searchMaxDist.getValue() + " blocs");
+            }
+            case RING -> {
+                modeName = Lang.t("Ring", "Anneau");
+                modeDesc = Lang.t("Ring at " + String.format("%.0f", spiralRadius.getValue()) + " blocks radius",
+                        "Anneau à " + String.format("%.0f", spiralRadius.getValue()) + " blocs de rayon");
+            }
+            default -> {
+                modeName = Lang.t("Custom", "Personnalisé");
+                modeDesc = Lang.t("Custom waypoints", "Waypoints personnalisés");
+            }
+        }
+        ChatUtils.print("[BaseHunter] " + Lang.t("Started! Mode: ", "Démarré ! Mode : ") + modeName);
         ChatUtils.print("[BaseHunter] " + modeDesc);
 
         // Initialize survival systems

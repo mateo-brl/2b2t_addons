@@ -39,10 +39,11 @@ public class NavigationHelper {
     private int gridRange = 50000; // Total range to cover
 
     // Zone search parameters
-    private int zoneMinX = -10000;
-    private int zoneMaxX = 10000;
-    private int zoneMinZ = -10000;
-    private int zoneMaxZ = 10000;
+    private int zoneMinX = 0;
+    private int zoneMaxX = 500000;
+    private int zoneMinZ = 0;
+    private int zoneMaxZ = 500000;
+    private int zoneSpacing = 1000; // Distance between waypoints in zone mode
 
     // Stats
     private double totalDistanceTraveled = 0;
@@ -167,23 +168,23 @@ public class NavigationHelper {
 
     /**
      * Zone mode: generate waypoints in zigzag within specific coordinate bounds.
-     * Uses the zoneMinX/MaxX/MinZ/MaxZ parameters.
+     * Covers the entire area defined by X début/fin and Z début/fin.
+     * Uses zoneSpacing to control the distance between passes.
      */
     private void generateZoneWaypoints() {
-        int cellSize = gridSize; // Reuse grid size for spacing
         int minX = Math.min(zoneMinX, zoneMaxX);
         int maxX = Math.max(zoneMinX, zoneMaxX);
         int minZ = Math.min(zoneMinZ, zoneMaxZ);
         int maxZ = Math.max(zoneMinZ, zoneMaxZ);
 
         int row = 0;
-        for (int z = minZ + cellSize / 2; z <= maxZ; z += cellSize) {
+        for (int z = minZ + zoneSpacing / 2; z <= maxZ; z += zoneSpacing) {
             if (row % 2 == 0) {
-                for (int x = minX + cellSize / 2; x <= maxX; x += cellSize) {
+                for (int x = minX + zoneSpacing / 2; x <= maxX; x += zoneSpacing) {
                     waypoints.add(new BlockPos(x, 200, z));
                 }
             } else {
-                for (int x = maxX - cellSize / 2; x >= minX; x -= cellSize) {
+                for (int x = maxX - zoneSpacing / 2; x >= minX; x -= zoneSpacing) {
                     waypoints.add(new BlockPos(x, 200, z));
                 }
             }
@@ -286,4 +287,5 @@ public class NavigationHelper {
         this.zoneMinZ = minZ;
         this.zoneMaxZ = maxZ;
     }
+    public void setZoneSpacing(int spacing) { this.zoneSpacing = spacing; }
 }
