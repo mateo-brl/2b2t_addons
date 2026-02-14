@@ -237,10 +237,9 @@ public class BaseFinderModule extends ToggleableModule {
         StateManager.SessionData savedState = null;
         if (enableAutoSave.getValue()) {
             savedState = stateManager.loadState();
-            if (savedState != null && savedState.searchMode.equals(pattern.name())) {
-                if (savedState.centerX != 0 || savedState.centerZ != 0) {
-                    searchCenter = new BlockPos(savedState.centerX, 200, savedState.centerZ);
-                }
+            if (savedState != null && savedState.searchMode.equals(pattern.name()) && savedState.waypointIndex > 0) {
+                // Always use saved center to regenerate identical waypoints
+                searchCenter = new BlockPos(savedState.centerX, 200, savedState.centerZ);
             }
         }
 
@@ -792,11 +791,14 @@ public class BaseFinderModule extends ToggleableModule {
         double dz = mc.player.getZ() - basePos.getZ();
         double dist = Math.sqrt(dx * dx + dz * dz);
 
-        // Still far from base - keep flying
+        // Keep elytra bot alive during entire approach
+        if (useElytra.getValue()) {
+            elytraBot.tick();
+        }
+
+        // Still far from base
         if (dist > APPROACH_DISTANCE) {
-            if (useElytra.getValue()) {
-                elytraBot.tick();
-            } else {
+            if (!useElytra.getValue()) {
                 // Ground movement toward base
                 float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
                 mc.player.setYRot(yaw);
@@ -815,9 +817,13 @@ public class BaseFinderModule extends ToggleableModule {
         // Near base - record when we first got close
         if (approachNearTicks == 0) {
             approachNearTicks = approachTicks;
+            // Stop elytra to hover/glide near the base
+            if (useElytra.getValue()) {
+                elytraBot.stop();
+            }
         }
 
-        // Look at the base
+        // Look at the base for screenshot
         float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
         float dy = (float) (basePos.getY() - mc.player.getY());
         float pitchAngle = (float) -Math.toDegrees(Math.atan2(dy, Math.max(dist, 1)));
