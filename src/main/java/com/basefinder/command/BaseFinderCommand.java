@@ -24,8 +24,8 @@ public class BaseFinderCommand extends Command {
 
     @CommandExecutor
     private String base() {
-        return Lang.t("Commands: status, bases, goto, modes, export, waypoints, pause, resume, skip, clear",
-                       "Commandes : status, bases, goto, modes, export, waypoints, pause, resume, skip, clear");
+        return Lang.t("Commands: status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear",
+                       "Commandes : status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear");
     }
 
     @CommandExecutor(subCommand = "status")
@@ -151,6 +151,35 @@ public class BaseFinderCommand extends Command {
         String fmt = (format != null && !format.isEmpty()) ? format : "all";
         module.exportWaypoints(fmt);
         return Lang.t("Exporting waypoints (format: " + fmt + ")", "Export waypoints (format : " + fmt + ")");
+    }
+
+    @CommandExecutor(subCommand = "zone")
+    @CommandExecutor.Argument({"minX", "maxX", "minZ", "maxZ"})
+    private String zone(String minX, String maxX, String minZ, String maxZ) {
+        BaseFinderModule module = getModule();
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
+
+        if (minX == null || minX.isEmpty()) {
+            // Show current zone values
+            int[] bounds = module.getZoneBounds();
+            return Lang.t("Current zone: X[%d to %d] Z[%d to %d]\nUsage: *basefinder zone <minX> <maxX> <minZ> <maxZ>",
+                          "Zone actuelle : X[%d à %d] Z[%d à %d]\nUsage : *basefinder zone <minX> <maxX> <minZ> <maxZ>")
+                    .formatted(bounds[0], bounds[1], bounds[2], bounds[3]);
+        }
+
+        try {
+            int x1 = Integer.parseInt(minX);
+            int x2 = Integer.parseInt(maxX);
+            int z1 = Integer.parseInt(minZ);
+            int z2 = Integer.parseInt(maxZ);
+            module.setZoneBounds(x1, x2, z1, z2);
+            return Lang.t("Zone set: X[%d to %d] Z[%d to %d]",
+                          "Zone définie : X[%d à %d] Z[%d à %d]")
+                    .formatted(x1, x2, z1, z2);
+        } catch (NumberFormatException e) {
+            return Lang.t("Invalid numbers! Usage: *basefinder zone 0 500000 0 500000",
+                          "Nombres invalides ! Usage : *basefinder zone 0 500000 0 500000");
+        }
     }
 
     @CommandExecutor(subCommand = "clear")
