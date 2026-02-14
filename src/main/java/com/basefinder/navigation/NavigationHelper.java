@@ -18,6 +18,7 @@ public class NavigationHelper {
     private final List<BlockPos> waypoints = new ArrayList<>();
     private int currentWaypointIndex = 0;
     private BlockPos currentTarget = null;
+    private BlockPos searchCenter = null;
 
     // Spiral parameters
     private double spiralRadius = 1000;
@@ -64,6 +65,7 @@ public class NavigationHelper {
      */
     public void initializeSearch(SearchPattern pattern, BlockPos center) {
         this.pattern = pattern;
+        this.searchCenter = center;
         this.waypoints.clear();
         this.currentWaypointIndex = 0;
 
@@ -271,6 +273,7 @@ public class NavigationHelper {
     public int getCurrentWaypointIndex() { return currentWaypointIndex; }
     public double getTotalDistanceTraveled() { return totalDistanceTraveled; }
     public SearchPattern getPattern() { return pattern; }
+    public BlockPos getSearchCenter() { return searchCenter; }
     public List<BlockPos> getWaypoints() { return Collections.unmodifiableList(waypoints); }
 
     public void setSpiralRadius(double radius) { this.spiralRadius = radius; }

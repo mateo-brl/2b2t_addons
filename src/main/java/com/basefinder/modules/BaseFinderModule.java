@@ -62,6 +62,16 @@ public class BaseFinderModule extends ToggleableModule {
     private int scanInterval = 20; // scan every second
     private int investigationStartTick = 0;
 
+    // Base approach state
+    private BaseRecord pendingBaseApproach = null;
+    private int approachTicks = 0;
+    private int approachNearTicks = 0;
+    private boolean approachScreenshotTaken = false;
+    private FinderState stateBeforeApproach = FinderState.SCANNING;
+    private static final int APPROACH_DISTANCE = 100;
+    private static final int APPROACH_WAIT_TICKS = 60;
+    private static final int APPROACH_TIMEOUT = 400;
+
     // === Settings ===
 
     // --- MODE DE RECHERCHE ---
@@ -115,6 +125,7 @@ public class BaseFinderModule extends ToggleableModule {
     private final BooleanSetting useClusterScoring = new BooleanSetting("Score cluster", "Regrouper les blocs proches pour un meilleur score", true);
     private final BooleanSetting followTrails = new BooleanSetting("Suivre les pistes", "Suivre automatiquement les pistes détectées", true);
     private final BooleanSetting autoScreenshot = new BooleanSetting("Auto capture", "Capturer l'écran à chaque découverte", false);
+    private final BooleanSetting visitBases = new BooleanSetting("Visiter les bases", "Voler vers les bases détectées pour les photographier", true);
 
     // --- SURVIE 24/7 ---
     private final NullSetting survivalGroup = new NullSetting("Survie 24/7");
@@ -148,6 +159,7 @@ public class BaseFinderModule extends ToggleableModule {
         TRAIL_FOLLOWING,
         FLYING_TO_WAYPOINT,
         INVESTIGATING,
+        APPROACHING_BASE,
         PAUSED
     }
 
@@ -168,7 +180,7 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Détection
         detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails,
-                minScore, useEntityScanning, useClusterScoring, followTrails, autoScreenshot);
+                minScore, useEntityScanning, useClusterScoring, followTrails, autoScreenshot, visitBases);
 
         // Survie
         survivalGroup.addSubSettings(enableAutoTotem, enableAutoEat, healthThreshold,
@@ -220,7 +232,27 @@ public class BaseFinderModule extends ToggleableModule {
         navigation.setZoneBounds(zoneMinX.getValue(), zoneMaxX.getValue(), zoneMinZ.getValue(), zoneMaxZ.getValue());
         navigation.setZoneSpacing(zoneSpacing.getValue());
 
-        navigation.initializeSearch(pattern, mc.player.blockPosition());
+        // Load saved state to restore waypoint position
+        BlockPos searchCenter = mc.player.blockPosition();
+        StateManager.SessionData savedState = null;
+        if (enableAutoSave.getValue()) {
+            savedState = stateManager.loadState();
+            if (savedState != null && savedState.searchMode.equals(pattern.name())) {
+                if (savedState.centerX != 0 || savedState.centerZ != 0) {
+                    searchCenter = new BlockPos(savedState.centerX, 200, savedState.centerZ);
+                }
+            }
+        }
+
+        navigation.initializeSearch(pattern, searchCenter);
+
+        // Restore waypoint index from saved session
+        if (savedState != null && savedState.searchMode.equals(pattern.name()) && savedState.waypointIndex > 0) {
+            navigation.skipTo(savedState.waypointIndex);
+            ChatUtils.print("[BaseHunter] " + Lang.t(
+                    "Session restored! Resuming from waypoint " + (savedState.waypointIndex + 1) + "/" + navigation.getWaypointCount(),
+                    "Session restaurée ! Reprise au waypoint " + (savedState.waypointIndex + 1) + "/" + navigation.getWaypointCount()));
+        }
 
         state = FinderState.SCANNING;
         tickCounter = 0;
@@ -275,14 +307,6 @@ public class BaseFinderModule extends ToggleableModule {
         // Initialize survival systems
         survivalManager.onEnable();
 
-        // Try to load previous session state
-        if (enableAutoSave.getValue()) {
-            StateManager.SessionData savedState = stateManager.loadState();
-            if (savedState != null && !savedState.bases.isEmpty()) {
-                ChatUtils.print("[BaseHunter] " + Lang.t("Previous session restored!", "Session précédente restaurée !"));
-            }
-        }
-
         // Show optimization status
         StringBuilder optimStatus = new StringBuilder();
         if (useEntityScanning.getValue()) optimStatus.append(Lang.t("Entities", "Entités")).append(" ");
@@ -325,12 +349,15 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Save state on disable
         if (enableAutoSave.getValue()) {
+            BlockPos center = navigation.getSearchCenter();
             stateManager.saveState(
                     logger.getRecords(),
                     navigation.getCurrentWaypointIndex(),
                     navigation.getTotalDistanceTraveled(),
                     scanner.getScannedCount(),
-                    searchMode.getValue().name()
+                    searchMode.getValue().name(),
+                    center != null ? center.getX() : 0,
+                    center != null ? center.getZ() : 0
             );
         }
 
@@ -463,12 +490,15 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Auto-save state periodically
         if (enableAutoSave.getValue() && stateManager.shouldAutoSave()) {
+            BlockPos center = navigation.getSearchCenter();
             stateManager.saveState(
                     logger.getRecords(),
                     navigation.getCurrentWaypointIndex(),
                     navigation.getTotalDistanceTraveled(),
                     scanner.getScannedCount(),
-                    searchMode.getValue().name()
+                    searchMode.getValue().name(),
+                    center != null ? center.getX() : 0,
+                    center != null ? center.getZ() : 0
             );
         }
 
@@ -480,6 +510,7 @@ public class BaseFinderModule extends ToggleableModule {
             case TRAIL_FOLLOWING -> handleTrailFollowing();
             case FLYING_TO_WAYPOINT -> handleFlying();
             case INVESTIGATING -> handleInvestigating();
+            case APPROACHING_BASE -> handleApproachingBase();
             case PAUSED, IDLE -> {}
         }
     }
@@ -508,6 +539,7 @@ public class BaseFinderModule extends ToggleableModule {
             ChatUtils.print("[BaseHunter] " + Lang.t("Scanned: ", "Scannés : ") + scanner.getScannedCount() + Lang.t(" chunks | Found: ", " chunks | Trouvés : ") + logger.getCount() + " bases");
         }
 
+        BaseRecord bestApproach = null;
         for (ChunkAnalysis analysis : newFinds) {
             if (analysis.getBaseType() != BaseType.TRAIL) {
                 BaseRecord record = new BaseRecord(
@@ -521,7 +553,17 @@ public class BaseFinderModule extends ToggleableModule {
                 // Add enriched notes from analysis
                 addAnalysisNotes(record, analysis);
                 logger.logBase(record);
+
+                if (visitBases.getValue() && (bestApproach == null || record.getScore() > bestApproach.getScore())) {
+                    bestApproach = record;
+                }
             }
+        }
+
+        // Visit best base found
+        if (bestApproach != null) {
+            startBaseApproach(bestApproach);
+            return;
         }
 
         // Check for trails to follow
@@ -608,6 +650,7 @@ public class BaseFinderModule extends ToggleableModule {
         // Keep scanning while following trail
         if (tickCounter % scanInterval == 0) {
             List<ChunkAnalysis> newFinds = scanner.scanLoadedChunks();
+            BaseRecord bestApproach = null;
             for (ChunkAnalysis analysis : newFinds) {
                 if (analysis.getBaseType() != BaseType.TRAIL && analysis.getBaseType() != BaseType.NONE) {
                     BaseRecord record = new BaseRecord(
@@ -621,14 +664,22 @@ public class BaseFinderModule extends ToggleableModule {
                     addAnalysisNotes(record, analysis);
                     logger.logBase(record);
 
-                    // Si on trouve quelque chose d'important, investiguer
-                    if (analysis.getScore() >= minScore.getValue() * 2) {
+                    if (visitBases.getValue() && (bestApproach == null || record.getScore() > bestApproach.getScore())) {
+                        bestApproach = record;
+                    } else if (!visitBases.getValue() && analysis.getScore() >= minScore.getValue() * 2) {
+                        // Si on trouve quelque chose d'important, investiguer (si visite désactivée)
                         state = FinderState.INVESTIGATING;
                         investigationStartTick = tickCounter;
                         ChatUtils.print("[BaseHunter] " + Lang.t("Significant find! Investigating...", "Découverte importante ! Investigation..."));
                         return;
                     }
                 }
+            }
+
+            // Visit best base found
+            if (bestApproach != null) {
+                startBaseApproach(bestApproach);
+                return;
             }
         }
     }
@@ -639,6 +690,7 @@ public class BaseFinderModule extends ToggleableModule {
         // Keep scanning while flying
         if (tickCounter % scanInterval == 0) {
             List<ChunkAnalysis> newFinds = scanner.scanLoadedChunks();
+            BaseRecord bestApproach = null;
             for (ChunkAnalysis analysis : newFinds) {
                 if (analysis.getBaseType() != BaseType.NONE && analysis.getBaseType() != BaseType.TRAIL) {
                     BaseRecord record = new BaseRecord(
@@ -651,7 +703,17 @@ public class BaseFinderModule extends ToggleableModule {
                     );
                     addAnalysisNotes(record, analysis);
                     logger.logBase(record);
+
+                    if (visitBases.getValue() && (bestApproach == null || record.getScore() > bestApproach.getScore())) {
+                        bestApproach = record;
+                    }
                 }
+            }
+
+            // Visit best base found
+            if (bestApproach != null) {
+                startBaseApproach(bestApproach);
+                return;
             }
 
             // Check for trails
@@ -696,6 +758,93 @@ public class BaseFinderModule extends ToggleableModule {
         if (tickCounter - investigationStartTick >= 100) {
             state = FinderState.SCANNING;
             ChatUtils.print("[BaseHunter] " + Lang.t("Investigation complete. Continuing search.", "Investigation terminée. Reprise de la recherche."));
+        }
+    }
+
+    // ===== BASE APPROACH =====
+
+    private void startBaseApproach(BaseRecord record) {
+        pendingBaseApproach = record;
+        approachTicks = 0;
+        approachNearTicks = 0;
+        approachScreenshotTaken = false;
+        stateBeforeApproach = state;
+        state = FinderState.APPROACHING_BASE;
+
+        if (useElytra.getValue()) {
+            elytraBot.startFlight(record.getPosition());
+        }
+
+        ChatUtils.print("[BaseHunter] " + Lang.t(
+                "Flying to base for screenshot... (" + record.toShortString() + ")",
+                "Vol vers la base pour capture... (" + record.toShortString() + ")"));
+    }
+
+    private void handleApproachingBase() {
+        if (mc.player == null || pendingBaseApproach == null) {
+            finishApproach();
+            return;
+        }
+
+        approachTicks++;
+        BlockPos basePos = pendingBaseApproach.getPosition();
+        double dx = mc.player.getX() - basePos.getX();
+        double dz = mc.player.getZ() - basePos.getZ();
+        double dist = Math.sqrt(dx * dx + dz * dz);
+
+        // Still far from base - keep flying
+        if (dist > APPROACH_DISTANCE) {
+            if (useElytra.getValue()) {
+                elytraBot.tick();
+            } else {
+                // Ground movement toward base
+                float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
+                mc.player.setYRot(yaw);
+                mc.options.keyUp.setDown(true);
+                mc.options.keySprint.setDown(true);
+            }
+
+            // Timeout
+            if (approachTicks > APPROACH_TIMEOUT) {
+                ChatUtils.print("[BaseHunter] " + Lang.t("Approach timeout, continuing search.", "Approche timeout, reprise de la recherche."));
+                finishApproach();
+            }
+            return;
+        }
+
+        // Near base - record when we first got close
+        if (approachNearTicks == 0) {
+            approachNearTicks = approachTicks;
+        }
+
+        // Look at the base
+        float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
+        float dy = (float) (basePos.getY() - mc.player.getY());
+        float pitchAngle = (float) -Math.toDegrees(Math.atan2(dy, Math.max(dist, 1)));
+        mc.player.setYRot(yaw);
+        mc.player.setXRot(Math.max(-90, Math.min(90, pitchAngle)));
+
+        // Wait for chunks to render, then screenshot
+        if (!approachScreenshotTaken && (approachTicks - approachNearTicks) >= APPROACH_WAIT_TICKS) {
+            logger.takeScreenshot(pendingBaseApproach);
+            approachScreenshotTaken = true;
+            ChatUtils.print("[BaseHunter] " + Lang.t("Base photographed!", "Base photographiée !"));
+        }
+
+        // After screenshot, resume
+        if (approachScreenshotTaken && (approachTicks - approachNearTicks) >= APPROACH_WAIT_TICKS + 20) {
+            finishApproach();
+        }
+    }
+
+    private void finishApproach() {
+        pendingBaseApproach = null;
+        state = (stateBeforeApproach == FinderState.APPROACHING_BASE) ? FinderState.SCANNING : stateBeforeApproach;
+
+        // Resume flight to current waypoint
+        if (useElytra.getValue() && navigation.getCurrentTarget() != null) {
+            state = FinderState.FLYING_TO_WAYPOINT;
+            elytraBot.startFlight(navigation.getCurrentTarget());
         }
     }
 

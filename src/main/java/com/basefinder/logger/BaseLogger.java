@@ -84,7 +84,7 @@ public class BaseLogger {
      * Takes a screenshot with base coordinates in the filename.
      * Format: base_TYPE_X_Z_TIMESTAMP.png
      */
-    private void takeScreenshot(BaseRecord record) {
+    public void takeScreenshot(BaseRecord record) {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null || mc.level == null) return;
