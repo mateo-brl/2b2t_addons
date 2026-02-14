@@ -76,10 +76,11 @@ public class BaseFinderModule extends ToggleableModule {
     private final NumberSetting<Integer> gridRange = new NumberSetting<>("Rayon total", 100000, 5000, 500000).incremental(5000);
 
     // Paramètres ZONE - intuitif : "de X à X, de Z à Z"
-    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("X début", 0, -30000000, 30000000).incremental(1000);
-    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("X fin", 500000, -30000000, 30000000).incremental(1000);
-    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Z début", 0, -30000000, 30000000).incremental(1000);
-    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Z fin", 500000, -30000000, 30000000).incremental(1000);
+    // Range réduit à ±2M pour un slider utilisable, commande *basefinder zone pour valeurs exactes
+    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("X début", 0, -2000000, 2000000).incremental(10000);
+    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("X fin", 500000, -2000000, 2000000).incremental(10000);
+    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Z début", 0, -2000000, 2000000).incremental(10000);
+    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Z fin", 500000, -2000000, 2000000).incremental(10000);
     private final NumberSetting<Integer> zoneSpacing = new NumberSetting<>("Espacement zone", 1000, 200, 10000).incremental(100);
 
     // Paramètres RANDOM
@@ -708,6 +709,17 @@ public class BaseFinderModule extends ToggleableModule {
     public SurvivalManager getSurvivalManager() { return survivalManager; }
     public StateManager getStateManager() { return stateManager; }
     public LagDetector getLagDetector() { return lagDetector; }
+
+    public int[] getZoneBounds() {
+        return new int[]{ zoneMinX.getValue(), zoneMaxX.getValue(), zoneMinZ.getValue(), zoneMaxZ.getValue() };
+    }
+
+    public void setZoneBounds(int minX, int maxX, int minZ, int maxZ) {
+        zoneMinX.setValue(minX);
+        zoneMaxX.setValue(maxX);
+        zoneMinZ.setValue(minZ);
+        zoneMaxZ.setValue(maxZ);
+    }
 
     private String formatUptime(long seconds) {
         long hours = seconds / 3600;
