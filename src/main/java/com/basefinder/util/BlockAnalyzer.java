@@ -2,6 +2,7 @@ package com.basefinder.util;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
@@ -24,7 +25,7 @@ public class BlockAnalyzer {
 
     /**
      * STRONG indicators - blocks that are NEVER placed by world generation.
-     * These are 100% player-placed on 2b2t.
+     * These are 100% player-placed on 2b2t. Scored at 5 pts each.
      */
     private static final Set<Block> STRONG_PLAYER_BLOCKS = new HashSet<>(Arrays.asList(
             // Shulker boxes - the #1 indicator of a stash/base
@@ -51,9 +52,9 @@ public class BlockAnalyzer {
             Blocks.GOLD_BLOCK,
             Blocks.LAPIS_BLOCK,
             Blocks.REDSTONE_BLOCK,
-            Blocks.CRYING_OBSIDIAN,
 
             // End/Nether blocks in overworld = player brought them
+            // NOTE: These are skipped in their native dimension (see analyzeChunk)
             Blocks.END_STONE_BRICKS,
             Blocks.PURPUR_BLOCK,
             Blocks.PURPUR_PILLAR,
@@ -61,9 +62,6 @@ public class BlockAnalyzer {
             Blocks.PURPUR_SLAB,
             Blocks.QUARTZ_BLOCK,
             Blocks.SMOOTH_QUARTZ,
-            // NOTE: POLISHED_DEEPSLATE removed - generates naturally in ancient cities!
-            // NOTE: POLISHED_BLACKSTONE_BRICKS removed - generates in bastion remnants!
-            // NOTE: GILDED_BLACKSTONE removed - generates in bastion remnants!
 
             // Redstone machines - not natural
             Blocks.PISTON,
@@ -86,7 +84,58 @@ public class BlockAnalyzer {
             // Signs - not natural in 2b2t world gen
             Blocks.OAK_SIGN, Blocks.SPRUCE_SIGN, Blocks.BIRCH_SIGN,
             Blocks.JUNGLE_SIGN, Blocks.ACACIA_SIGN, Blocks.DARK_OAK_SIGN,
-            Blocks.OAK_WALL_SIGN
+            Blocks.OAK_WALL_SIGN,
+
+            // Glazed terracotta - 100% crafted, never natural
+            Blocks.WHITE_GLAZED_TERRACOTTA, Blocks.ORANGE_GLAZED_TERRACOTTA,
+            Blocks.MAGENTA_GLAZED_TERRACOTTA, Blocks.LIGHT_BLUE_GLAZED_TERRACOTTA,
+            Blocks.YELLOW_GLAZED_TERRACOTTA, Blocks.LIME_GLAZED_TERRACOTTA,
+            Blocks.PINK_GLAZED_TERRACOTTA, Blocks.GRAY_GLAZED_TERRACOTTA,
+            Blocks.LIGHT_GRAY_GLAZED_TERRACOTTA, Blocks.CYAN_GLAZED_TERRACOTTA,
+            Blocks.PURPLE_GLAZED_TERRACOTTA, Blocks.BLUE_GLAZED_TERRACOTTA,
+            Blocks.BROWN_GLAZED_TERRACOTTA, Blocks.GREEN_GLAZED_TERRACOTTA,
+            Blocks.RED_GLAZED_TERRACOTTA, Blocks.BLACK_GLAZED_TERRACOTTA,
+
+            // Rare utility blocks - 100% player-placed
+            Blocks.RESPAWN_ANCHOR,
+            Blocks.LODESTONE,
+            Blocks.CONDUIT
+    ));
+
+    /**
+     * MEDIUM indicators - blocks that are sometimes in structures but mostly player-placed.
+     * Scored at 2 pts each.
+     */
+    private static final Set<Block> MEDIUM_PLAYER_BLOCKS = new HashSet<>(Arrays.asList(
+            Blocks.CRYING_OBSIDIAN,     // Ruined portals contain 1-6
+            Blocks.FURNACE,
+            Blocks.BLAST_FURNACE,
+            Blocks.SMOKER,
+            Blocks.CRAFTING_TABLE,
+            Blocks.LECTERN,
+            Blocks.CAMPFIRE,
+            Blocks.SOUL_CAMPFIRE
+    ));
+
+    /**
+     * Blocks that are STRONG in overworld but natural in the End dimension.
+     * Skipped when scanning the End.
+     */
+    private static final Set<Block> END_NATIVE_BLOCKS = new HashSet<>(Arrays.asList(
+            Blocks.END_STONE_BRICKS,
+            Blocks.PURPUR_BLOCK,
+            Blocks.PURPUR_PILLAR,
+            Blocks.PURPUR_STAIRS,
+            Blocks.PURPUR_SLAB
+    ));
+
+    /**
+     * Blocks that are STRONG in overworld but natural in the Nether dimension.
+     * Skipped when scanning the Nether.
+     */
+    private static final Set<Block> NETHER_NATIVE_BLOCKS = new HashSet<>(Arrays.asList(
+            Blocks.QUARTZ_BLOCK,
+            Blocks.SMOOTH_QUARTZ
     ));
 
     /**
@@ -114,8 +163,6 @@ public class BlockAnalyzer {
 
     /**
      * ANCIENT CITY / DEEP DARK blocks - these generate naturally and cause false positives.
-     * Sculk blocks are the #1 indicator of an ancient city, NOT a player base.
-     * Deepslate bricks and polished deepslate also generate in ancient cities.
      */
     private static final Set<Block> ANCIENT_CITY_BLOCKS = new HashSet<>(Arrays.asList(
             Blocks.SCULK,
@@ -149,16 +196,14 @@ public class BlockAnalyzer {
 
     /**
      * Trail blocks - only blocks that strongly indicate player-made paths.
-     * Removed: cobblestone (natural), torch (mineshafts), netherrack (nether).
+     * Removed: ICE (natural in cold biomes), OBSIDIAN (double-dip with ruined portals).
      */
     private static final Set<Block> TRAIL_BLOCKS = new HashSet<>(Arrays.asList(
             Blocks.DIRT_PATH,
             Blocks.RAIL,
             Blocks.POWERED_RAIL,
-            Blocks.ICE,
             Blocks.PACKED_ICE,
             Blocks.BLUE_ICE,
-            Blocks.OBSIDIAN,
             Blocks.NETHER_BRICKS
     ));
 
@@ -182,8 +227,24 @@ public class BlockAnalyzer {
             Blocks.DROPPER
     ));
 
+    /**
+     * Check if a block is a strong player indicator, accounting for dimension.
+     * End-native blocks (purpur, end stone bricks) are not strong in the End.
+     * Nether-native blocks (quartz) are not strong in the Nether.
+     */
+    public static boolean isStrongPlayerBlock(Block block, ResourceKey<Level> dimension) {
+        if (!STRONG_PLAYER_BLOCKS.contains(block)) return false;
+        if (dimension == Level.END && END_NATIVE_BLOCKS.contains(block)) return false;
+        if (dimension == Level.NETHER && NETHER_NATIVE_BLOCKS.contains(block)) return false;
+        return true;
+    }
+
     public static boolean isStrongPlayerBlock(Block block) {
         return STRONG_PLAYER_BLOCKS.contains(block);
+    }
+
+    public static boolean isMediumPlayerBlock(Block block) {
+        return MEDIUM_PLAYER_BLOCKS.contains(block);
     }
 
     public static boolean isTrailBlock(Block block) {
@@ -205,18 +266,14 @@ public class BlockAnalyzer {
                 || CONCRETE_BLOCKS.contains(block);
     }
 
-    /**
-     * Counts obsidian in a chunk. Large amounts (>10) strongly indicate player activity.
-     */
     private static boolean isObsidian(Block block) {
         return block == Blocks.OBSIDIAN;
     }
 
     /**
      * Check if a chunk's biome is one that naturally generates structures
-     * with blocks that could cause false positives (villages, temples, strongholds).
+     * with blocks that could cause false positives.
      * Returns a multiplier: 1.0 = normal, <1.0 = reduce score (structure biome).
-     * Note: Shulker boxes and very strong indicators are never penalized.
      */
     public static double getBiomePenalty(Level level, LevelChunk chunk) {
         try {
@@ -230,14 +287,11 @@ public class BlockAnalyzer {
             Holder<Biome> deepBiomeHolder = level.getBiome(deepCenter);
 
             // DEEP DARK biome = ancient city territory - very heavy penalty
-            // This is the #1 source of false positives (sculk, deepslate bricks, etc.)
-            if (deepBiomeHolder.is(net.minecraft.world.level.biome.Biomes.DEEP_DARK)) {
-                return 0.15; // 85% penalty - almost everything here is natural
+            if (deepBiomeHolder.is(Biomes.DEEP_DARK)) {
+                return 0.15; // 85% penalty
             }
 
-            // Villages generate in plains, desert, savanna, taiga, snowy plains
-            // Temples generate in desert, jungle, swamp, snowy taiga
-            // Reduce trail and weak construction scores in these biomes
+            // Villages
             if (biomeHolder.is(BiomeTags.HAS_VILLAGE_PLAINS)
                     || biomeHolder.is(BiomeTags.HAS_VILLAGE_DESERT)
                     || biomeHolder.is(BiomeTags.HAS_VILLAGE_SAVANNA)
@@ -246,11 +300,31 @@ public class BlockAnalyzer {
                 return 0.5; // 50% penalty for village biomes
             }
 
+            // Bastion remnants (gold blocks) - Nether
+            if (biomeHolder.is(BiomeTags.HAS_BASTION_REMNANT)) {
+                return 0.5; // 50% penalty
+            }
+
+            // Trial chambers
+            if (biomeHolder.is(BiomeTags.HAS_TRIAL_CHAMBERS)) {
+                return 0.6; // 40% penalty
+            }
+
             // Desert/jungle temples, witch huts
             if (biomeHolder.is(BiomeTags.HAS_DESERT_PYRAMID)
                     || biomeHolder.is(BiomeTags.HAS_JUNGLE_TEMPLE)
                     || biomeHolder.is(BiomeTags.HAS_SWAMP_HUT)) {
-                return 0.7; // 30% penalty for temple biomes
+                return 0.7; // 30% penalty
+            }
+
+            // Stronghold biomes (iron blocks)
+            if (biomeHolder.is(BiomeTags.HAS_STRONGHOLD)) {
+                return 0.7; // 30% penalty
+            }
+
+            // Woodland mansions
+            if (biomeHolder.is(BiomeTags.HAS_WOODLAND_MANSION)) {
+                return 0.7; // 30% penalty
             }
 
             // Mineshaft biomes - reduce trail detection
@@ -265,60 +339,74 @@ public class BlockAnalyzer {
 
     /**
      * Calculate spawn distance multiplier.
-     * Near spawn (0-1000): higher threshold needed (more builds = more noise)
-     * Mid range (1000-10000): normal
-     * Far range (10000+): lower threshold (any base is notable)
      */
     public static double getSpawnDistanceMultiplier(double distFromSpawn) {
         if (distFromSpawn < 500) {
-            return 0.3; // Very near spawn - almost everything is player-built, need huge score
+            return 0.3;
         } else if (distFromSpawn < 2000) {
-            return 0.5; // Near spawn - lots of bases, be picky
+            return 0.5;
         } else if (distFromSpawn < 10000) {
-            return 0.8; // Mid range
+            return 0.8;
         } else if (distFromSpawn < 50000) {
-            return 1.0; // Normal
+            return 1.0;
         } else if (distFromSpawn < 200000) {
-            return 1.3; // Far out - bases are rarer, be more sensitive
+            return 1.3;
         } else {
-            return 1.5; // Very far - any sign of activity is notable
+            return 1.5;
         }
     }
 
     /**
-     * Scores a chunk for player activity. Tuned for 2b2t to avoid false positives
-     * from natural structures (villages, temples, dungeons, mineshafts).
+     * Scores a chunk for player activity. Tuned for 2b2t to avoid false positives.
+     *
+     * Two-pass scanning:
+     * - Pass 1: Sampled scan (x+=2,y+=2,z+=2) for common blocks
+     * - Pass 2: 100% scan of block entities (shulkers, chests, barrels) via getBlockEntitiesPos()
      *
      * Scoring:
      * - Strong player block: 5 points each
+     * - Medium player block: 2 points each
      * - Shulker box: 25 points each
      * - Obsidian (>5 in chunk): 2 points each
-     * - Storage blocks only count if there are also strong indicators
      * - Trail blocks: 0.5 points each
-     * - Map art blocks at high Y: 1 point each
-     * - Multi-Y bonuses: bedrock layer (Y 0-10) and sky layer (Y>200) stashes get bonus
-     * - Biome penalty: reduces score in village/temple biomes
-     * - Spawn distance: adjusts sensitivity based on distance from 0,0
+     * - Map art blocks: 1 point each
+     * - Signs with text: 15 points each
+     * - Multi-Y bonuses for bedrock/sky stashes
+     * - Biome penalty for structure biomes
+     * - Dimension-aware: skips native blocks in End/Nether
+     * - Unified ancient city penalty (doesn't stack with biome penalty)
      */
     public static ChunkAnalysis analyzeChunk(Level level, LevelChunk chunk) {
         ChunkAnalysis analysis = new ChunkAnalysis(chunk.getPos());
+
+        // Store dimension context
+        ResourceKey<Level> dimension = level.dimension();
+        if (dimension == Level.END) {
+            analysis.setDimension("end");
+        } else if (dimension == Level.NETHER) {
+            analysis.setDimension("nether");
+        } else {
+            analysis.setDimension("overworld");
+        }
 
         int minX = chunk.getPos().getMinBlockX();
         int minZ = chunk.getPos().getMinBlockZ();
 
         int strongBlockCount = 0;
+        int mediumBlockCount = 0;
         int obsidianCount = 0;
         int storageCount = 0;
         int trailBlockCount = 0;
         int mapArtBlockCount = 0;
         int shulkerCount = 0;
         int signWithTextCount = 0;
-        int ancientCityBlockCount = 0; // Sculk, deepslate bricks, etc.
+        int ancientCityBlockCount = 0;
 
-        // Multi-Y scanning: track blocks at special Y levels
-        int bedrockLayerBlocks = 0;  // Y 0-10: hidden stashes in bedrock
-        int skyLayerBlocks = 0;      // Y > 200: sky bases, map art
+        // Multi-Y scanning
+        int bedrockLayerBlocks = 0;
+        int skyLayerBlocks = 0;
 
+        // ===== PASS 1: Sampled scan (12.5% of blocks) =====
         LevelChunkSection[] sections = chunk.getSections();
         int minSectionY = level.getMinSectionY();
 
@@ -341,9 +429,13 @@ public class BlockAnalyzer {
                             shulkerCount++;
                             strongBlockCount++;
                             analysis.addSignificantBlock(new BlockPos(minX + x, worldY, minZ + z), block);
-                        } else if (isStrongPlayerBlock(block)) {
+                        } else if (isStrongPlayerBlock(block, dimension)) {
                             strongBlockCount++;
                             analysis.addSignificantBlock(new BlockPos(minX + x, worldY, minZ + z), block);
+                        }
+
+                        if (isMediumPlayerBlock(block)) {
+                            mediumBlockCount++;
                         }
 
                         if (isObsidian(block)) {
@@ -362,16 +454,14 @@ public class BlockAnalyzer {
                             mapArtBlockCount++;
                         }
 
-                        // Ancient city / deep dark block detection
-                        // These generate naturally and are NOT player-placed
                         if (isAncientCityBlock(block) && worldY < 0) {
                             ancientCityBlockCount++;
                         }
 
-                        // Sign text detection - signs with text are strong base indicators
+                        // Sign text detection
                         if (block instanceof SignBlock || block instanceof WallSignBlock) {
                             BlockPos signPos = new BlockPos(minX + x, worldY, minZ + z);
-                            if (chunk.getBlockEntity(signPos) instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+                            if (chunk.getBlockEntity(signPos) instanceof SignBlockEntity sign) {
                                 if (hasSignText(sign)) {
                                     signWithTextCount++;
                                     analysis.addSignificantBlock(signPos, block);
@@ -379,14 +469,36 @@ public class BlockAnalyzer {
                             }
                         }
 
-                        // Multi-Y: track strong/storage blocks at special Y levels
-                        if (worldY >= 0 && worldY <= 10 && (isStrongPlayerBlock(block) || isStorageBlock(block))) {
+                        // Multi-Y tracking
+                        if (worldY >= 0 && worldY <= 10 && (isStrongPlayerBlock(block, dimension) || isStorageBlock(block))) {
                             bedrockLayerBlocks++;
                         }
-                        if (worldY > 200 && (isStrongPlayerBlock(block) || isStorageBlock(block))) {
+                        if (worldY > 200 && (isStrongPlayerBlock(block, dimension) || isStorageBlock(block))) {
                             skyLayerBlocks++;
                         }
                     }
+                }
+            }
+        }
+
+        // ===== PASS 2: 100% scan of block entities (shulkers, chests, barrels, etc.) =====
+        // This catches every single block entity even if missed by the sampled scan.
+        // O(n) where n = number of block entities (typically 0-50), not O(65536).
+        for (BlockPos bePos : chunk.getBlockEntitiesPos()) {
+            BlockState beState = chunk.getBlockState(bePos);
+            Block beBlock = beState.getBlock();
+
+            if (isShulkerBox(beBlock)) {
+                // Only count if not already found in Pass 1
+                // Pass 1 samples at x+=2, y+=2, z+=2, so check alignment
+                if (!isSampledPosition(bePos, minX, minZ, minSectionY)) {
+                    shulkerCount++;
+                    strongBlockCount++;
+                    analysis.addSignificantBlock(bePos, beBlock);
+                }
+            } else if (isStorageBlock(beBlock)) {
+                if (!isSampledPosition(bePos, minX, minZ, minSectionY)) {
+                    storageCount++;
                 }
             }
         }
@@ -395,83 +507,84 @@ public class BlockAnalyzer {
         int significantObsidian = obsidianCount > 5 ? obsidianCount : 0;
 
         analysis.setPlayerBlockCount(strongBlockCount);
+        analysis.setMediumBlockCount(mediumBlockCount);
         analysis.setStorageCount(storageCount);
         analysis.setTrailBlockCount(trailBlockCount);
         analysis.setMapArtBlockCount(mapArtBlockCount);
         analysis.setShulkerCount(shulkerCount);
-
         analysis.setSignCount(signWithTextCount);
 
-        // Determine base type - only flag if strong indicators present
+        // Determine base type
         if (mapArtBlockCount > 50) {
             analysis.setBaseType(BaseType.MAP_ART);
+        } else if (shulkerCount >= 1 && strongBlockCount < 5) {
+            // Stash: shulkers without much construction
+            analysis.setBaseType(BaseType.STASH);
         } else if (shulkerCount >= 1) {
             analysis.setBaseType(BaseType.STORAGE);
+        } else if (obsidianCount >= 10) {
+            analysis.setBaseType(BaseType.PORTAL);
         } else if (strongBlockCount >= 3 && storageCount >= 3) {
             analysis.setBaseType(BaseType.STORAGE);
         } else if (strongBlockCount >= 5) {
             analysis.setBaseType(BaseType.CONSTRUCTION);
         } else if (trailBlockCount >= 15) {
-            // High threshold for trails to avoid mineshaft detection
             analysis.setBaseType(BaseType.TRAIL);
         } else {
             analysis.setBaseType(BaseType.NONE);
         }
 
-        // Score calculation - weighted towards strong indicators
+        // Score calculation
         double score = shulkerCount * 25.0
                 + strongBlockCount * 5.0
+                + mediumBlockCount * 2.0
                 + significantObsidian * 2.0
                 + mapArtBlockCount * 1.0
                 + trailBlockCount * 0.5
-                + signWithTextCount * 15.0; // Signs with text = very strong base indicator
+                + signWithTextCount * 15.0;
 
-        // Multi-Y bonuses: hidden stashes at bedrock or sky level are more significant
+        // Multi-Y bonuses
         if (bedrockLayerBlocks >= 1) {
-            score += bedrockLayerBlocks * 8.0; // Bedrock stash bonus
+            score += bedrockLayerBlocks * 8.0;
         }
         if (skyLayerBlocks >= 1) {
-            score += skyLayerBlocks * 6.0; // Sky base/stash bonus
+            score += skyLayerBlocks * 6.0;
         }
 
-        // Biome penalty: reduce score for trail/weak construction in structure biomes
-        // Strong indicators (shulkers, ender chests) are NEVER penalized
-        double biomePenalty = getBiomePenalty(level, chunk);
-        if (biomePenalty < 1.0 && shulkerCount == 0) {
-            // Only apply penalty to non-shulker score components
-            double shulkerScore = shulkerCount * 25.0;
-            double otherScore = score - shulkerScore;
-            score = shulkerScore + otherScore * biomePenalty;
-        }
-
-        // ANCIENT CITY PENALTY: If significant sculk/deepslate blocks found underground,
-        // this is almost certainly an ancient city, NOT a player base.
-        // Only shulker boxes override this (player stash hidden in ancient city).
+        // === UNIFIED PENALTY: ancient city vs biome (never both) ===
+        // If ancient city blocks >= 5, use the more specific ancient city penalty.
+        // Otherwise, use the biome penalty. Never apply both in cascade.
         if (ancientCityBlockCount >= 5 && shulkerCount == 0) {
-            // Heavy penalty: ancient city blocks strongly indicate natural generation
+            // Ancient city penalty (more specific)
             double ancientCityPenalty;
             if (ancientCityBlockCount >= 30) {
-                ancientCityPenalty = 0.05; // 95% reduction - definitely ancient city
+                ancientCityPenalty = 0.05; // 95% reduction
             } else if (ancientCityBlockCount >= 15) {
-                ancientCityPenalty = 0.15; // 85% reduction - very likely ancient city
+                ancientCityPenalty = 0.15; // 85% reduction
             } else {
-                ancientCityPenalty = 0.3;  // 70% reduction - probably ancient city
+                ancientCityPenalty = 0.3;  // 70% reduction
             }
             score *= ancientCityPenalty;
 
-            // If score dropped below threshold, mark as NONE to avoid false detection
             if (score < 10.0) {
                 analysis.setBaseType(BaseType.NONE);
             }
+        } else if (shulkerCount == 0) {
+            // Biome penalty (only if no ancient city penalty applied)
+            double biomePenalty = getBiomePenalty(level, chunk);
+            if (biomePenalty < 1.0) {
+                double shulkerScore = shulkerCount * 25.0;
+                double otherScore = score - shulkerScore;
+                score = shulkerScore + otherScore * biomePenalty;
+            }
         }
 
-        // Spawn distance: calculate and store for sensitivity adjustment
+        // Spawn distance
         double distFromSpawn = Math.sqrt(
                 Math.pow(chunk.getPos().getMiddleBlockX(), 2) +
                 Math.pow(chunk.getPos().getMiddleBlockZ(), 2));
         analysis.setDistanceFromSpawn(distFromSpawn);
 
-        // Apply spawn distance multiplier to score
         double spawnMultiplier = getSpawnDistanceMultiplier(distFromSpawn);
         score *= spawnMultiplier;
 
@@ -480,8 +593,19 @@ public class BlockAnalyzer {
     }
 
     /**
+     * Check if a block position was covered by the sampled Pass 1 scan.
+     * Pass 1 samples at even local coordinates (x+=2, y+=2, z+=2).
+     */
+    private static boolean isSampledPosition(BlockPos pos, int chunkMinX, int chunkMinZ, int minSectionY) {
+        int localX = pos.getX() - chunkMinX;
+        int localZ = pos.getZ() - chunkMinZ;
+        // Y within section: pos.getY() mod 16, check if even
+        int localY = Math.floorMod(pos.getY(), 16);
+        return (localX % 2 == 0) && (localZ % 2 == 0) && (localY % 2 == 0);
+    }
+
+    /**
      * Check if a sign has any non-empty text on it.
-     * Signs with text are a very strong indicator of a player base on 2b2t.
      */
     private static boolean hasSignText(SignBlockEntity sign) {
         try {
