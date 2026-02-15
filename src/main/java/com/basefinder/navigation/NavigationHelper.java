@@ -2,8 +2,10 @@ package com.basefinder.navigation;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.ChunkPos;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Manages navigation waypoints and search patterns for base hunting.
@@ -46,6 +48,11 @@ public class NavigationHelper {
     private int zoneMaxZ = 500000;
     private int zoneSpacing = 1000; // Distance between waypoints in zone mode
 
+    // Zone coverage tracking - ensures ALL chunks in zone are scanned
+    private final Set<Long> expectedZoneChunks = new HashSet<>();
+    private boolean isZoneMode = false;
+    private int zoneMissedPassCount = 0; // How many cleanup passes have been done
+
     // Stats
     private double totalDistanceTraveled = 0;
     private BlockPos lastPosition = null;
@@ -68,6 +75,8 @@ public class NavigationHelper {
         this.searchCenter = center;
         this.waypoints.clear();
         this.currentWaypointIndex = 0;
+        this.isZoneMode = false;
+        this.expectedZoneChunks.clear();
 
         switch (pattern) {
             case SPIRAL -> generateSpiralWaypoints(center);
@@ -171,28 +180,134 @@ public class NavigationHelper {
     /**
      * Zone mode: generate waypoints in zigzag within specific coordinate bounds.
      * Covers the entire area defined by X début/fin and Z début/fin.
-     * Uses zoneSpacing to control the distance between passes.
+     *
+     * IMPORTANT: Auto-caps spacing to match render distance to ensure ALL chunks
+     * in the zone are scanned. Tracks expected chunks for coverage verification.
      */
     private void generateZoneWaypoints() {
+        isZoneMode = true;
+        zoneMissedPassCount = 0;
+        expectedZoneChunks.clear();
+
         int minX = Math.min(zoneMinX, zoneMaxX);
         int maxX = Math.max(zoneMinX, zoneMaxX);
         int minZ = Math.min(zoneMinZ, zoneMaxZ);
         int maxZ = Math.max(zoneMinZ, zoneMaxZ);
 
+        // Auto-calculate spacing based on render distance to ensure COMPLETE chunk coverage.
+        // The player scans chunks within render distance while flying.
+        // To cover all chunks, spacing must be <= 2 * renderDistance * 16 (blocks).
+        // We use a safety margin (0.75x) to account for flight path deviations.
+        int renderDist = mc.options != null ? mc.options.renderDistance().get() : 8;
+        int maxSpacingForCoverage = (int) (renderDist * 16 * 2 * 0.75);
+        // On 2b2t server render distance is typically 6, so max = 6*16*2*0.75 = 144 blocks
+        // Clamp to at least 64 blocks spacing minimum
+        maxSpacingForCoverage = Math.max(64, maxSpacingForCoverage);
+
+        int effectiveSpacing = Math.min(zoneSpacing, maxSpacingForCoverage);
+
+        // Build the set of ALL expected chunks in the zone
+        int minChunkX = minX >> 4;
+        int maxChunkX = maxX >> 4;
+        int minChunkZ = minZ >> 4;
+        int maxChunkZ = maxZ >> 4;
+        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
+            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
+                expectedZoneChunks.add(ChunkPos.asLong(cx, cz));
+            }
+        }
+
+        // Generate zigzag waypoints with effective spacing
         int row = 0;
-        for (int z = minZ + zoneSpacing / 2; z <= maxZ; z += zoneSpacing) {
+        for (int z = minZ + effectiveSpacing / 2; z <= maxZ; z += effectiveSpacing) {
             if (row % 2 == 0) {
-                for (int x = minX + zoneSpacing / 2; x <= maxX; x += zoneSpacing) {
+                for (int x = minX + effectiveSpacing / 2; x <= maxX; x += effectiveSpacing) {
                     waypoints.add(new BlockPos(x, 200, z));
                 }
             } else {
-                for (int x = maxX - zoneSpacing / 2; x >= minX; x -= zoneSpacing) {
+                for (int x = maxX - effectiveSpacing / 2; x >= minX; x -= effectiveSpacing) {
                     waypoints.add(new BlockPos(x, 200, z));
                 }
             }
             row++;
         }
     }
+
+    /**
+     * Get the number of expected zone chunks (only valid in ZONE mode).
+     */
+    public int getExpectedZoneChunkCount() {
+        return expectedZoneChunks.size();
+    }
+
+    /**
+     * Check zone coverage: returns the set of zone chunks that have NOT been scanned yet.
+     */
+    public Set<ChunkPos> getMissedZoneChunks(Set<ChunkPos> scannedChunks) {
+        if (!isZoneMode || expectedZoneChunks.isEmpty()) return Collections.emptySet();
+
+        Set<Long> scannedLongs = scannedChunks.stream()
+                .map(cp -> ChunkPos.asLong(cp.x, cp.z))
+                .collect(Collectors.toSet());
+
+        Set<ChunkPos> missed = new HashSet<>();
+        for (long expected : expectedZoneChunks) {
+            if (!scannedLongs.contains(expected)) {
+                missed.add(new ChunkPos(ChunkPos.getX(expected), ChunkPos.getZ(expected)));
+            }
+        }
+        return missed;
+    }
+
+    /**
+     * Get zone coverage percentage.
+     */
+    public double getZoneCoveragePercent(Set<ChunkPos> scannedChunks) {
+        if (!isZoneMode || expectedZoneChunks.isEmpty()) return 100.0;
+        Set<Long> scannedLongs = scannedChunks.stream()
+                .map(cp -> ChunkPos.asLong(cp.x, cp.z))
+                .collect(Collectors.toSet());
+        long covered = expectedZoneChunks.stream().filter(scannedLongs::contains).count();
+        return (double) covered / expectedZoneChunks.size() * 100.0;
+    }
+
+    /**
+     * Generate additional waypoints to cover missed zone chunks.
+     * Groups missed chunks and generates waypoints at their centers.
+     * Returns true if new waypoints were added.
+     */
+    public boolean generateMissedChunkWaypoints(Set<ChunkPos> scannedChunks) {
+        Set<ChunkPos> missed = getMissedZoneChunks(scannedChunks);
+        if (missed.isEmpty()) return false;
+
+        zoneMissedPassCount++;
+
+        // Group missed chunks into clusters and place waypoints at cluster centers
+        List<ChunkPos> sortedMissed = new ArrayList<>(missed);
+        // Sort by Z then X for efficient zigzag coverage
+        sortedMissed.sort((a, b) -> a.z != b.z ? Integer.compare(a.z, b.z) : Integer.compare(a.x, b.x));
+
+        int renderDist = mc.options != null ? mc.options.renderDistance().get() : 8;
+        int groupSize = Math.max(1, renderDist); // Group chunks within render distance
+
+        // Create waypoints for each group of missed chunks
+        for (int i = 0; i < sortedMissed.size(); i += groupSize) {
+            int endIdx = Math.min(i + groupSize, sortedMissed.size());
+            // Place waypoint at the center of this group
+            int sumX = 0, sumZ = 0;
+            for (int j = i; j < endIdx; j++) {
+                sumX += sortedMissed.get(j).getMiddleBlockX();
+                sumZ += sortedMissed.get(j).getMiddleBlockZ();
+            }
+            int count = endIdx - i;
+            waypoints.add(new BlockPos(sumX / count, 200, sumZ / count));
+        }
+
+        return true;
+    }
+
+    public boolean isZoneMode() { return isZoneMode; }
+    public int getZoneMissedPassCount() { return zoneMissedPassCount; }
 
     /**
      * Add a custom waypoint.

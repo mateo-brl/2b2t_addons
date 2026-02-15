@@ -357,6 +357,7 @@ public class ChunkScanner {
     }
 
     public int getScannedCount() { return scannedChunks.size(); }
+    public Set<ChunkPos> getScannedChunksSet() { return Collections.unmodifiableSet(scannedChunks); }
     public int getDeferredCount() { return deferredChunks.size(); }
     public int getSkippedCount() { return skippedCount; }
     public List<ChunkAnalysis> getInterestingChunks() { return Collections.unmodifiableList(interestingChunks); }
