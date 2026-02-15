@@ -4,10 +4,15 @@ import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.navigation.NavigationHelper;
 import com.basefinder.persistence.StateManager;
+import com.basefinder.scanner.ChunkAgeAnalyzer;
 import com.basefinder.scanner.ChunkScanner;
 import com.basefinder.scanner.FreshnessEstimator;
 import com.basefinder.survival.SurvivalManager;
+import com.basefinder.terrain.HeightmapCache;
+import com.basefinder.terrain.SeedTerrainGenerator;
+import com.basefinder.terrain.TerrainPredictor;
 import com.basefinder.trail.TrailFollower;
+import com.basefinder.util.BaritoneController;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BaseType;
 import com.basefinder.util.ChunkAnalysis;
@@ -55,6 +60,10 @@ public class BaseFinderModule extends ToggleableModule {
     private final SurvivalManager survivalManager = new SurvivalManager();
     private final StateManager stateManager = new StateManager();
     private final LagDetector lagDetector = new LagDetector();
+    private final BaritoneController baritoneController = new BaritoneController();
+    private final HeightmapCache heightmapCache = new HeightmapCache();
+    private final ChunkAgeAnalyzer chunkAgeAnalyzer = new ChunkAgeAnalyzer();
+    private TerrainPredictor terrainPredictor = null;
 
     // State
     private FinderState state = FinderState.IDLE;
@@ -113,6 +122,22 @@ public class BaseFinderModule extends ToggleableModule {
     private final NumberSetting<Integer> minElytraDurability = new NumberSetting<>("Durabilité min elytra", 10, 1, 100);
     private final BooleanSetting enableObstacleAvoidance = new BooleanSetting("Éviter les obstacles", "Monter automatiquement devant le terrain", true);
     private final BooleanSetting antiKickNoise = new BooleanSetting("Anti-kick AFK", "Mouvements subtils pour éviter d'être kick", true);
+
+    // --- ATTERRISSAGE BARITONE ---
+    private final NullSetting landingGroup = new NullSetting("Atterrissage");
+    private final BooleanSetting useBaritoneAutoLand = new BooleanSetting("Atterrissage Baritone", "Déléguer l'atterrissage à Baritone pour plus de fiabilité", true);
+    private final NumberSetting<Integer> acceptedFallDamage = new NumberSetting<>("Dégâts chute acceptés", 3, 0, 10);
+
+    // --- MODE ATTENTE / CIRCLING ---
+    private final NullSetting circlingGroup = new NullSetting("Mode attente");
+    private final BooleanSetting enableCircling = new BooleanSetting("Mode attente", "Tourner en rond quand les chunks ne chargent pas", true);
+    private final NumberSetting<Double> circleRadius = new NumberSetting<>("Rayon attente", 300.0, 100.0, 1000.0);
+    private final NumberSetting<Integer> circleTimeout = new NumberSetting<>("Timeout attente (s)", 30, 5, 120);
+
+    // --- PRÉDICTION TERRAIN ---
+    private final NullSetting terrainGroup = new NullSetting("Prédiction terrain");
+    private final BooleanSetting useTerrainPrediction = new BooleanSetting("Prédiction terrain", "Utiliser la seed 2b2t pour anticiper le relief", true);
+    private final NumberSetting<Integer> terrainSafetyMargin = new NumberSetting<>("Marge altitude (blocs)", 40, 10, 100);
 
     // --- DÉTECTION ---
     private final NullSetting detectGroup = new NullSetting("Détection");
@@ -181,6 +206,15 @@ public class BaseFinderModule extends ToggleableModule {
         flightGroup.addSubSettings(useElytra, cruiseAltitude, minAltitude, fireworkInterval,
                 minElytraDurability, enableObstacleAvoidance, antiKickNoise);
 
+        // Atterrissage Baritone
+        landingGroup.addSubSettings(useBaritoneAutoLand, acceptedFallDamage);
+
+        // Mode attente / Circling
+        circlingGroup.addSubSettings(enableCircling, circleRadius, circleTimeout);
+
+        // Prédiction terrain
+        terrainGroup.addSubSettings(useTerrainPrediction, terrainSafetyMargin);
+
         // Détection
         detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails,
                 detectStash, detectFarm, detectPortal,
@@ -198,6 +232,9 @@ public class BaseFinderModule extends ToggleableModule {
         this.registerSettings(
                 modeGroup,
                 flightGroup,
+                landingGroup,
+                circlingGroup,
+                terrainGroup,
                 detectGroup,
                 survivalGroup,
                 advancedGroup,
@@ -417,6 +454,27 @@ public class BaseFinderModule extends ToggleableModule {
         // Obstacle avoidance
         elytraBot.setUseObstacleAvoidance(enableObstacleAvoidance.getValue());
 
+        // Baritone landing
+        elytraBot.setUseBaritoneLanding(useBaritoneAutoLand.getValue());
+        elytraBot.setAcceptedFallDamage(acceptedFallDamage.getValue());
+        elytraBot.setBaritoneController(baritoneController);
+
+        // Circling
+        elytraBot.setEnableCircling(enableCircling.getValue());
+        elytraBot.setCircleRadius(circleRadius.getValue());
+        elytraBot.setCircleTimeout(circleTimeout.getValue() * 20); // Convert seconds to ticks
+
+        // Terrain prediction
+        if (useTerrainPrediction.getValue()) {
+            SeedTerrainGenerator seedGen = new SeedTerrainGenerator();
+            terrainPredictor = new TerrainPredictor(heightmapCache, seedGen, chunkAgeAnalyzer);
+            elytraBot.setTerrainPredictor(terrainPredictor);
+            elytraBot.setTerrainSafetyMargin(terrainSafetyMargin.getValue());
+        } else {
+            terrainPredictor = null;
+            elytraBot.setTerrainPredictor(null);
+        }
+
         // 2b2t lag compensation
         if (enable2b2tLag.getValue()) {
             scanner.setLagDetector(lagDetector);
@@ -507,6 +565,11 @@ public class BaseFinderModule extends ToggleableModule {
                     center != null ? center.getX() : 0,
                     center != null ? center.getZ() : 0
             );
+        }
+
+        // Record chunk heights for terrain prediction
+        if (terrainPredictor != null && tickCounter % 20 == 0) {
+            recordNearbyChunkHeights();
         }
 
         // Memory cleanup
@@ -901,6 +964,27 @@ public class BaseFinderModule extends ToggleableModule {
         }
     }
 
+    /**
+     * Record heights of nearby loaded chunks into the heightmap cache.
+     */
+    private void recordNearbyChunkHeights() {
+        if (mc.player == null || mc.level == null || heightmapCache == null) return;
+
+        var chunkSource = mc.level.getChunkSource();
+        int playerChunkX = mc.player.chunkPosition().x;
+        int playerChunkZ = mc.player.chunkPosition().z;
+        int radius = Math.min(mc.options.renderDistance().get(), 8);
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                net.minecraft.world.level.chunk.LevelChunk chunk = chunkSource.getChunk(playerChunkX + dx, playerChunkZ + dz, false);
+                if (chunk != null) {
+                    heightmapCache.recordChunkHeight(chunk);
+                }
+            }
+        }
+    }
+
     // Public accessors for HUD and commands
     public FinderState getState() { return state; }
     public ChunkScanner getScanner() { return scanner; }
@@ -911,6 +995,8 @@ public class BaseFinderModule extends ToggleableModule {
     public SurvivalManager getSurvivalManager() { return survivalManager; }
     public StateManager getStateManager() { return stateManager; }
     public LagDetector getLagDetector() { return lagDetector; }
+    public TerrainPredictor getTerrainPredictor() { return terrainPredictor; }
+    public HeightmapCache getHeightmapCache() { return heightmapCache; }
 
     public int[] getZoneBounds() {
         return new int[]{ zoneMinX.getValue(), zoneMaxX.getValue(), zoneMinZ.getValue(), zoneMaxZ.getValue() };

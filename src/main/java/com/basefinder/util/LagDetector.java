@@ -31,6 +31,10 @@ public class LagDetector {
     private int unloadedChunksAhead = 0;
     private int lastChunkLoadCheck = 0;
 
+    // Chunk stabilization tracking
+    private int stableChunkCount = 0;
+    private int lastLoadedCount = 0;
+
     // Derived values
     private double estimatedTPS = 20.0;
     private double lagMultiplier = 1.0; // 1.0 = no lag, 2.0 = double timeouts
@@ -186,6 +190,43 @@ public class LagDetector {
      */
     public boolean isSeverelyLagging() {
         return estimatedTPS < 10.0;
+    }
+
+    /**
+     * Check if chunks around the player have stabilized (no new loading).
+     * Returns true when the loaded chunk count hasn't changed for 10 ticks (0.5s).
+     */
+    public boolean areChunksStabilized() {
+        int currentLoaded = countLoadedChunksAroundPlayer();
+        if (currentLoaded == lastLoadedCount) {
+            stableChunkCount++;
+        } else {
+            stableChunkCount = 0;
+        }
+        lastLoadedCount = currentLoaded;
+        return stableChunkCount >= 10;
+    }
+
+    /**
+     * Count loaded chunks in a 5-chunk radius around the player.
+     */
+    private int countLoadedChunksAroundPlayer() {
+        if (mc.player == null || mc.level == null) return 0;
+
+        var chunkSource = mc.level.getChunkSource();
+        int playerChunkX = mc.player.chunkPosition().x;
+        int playerChunkZ = mc.player.chunkPosition().z;
+        int count = 0;
+
+        for (int dx = -5; dx <= 5; dx++) {
+            for (int dz = -5; dz <= 5; dz++) {
+                LevelChunk chunk = chunkSource.getChunk(playerChunkX + dx, playerChunkZ + dz, false);
+                if (chunk != null) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     // Getters
