@@ -10,6 +10,8 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.Vec3;
+import com.basefinder.terrain.TerrainPredictor;
+import com.basefinder.util.BaritoneController;
 import com.basefinder.util.LagDetector;
 import com.basefinder.util.Lang;
 import org.rusherhack.client.api.utils.ChatUtils;
@@ -89,6 +91,26 @@ public class ElytraBot {
     private BlockPos approachTarget = null;
     private double approachTargetAltitude = 80.0;
 
+    // Circling state (orbit when chunks not loaded)
+    private boolean enableCircling = true;
+    private BlockPos circleCenter = null;
+    private double circleAngle = 0;
+    private int circleTicks = 0;
+    private double circleRadius = 300;
+    private int circleTimeout = 600; // 30 seconds max
+    private FlightState stateBeforeCircling = FlightState.CRUISING;
+
+    // Baritone landing delegation
+    private boolean useBaritoneLanding = true;
+    private int acceptedFallDamage = 3; // half-hearts
+    private BaritoneController baritoneController = null;
+    private int baritoneLandingTimer = 0;
+    private static final int BARITONE_LANDING_TIMEOUT = 200; // 10 seconds
+
+    // Terrain prediction
+    private TerrainPredictor terrainPredictor = null;
+    private int terrainSafetyMargin = 40;
+
     public enum FlightState {
         IDLE,
         TAKING_OFF,
@@ -98,7 +120,9 @@ public class ElytraBot {
         SAFE_DESCENDING, // Controlled descent for base approach - prevents fall damage
         FLARING, // Braking flare before landing - pitch up to bleed speed
         LANDING,
-        REFUELING // Looking for fireworks in inventory
+        REFUELING, // Looking for fireworks in inventory
+        CIRCLING, // Orbiting when chunks aren't loaded (2b2t lag)
+        BARITONE_LANDING // Delegating landing to Baritone for reliability
     }
 
     private int tickCounter = 0;
@@ -169,6 +193,8 @@ public class ElytraBot {
             case FLARING -> handleFlaring();
             case LANDING -> handleLanding();
             case REFUELING -> handleRefueling();
+            case CIRCLING -> handleCircling();
+            case BARITONE_LANDING -> handleBaritoneLanding();
         }
     }
 
@@ -203,6 +229,15 @@ public class ElytraBot {
         elytraSwapSlot = -1;
         lastFireworkCount = -1;
         lowFireworkWarned = false;
+        // Reset circling state
+        circleCenter = null;
+        circleTicks = 0;
+        circleAngle = 0;
+        // Cancel Baritone landing if active
+        if (baritoneController != null) {
+            baritoneController.cancelLanding();
+        }
+        baritoneLandingTimer = 0;
     }
 
     // ===== ELYTRA DURABILITY MANAGEMENT =====
@@ -397,6 +432,17 @@ public class ElytraBot {
             }
         }
 
+        // Terrain prediction: check further ahead (200 blocks) with seed data
+        if (terrainPredictor != null && !emergencyPullUp) {
+            int predictedMax = terrainPredictor.getMaxHeightAhead(pos, velocity, 200);
+            if (predictedMax > 0 && pos.y < predictedMax + 20) {
+                LOGGER.warn("[ElytraBot] Terrain prediction: high terrain ({}) ahead, current Y={}", predictedMax, (int) pos.y);
+                emergencyPullUp = true;
+                pullUpTimer = 0;
+                return;
+            }
+        }
+
         // Ground proximity check - check blocks directly below
         boolean groundClose = false;
         for (int dy = 1; dy <= EMERGENCY_HEIGHT_CHECK; dy++) {
@@ -586,16 +632,31 @@ public class ElytraBot {
         // 2b2t lag safety: check if chunks ahead are loaded
         updateChunkLoadingSafety();
 
-        // Maintain altitude - HARD CAP at cruiseAltitude, never exceed it
+        // Check if we should enter circling mode (chunks not loaded)
+        if (enableCircling && shouldEnterCircling()) {
+            enterCircling();
+            return;
+        }
+
+        // Calculate effective cruise altitude (terrain-aware)
+        double effectiveAltitude = cruiseAltitude;
+        if (terrainPredictor != null) {
+            Vec3 pos = mc.player.position();
+            Vec3 velocity = mc.player.getDeltaMovement();
+            int maxTerrainAhead = terrainPredictor.getMaxHeightAhead(pos, velocity, 500);
+            effectiveAltitude = Math.max(cruiseAltitude, maxTerrainAhead + terrainSafetyMargin);
+        }
+
+        // Maintain altitude - HARD CAP at effectiveAltitude
         double y = mc.player.getY();
-        if (y > cruiseAltitude) {
+        if (y > effectiveAltitude) {
             // Above cruise altitude - nose down to correct
             targetPitch = 15.0f;
-        } else if (y < cruiseAltitude - 15) {
+        } else if (y < effectiveAltitude - 15) {
             // Far below - aggressive climb
             targetPitch = -25.0f;
             useFireworkIfNeeded();
-        } else if (y < cruiseAltitude - 5) {
+        } else if (y < effectiveAltitude - 5) {
             // Slightly below - gentle climb
             targetPitch = -8.0f;
             useFireworkIfNeeded();
@@ -619,7 +680,12 @@ public class ElytraBot {
                     Math.pow(mc.player.getZ() - destination.getZ(), 2)
             );
             if (distXZ < 50) {
-                state = FlightState.DESCENDING;
+                // Try Baritone landing first if enabled
+                if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable()) {
+                    startBaritoneLanding();
+                } else {
+                    state = FlightState.DESCENDING;
+                }
             }
         }
 
@@ -857,6 +923,206 @@ public class ElytraBot {
                 state = FlightState.LANDING;
             }
         }
+    }
+
+    // ===== CIRCLING (CHUNK WAIT) =====
+
+    /**
+     * Check if we should enter circling mode.
+     * Triggers when: many unloaded chunks ahead OR severe lag.
+     */
+    private boolean shouldEnterCircling() {
+        if (lagDetector == null) return false;
+        int unloaded = lagDetector.getUnloadedChunksAhead();
+        return unloaded >= 3 || lagDetector.isSeverelyLagging();
+    }
+
+    /**
+     * Enter circling mode: save state and begin orbiting.
+     */
+    private void enterCircling() {
+        if (mc.player == null) return;
+        stateBeforeCircling = state;
+        circleCenter = mc.player.blockPosition();
+        circleAngle = 0;
+        circleTicks = 0;
+        state = FlightState.CIRCLING;
+        LOGGER.info("[ElytraBot] Entering CIRCLING mode at {}", circleCenter.toShortString());
+        ChatUtils.print("[ElytraBot] " + Lang.t("Chunks not loaded - circling...", "Chunks non chargés - orbite d'attente..."));
+    }
+
+    /**
+     * Handle circling: orbit around a point while waiting for chunks to load.
+     * Scanning continues during circling (productive waiting).
+     */
+    private void handleCircling() {
+        if (mc.player == null || circleCenter == null) {
+            exitCircling();
+            return;
+        }
+
+        if (!mc.player.isFallFlying()) {
+            state = FlightState.TAKING_OFF;
+            takeoffTimer = 0;
+            return;
+        }
+
+        circleTicks++;
+
+        // Calculate orbital speed (maintain current horizontal speed)
+        Vec3 velocity = mc.player.getDeltaMovement();
+        double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        if (hSpeed < 0.1) hSpeed = 1.0;
+
+        // Angular velocity: complete circle based on radius and speed
+        double circumference = 2.0 * Math.PI * circleRadius;
+        double ticksPerCircle = circumference / (hSpeed * 20.0); // Convert blocks/tick to blocks/sec
+        if (ticksPerCircle < 100) ticksPerCircle = 100; // Minimum 5 seconds per circle
+        circleAngle += 2.0 * Math.PI / ticksPerCircle;
+
+        // Calculate target point on the circle
+        double targetX = circleCenter.getX() + Math.cos(circleAngle) * circleRadius;
+        double targetZ = circleCenter.getZ() + Math.sin(circleAngle) * circleRadius;
+
+        // Aim towards the orbit point
+        targetYaw = calculateYawToTarget(BlockPos.containing(targetX, mc.player.getY(), targetZ));
+
+        // Maintain cruise altitude
+        double y = mc.player.getY();
+        if (y < cruiseAltitude - 10) {
+            targetPitch = -15.0f;
+            useFireworkIfNeeded();
+        } else if (y < cruiseAltitude - 3) {
+            targetPitch = -5.0f;
+            useFireworkIfNeeded();
+        } else {
+            targetPitch = -2.0f;
+            if (hSpeed < 0.8) {
+                useFireworkIfNeeded();
+            }
+        }
+
+        applyRotation();
+
+        // Check exit conditions
+        if (lagDetector != null && lagDetector.isFlightPathLoaded() && lagDetector.areChunksStabilized() && !lagDetector.isSeverelyLagging()) {
+            LOGGER.info("[ElytraBot] Chunks loaded and stable - resuming flight");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Chunks loaded - resuming!", "Chunks chargés - reprise !"));
+            exitCircling();
+            return;
+        }
+
+        // Timeout
+        if (circleTicks >= circleTimeout) {
+            LOGGER.warn("[ElytraBot] Circling timeout ({} ticks) - forcing resume with altitude boost", circleTimeout);
+            ChatUtils.print("[ElytraBot] " + Lang.t("Circling timeout - resuming with safety altitude", "Timeout orbite - reprise avec altitude de sécurité"));
+            exitCirclingWithBoost();
+        }
+    }
+
+    /**
+     * Exit circling and resume normal flight.
+     */
+    private void exitCircling() {
+        circleCenter = null;
+        circleTicks = 0;
+        circleAngle = 0;
+        state = FlightState.CRUISING;
+        if (destination != null) {
+            targetYaw = calculateYawToTarget(destination);
+        }
+    }
+
+    /**
+     * Exit circling with an altitude boost for safety (chunks may still be partially unloaded).
+     */
+    private void exitCirclingWithBoost() {
+        circleCenter = null;
+        circleTicks = 0;
+        circleAngle = 0;
+        safeAltitudeBoost = 20; // Extra 20 blocks altitude
+        state = FlightState.CRUISING;
+        if (destination != null) {
+            targetYaw = calculateYawToTarget(destination);
+        }
+    }
+
+    // ===== BARITONE LANDING =====
+
+    /**
+     * Start landing via Baritone - finds the ground position and delegates.
+     */
+    private void startBaritoneLanding() {
+        if (mc.player == null || baritoneController == null) return;
+
+        BlockPos groundPos;
+        if (destination != null) {
+            // Find ground below destination
+            groundPos = findGroundBelow(destination);
+        } else {
+            groundPos = findGroundBelow(mc.player.blockPosition());
+        }
+
+        baritoneController.setAcceptDamage(acceptedFallDamage);
+        baritoneController.configureForFastLanding();
+        baritoneController.landAt(groundPos);
+        baritoneLandingTimer = 0;
+        state = FlightState.BARITONE_LANDING;
+        LOGGER.info("[ElytraBot] Delegating landing to Baritone at {}", groundPos.toShortString());
+        ChatUtils.print("[ElytraBot] " + Lang.t("Baritone landing at ", "Atterrissage Baritone à ") + groundPos.toShortString());
+    }
+
+    /**
+     * Handle Baritone landing: monitor progress, fallback on timeout/error.
+     */
+    private void handleBaritoneLanding() {
+        if (mc.player == null) return;
+
+        baritoneLandingTimer++;
+
+        // Check if Baritone completed the landing
+        if (baritoneController != null && baritoneController.isLandingComplete()) {
+            LOGGER.info("[ElytraBot] Baritone landing complete!");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Landed via Baritone.", "Atterri via Baritone."));
+            state = FlightState.IDLE;
+            isFlying = false;
+            baritoneLandingTimer = 0;
+            return;
+        }
+
+        // Check if player is on ground (Baritone may have finished without signal)
+        if (mc.player.onGround() && !mc.player.isFallFlying()) {
+            LOGGER.info("[ElytraBot] Player on ground during Baritone landing - assuming success");
+            if (baritoneController != null) baritoneController.cancelLanding();
+            state = FlightState.IDLE;
+            isFlying = false;
+            baritoneLandingTimer = 0;
+            return;
+        }
+
+        // Timeout → fallback to custom landing
+        if (baritoneLandingTimer >= BARITONE_LANDING_TIMEOUT) {
+            LOGGER.warn("[ElytraBot] Baritone landing timeout! Falling back to custom landing");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Baritone landing timeout - fallback to manual", "Baritone timeout - atterrissage manuel"));
+            if (baritoneController != null) baritoneController.cancelLanding();
+            baritoneLandingTimer = 0;
+            state = FlightState.DESCENDING;
+        }
+    }
+
+    /**
+     * Find the ground position below a given block position.
+     */
+    private BlockPos findGroundBelow(BlockPos pos) {
+        if (mc.level == null) return pos;
+        for (int y = pos.getY(); y > mc.level.getMinY(); y--) {
+            BlockPos check = new BlockPos(pos.getX(), y, pos.getZ());
+            BlockState blockState = mc.level.getBlockState(check);
+            if (!blockState.isAir() && !blockState.liquid()) {
+                return check.above();
+            }
+        }
+        return new BlockPos(pos.getX(), 64, pos.getZ());
     }
 
     /**
@@ -1133,6 +1399,23 @@ public class ElytraBot {
     public void setUseObstacleAvoidance(boolean v) { this.useObstacleAvoidance = v; }
     public void setLagDetector(LagDetector detector) { this.lagDetector = detector; }
     public boolean hasUnloadedChunksAhead() { return unloadedChunksAhead; }
+
+    // Circling settings
+    public void setEnableCircling(boolean v) { this.enableCircling = v; }
+    public void setCircleRadius(double r) { this.circleRadius = r; }
+    public void setCircleTimeout(int ticks) { this.circleTimeout = ticks; }
+    public boolean isCircling() { return state == FlightState.CIRCLING; }
+    public int getCircleTicks() { return circleTicks; }
+
+    // Baritone landing settings
+    public void setUseBaritoneLanding(boolean v) { this.useBaritoneLanding = v; }
+    public void setAcceptedFallDamage(int halfHearts) { this.acceptedFallDamage = halfHearts; }
+    public void setBaritoneController(BaritoneController ctrl) { this.baritoneController = ctrl; }
+
+    // Terrain prediction
+    public void setTerrainPredictor(TerrainPredictor predictor) { this.terrainPredictor = predictor; }
+    public void setTerrainSafetyMargin(int margin) { this.terrainSafetyMargin = margin; }
+    public TerrainPredictor getTerrainPredictor() { return terrainPredictor; }
 
     /**
      * Count ALL firework rockets in the player's inventory (hotbar + main inventory).

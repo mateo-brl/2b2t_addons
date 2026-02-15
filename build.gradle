@@ -41,6 +41,9 @@ dependencies {
     }
 
     rusherhackApi "org.rusherhack:rusherhack-api:$minecraft_version-SNAPSHOT"
+
+    // Baritone API - bundled with RusherHack at runtime, accessed via reflection
+    // No compile dependency needed since BaritoneController uses reflection
 }
 
 loom {
