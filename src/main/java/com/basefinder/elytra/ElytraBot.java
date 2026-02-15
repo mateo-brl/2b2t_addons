@@ -77,6 +77,14 @@ public class ElytraBot {
     private int stuckTimer = 0;
     private Vec3 lastPosition = null;
 
+    // Takeoff state machine
+    private int takeoffPhase = 0;      // 0=JUMP, 1=WAIT_APEX, 2=DEPLOY, 3=BOOST
+    private int takeoffAttempts = 0;    // max 5 retries
+    private int takeoffAirTicks = 0;   // ticks spent in air during takeoff
+
+    // Landing state
+    private int landingTimer = 0;
+
     // Safe approach fields - controlled descent for base photography
     private BlockPos approachTarget = null;
     private double approachTargetAltitude = 80.0;
@@ -88,6 +96,7 @@ public class ElytraBot {
         CRUISING,
         DESCENDING,
         SAFE_DESCENDING, // Controlled descent for base approach - prevents fall damage
+        FLARING, // Braking flare before landing - pitch up to bleed speed
         LANDING,
         REFUELING // Looking for fireworks in inventory
     }
@@ -157,6 +166,7 @@ public class ElytraBot {
             case CRUISING -> handleCruising();
             case DESCENDING -> handleDescending();
             case SAFE_DESCENDING -> handleSafeDescent();
+            case FLARING -> handleFlaring();
             case LANDING -> handleLanding();
             case REFUELING -> handleRefueling();
         }
@@ -425,6 +435,25 @@ public class ElytraBot {
         }
     }
 
+    // ===== UTILITY =====
+
+    /**
+     * Raycast straight down to find distance to ground.
+     * Returns distance in blocks (max 320). Ignores air and liquids.
+     */
+    private double getGroundDistance() {
+        if (mc.player == null || mc.level == null) return 320;
+        BlockPos pos = mc.player.blockPosition();
+        for (int dy = 0; dy <= 320; dy++) {
+            BlockPos check = pos.below(dy);
+            BlockState blockState = mc.level.getBlockState(check);
+            if (!blockState.isAir() && !blockState.liquid()) {
+                return dy;
+            }
+        }
+        return 320;
+    }
+
     // ===== FLIGHT STATE HANDLERS =====
 
     private void handleTakeoff() {
@@ -432,34 +461,79 @@ public class ElytraBot {
 
         takeoffTimer++;
 
-        // Already flying? Go to climbing
-        if (mc.player.isFallFlying()) {
-            ChatUtils.print("[ElytraBot] " + Lang.t("Elytra deployed! Climbing...", "Elytra déployé ! Montée..."));
-            state = FlightState.CLIMBING;
-            takeoffTimer = 0;
-            return;
+        // Already flying? Transition to boost phase
+        if (mc.player.isFallFlying() && takeoffPhase < 3) {
+            takeoffPhase = 3; // skip to BOOST
         }
 
-        // Phase 1: Jump to get airborne
-        if (mc.player.onGround()) {
-            mc.player.jumpFromGround();
-            return;
-        }
-
-        // Phase 2: Once in air and falling, send elytra activation packet
-        if (!mc.player.onGround() && !mc.player.isFallFlying() && mc.player.getDeltaMovement().y < 0) {
-            // Send the START_FALL_FLYING packet to deploy elytra
-            if (mc.getConnection() != null) {
-                mc.getConnection().send(new ServerboundPlayerCommandPacket(
-                        mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
-                ));
+        switch (takeoffPhase) {
+            case 0 -> { // JUMP
+                if (mc.player.onGround()) {
+                    mc.player.jumpFromGround();
+                    takeoffAirTicks = 0;
+                    takeoffPhase = 1;
+                }
+            }
+            case 1 -> { // WAIT_APEX - wait for near-apex of jump
+                if (!mc.player.onGround()) {
+                    takeoffAirTicks++;
+                    // Wait until velocity is near zero (apex) or enough time has passed
+                    if (mc.player.getDeltaMovement().y <= 0.1 || takeoffAirTicks > 7) {
+                        takeoffPhase = 2;
+                        takeoffAirTicks = 0; // reuse as deploy tick counter
+                    }
+                } else {
+                    // Fell back to ground before reaching apex - retry jump
+                    takeoffPhase = 0;
+                }
+            }
+            case 2 -> { // DEPLOY - spam elytra packet until it works
+                takeoffAirTicks++;
+                if (mc.player.isFallFlying()) {
+                    takeoffPhase = 3;
+                    break;
+                }
+                // Send deploy packet every tick
+                if (mc.getConnection() != null) {
+                    mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                            mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
+                    ));
+                }
+                // Give up after 5 ticks or if back on ground
+                if (takeoffAirTicks > 5 || mc.player.onGround()) {
+                    takeoffAttempts++;
+                    if (takeoffAttempts >= 5) {
+                        LOGGER.error("[ElytraBot] Failed to deploy elytra after {} attempts", takeoffAttempts);
+                        ChatUtils.print("[ElytraBot] " + Lang.t("Takeoff failed after 5 attempts!", "Décollage échoué après 5 tentatives !"));
+                        // Stay in TAKING_OFF - the existing timeout will handle it
+                    } else {
+                        LOGGER.info("[ElytraBot] Deploy failed, retrying (attempt {})", takeoffAttempts + 1);
+                        takeoffPhase = 0; // back to JUMP
+                    }
+                }
+            }
+            case 3 -> { // BOOST - fire a rocket and climb
+                ChatUtils.print("[ElytraBot] " + Lang.t("Elytra deployed! Climbing...", "Elytra déployé ! Montée..."));
+                fireworkCooldown = 0; // force immediate boost
+                targetPitch = -45.0f;
+                applyRotation();
+                useFireworkIfNeeded();
+                // Reset takeoff state and transition to CLIMBING
+                takeoffPhase = 0;
+                takeoffAttempts = 0;
+                takeoffAirTicks = 0;
+                takeoffTimer = 0;
+                state = FlightState.CLIMBING;
             }
         }
 
-        // Timeout - retry the whole cycle
-        if (takeoffTimer > 40) {
+        // Global timeout - reset everything after 200 ticks (10 seconds)
+        if (takeoffTimer > 200) {
+            LOGGER.warn("[ElytraBot] Takeoff global timeout, resetting");
+            takeoffPhase = 0;
+            takeoffAttempts = 0;
+            takeoffAirTicks = 0;
             takeoffTimer = 0;
-            LOGGER.info("[ElytraBot] Takeoff retry...");
         }
     }
 
@@ -558,23 +632,35 @@ public class ElytraBot {
 
         if (!mc.player.isFallFlying()) {
             state = FlightState.LANDING;
+            landingTimer = 0;
             return;
         }
 
-        // Gentle descent - aim for safe landing
-        targetPitch = 15.0f; // nose down gently
+        // Aim towards destination
         if (destination != null) {
             targetYaw = calculateYawToTarget(destination);
         }
-        applyRotation();
 
-        // Near ground - slow down
-        if (mc.player.getY() < 80) {
-            targetPitch = 5.0f; // flatten out to slow descent
+        // Adaptive descent based on ground distance
+        double groundDist = getGroundDistance();
+        if (groundDist > 80) {
+            targetPitch = 12.0f;  // fast descent, we're high
+        } else if (groundDist > 40) {
+            targetPitch = 6.0f;   // moderate
+        } else if (groundDist >= 20) {
+            targetPitch = 2.0f;   // gentle
+        } else {
+            // Close to ground - transition to flaring
+            LOGGER.info("[ElytraBot] Ground at {} blocks, starting flare", (int) groundDist);
+            state = FlightState.FLARING;
+            return;
         }
 
-        if (mc.player.getY() < minAltitude || mc.player.onGround()) {
+        applyRotation();
+
+        if (mc.player.onGround()) {
             state = FlightState.LANDING;
+            landingTimer = 0;
         }
     }
 
@@ -658,12 +744,97 @@ public class ElytraBot {
         return state == FlightState.SAFE_DESCENDING;
     }
 
-    private void handleLanding() {
-        // Just let the player land naturally
-        if (mc.player != null && mc.player.onGround()) {
+    /**
+     * Flare maneuver: pitch up sharply to convert horizontal speed into altitude,
+     * bleeding speed before landing. Transitions to LANDING when slow enough.
+     */
+    private void handleFlaring() {
+        if (mc.player == null) return;
+
+        double groundDist = getGroundDistance();
+
+        // Lost elytra mid-flare → go straight to landing
+        if (!mc.player.isFallFlying()) {
+            LOGGER.info("[ElytraBot] Lost flight during flare, switching to landing");
+            state = FlightState.LANDING;
+            landingTimer = 0;
+            return;
+        }
+
+        // Pitch up progressively (-35° to -45°) to bleed speed
+        Vec3 velocity = mc.player.getDeltaMovement();
+        double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        if (hSpeed > 0.8) {
+            targetPitch = -35.0f; // initial flare
+        } else {
+            targetPitch = -45.0f; // harder flare when slower (needs more AoA to keep braking)
+        }
+
+        // Keep yaw towards destination
+        if (destination != null) {
+            targetYaw = calculateYawToTarget(destination);
+        }
+        applyRotation();
+
+        // Transition conditions
+        if (hSpeed < 0.3 && groundDist < 8) {
+            // Slow enough and close to ground → land
+            LOGGER.info("[ElytraBot] Flare complete, hSpeed={}, groundDist={}, landing", String.format("%.2f", hSpeed), (int) groundDist);
+            state = FlightState.LANDING;
+            landingTimer = 0;
+            return;
+        }
+
+        if (groundDist > 25) {
+            // Flared too hard, gaining altitude → go back to descending
+            LOGGER.info("[ElytraBot] Flare over-climbed (ground={}), back to descending", (int) groundDist);
+            state = FlightState.DESCENDING;
+            return;
+        }
+
+        if (mc.player.onGround()) {
             state = FlightState.IDLE;
             isFlying = false;
             ChatUtils.print("[ElytraBot] " + Lang.t("Landed.", "Atterri."));
+        }
+    }
+
+    private void handleLanding() {
+        if (mc.player == null) return;
+
+        landingTimer++;
+
+        // Still flying with elytra → keep nose up to slow down
+        if (mc.player.isFallFlying()) {
+            targetPitch = -25.0f;
+            applyRotation();
+
+            // Emergency retro-rocket if falling fast close to ground
+            double groundDist = getGroundDistance();
+            if (mc.player.getDeltaMovement().y < -0.5 && groundDist < 6) {
+                LOGGER.warn("[ElytraBot] Emergency retro-rocket! vy={}, ground={}", String.format("%.2f", mc.player.getDeltaMovement().y), (int) groundDist);
+                targetPitch = -80.0f;
+                applyRotation();
+                fireworkCooldown = 0;
+                useFireworkIfNeeded();
+            }
+        }
+
+        // Landed
+        if (mc.player.onGround()) {
+            state = FlightState.IDLE;
+            isFlying = false;
+            landingTimer = 0;
+            ChatUtils.print("[ElytraBot] " + Lang.t("Landed.", "Atterri."));
+            return;
+        }
+
+        // Safety timeout - 100 ticks (5 seconds) without landing
+        if (landingTimer > 100) {
+            LOGGER.warn("[ElytraBot] Landing timeout, forcing IDLE");
+            state = FlightState.IDLE;
+            isFlying = false;
+            landingTimer = 0;
         }
     }
 
