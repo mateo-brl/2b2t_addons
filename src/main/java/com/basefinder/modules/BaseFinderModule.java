@@ -277,8 +277,9 @@ public class BaseFinderModule extends ToggleableModule {
                 modeName = "Zone";
                 int spanX = Math.abs(zoneMaxX.getValue() - zoneMinX.getValue());
                 int spanZ = Math.abs(zoneMaxZ.getValue() - zoneMinZ.getValue());
-                modeDesc = Lang.t("X from " + zoneMinX.getValue() + " to " + zoneMaxX.getValue() + ", Z from " + zoneMinZ.getValue() + " to " + zoneMaxZ.getValue() + " (" + spanX + "x" + spanZ + " area, spacing " + zoneSpacing.getValue() + ")",
-                        "X de " + zoneMinX.getValue() + " à " + zoneMaxX.getValue() + ", Z de " + zoneMinZ.getValue() + " à " + zoneMaxZ.getValue() + " (" + spanX + "x" + spanZ + " blocs, espacement " + zoneSpacing.getValue() + ")");
+                int totalChunks = navigation.getExpectedZoneChunkCount();
+                modeDesc = Lang.t("X from " + zoneMinX.getValue() + " to " + zoneMaxX.getValue() + ", Z from " + zoneMinZ.getValue() + " to " + zoneMaxZ.getValue() + " (" + spanX + "x" + spanZ + " area, " + totalChunks + " chunks to scan)",
+                        "X de " + zoneMinX.getValue() + " à " + zoneMaxX.getValue() + ", Z de " + zoneMinZ.getValue() + " à " + zoneMaxZ.getValue() + " (" + spanX + "x" + spanZ + " blocs, " + totalChunks + " chunks à scanner)");
             }
             case HIGHWAYS -> {
                 modeName = Lang.t("Highways", "Autoroutes");
@@ -535,7 +536,12 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Periodic status update every 10 seconds
         if (tickCounter % 200 == 0) {
-            ChatUtils.print("[BaseHunter] " + Lang.t("Scanned: ", "Scannés : ") + scanner.getScannedCount() + Lang.t(" chunks | Found: ", " chunks | Trouvés : ") + logger.getCount() + " bases");
+            String statusMsg = "[BaseHunter] " + Lang.t("Scanned: ", "Scannés : ") + scanner.getScannedCount() + Lang.t(" chunks | Found: ", " chunks | Trouvés : ") + logger.getCount() + " bases";
+            if (navigation.isZoneMode() && navigation.getExpectedZoneChunkCount() > 0) {
+                double coverage = navigation.getZoneCoveragePercent(scanner.getScannedChunksSet());
+                statusMsg += Lang.t(" | Zone: ", " | Zone : ") + String.format("%.1f", coverage) + "%";
+            }
+            ChatUtils.print(statusMsg);
         }
 
         BaseRecord bestApproach = null;
@@ -730,6 +736,27 @@ public class BaseFinderModule extends ToggleableModule {
         if (navigation.isNearTarget(waypointThreshold.getValue())) {
             ChatUtils.print("[BaseHunter] " + Lang.t("Reached waypoint ", "Waypoint atteint ") + (navigation.getCurrentWaypointIndex() + 1) + "/" + navigation.getWaypointCount());
             if (!navigation.advanceToNext()) {
+                // All waypoints visited - check zone coverage if in zone mode
+                if (navigation.isZoneMode() && navigation.getExpectedZoneChunkCount() > 0) {
+                    double coverage = navigation.getZoneCoveragePercent(scanner.getScannedChunksSet());
+                    ChatUtils.print("[BaseHunter] " + Lang.t(
+                            "Zone pass complete! Coverage: " + String.format("%.1f", coverage) + "% (" + scanner.getScannedCount() + "/" + navigation.getExpectedZoneChunkCount() + " chunks)",
+                            "Passe de zone terminée ! Couverture : " + String.format("%.1f", coverage) + "% (" + scanner.getScannedCount() + "/" + navigation.getExpectedZoneChunkCount() + " chunks)"));
+
+                    // If coverage is not 100%, generate additional waypoints for missed chunks
+                    if (coverage < 99.0 && navigation.getZoneMissedPassCount() < 3) {
+                        boolean hasMore = navigation.generateMissedChunkWaypoints(scanner.getScannedChunksSet());
+                        if (hasMore) {
+                            int newWp = navigation.getWaypointCount() - navigation.getCurrentWaypointIndex();
+                            ChatUtils.print("[BaseHunter] " + Lang.t(
+                                    "Generating " + newWp + " additional waypoints for missed chunks (pass " + navigation.getZoneMissedPassCount() + "/3)...",
+                                    "Génération de " + newWp + " waypoints supplémentaires pour les chunks manqués (passe " + navigation.getZoneMissedPassCount() + "/3)..."));
+                            state = FinderState.SCANNING;
+                            elytraBot.stop();
+                            return;
+                        }
+                    }
+                }
                 ChatUtils.print("[BaseHunter] " + Lang.t("All waypoints visited! Total bases found: ", "Tous les waypoints visités ! Bases trouvées : ") + logger.getCount());
                 this.toggle();
                 return;
@@ -791,7 +818,7 @@ public class BaseFinderModule extends ToggleableModule {
         double dz = mc.player.getZ() - basePos.getZ();
         double dist = Math.sqrt(dx * dx + dz * dz);
 
-        // Keep elytra bot alive during entire approach
+        // Keep elytra bot alive during ENTIRE approach - NEVER stop mid-air
         if (useElytra.getValue()) {
             elytraBot.tick();
         }
@@ -814,31 +841,44 @@ public class BaseFinderModule extends ToggleableModule {
             return;
         }
 
-        // Near base - record when we first got close
+        // Near base - initiate SAFE controlled descent instead of stopping elytra
         if (approachNearTicks == 0) {
             approachNearTicks = approachTicks;
-            // Stop elytra to hover/glide near the base
             if (useElytra.getValue()) {
-                elytraBot.stop();
+                // Use safe descent to reach photography altitude WITHOUT stopping elytra
+                // This prevents the fatal fall damage from stopping at cruise altitude
+                double photoAltitude = Math.max(basePos.getY() + 60, 80);
+                elytraBot.startSafeDescent(basePos, photoAltitude);
+                ChatUtils.print("[BaseHunter] " + Lang.t(
+                        "Safe descent to photograph base...",
+                        "Descente sécurisée pour photographier la base..."));
             }
         }
 
-        // Look at the base for screenshot
+        // Look at the base for screenshot (while still flying safely)
         float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
         float dy = (float) (basePos.getY() - mc.player.getY());
         float pitchAngle = (float) -Math.toDegrees(Math.atan2(dy, Math.max(dist, 1)));
         mc.player.setYRot(yaw);
         mc.player.setXRot(Math.max(-90, Math.min(90, pitchAngle)));
 
-        // Wait for chunks to render, then screenshot
-        if (!approachScreenshotTaken && (approachTicks - approachNearTicks) >= APPROACH_WAIT_TICKS) {
+        // Wait for safe altitude + chunks to render, then screenshot
+        boolean atSafeAltitude = !useElytra.getValue() || elytraBot.isAtApproachAltitude();
+        int ticksSinceNear = approachTicks - approachNearTicks;
+        if (!approachScreenshotTaken && atSafeAltitude && ticksSinceNear >= APPROACH_WAIT_TICKS) {
             logger.takeScreenshot(pendingBaseApproach);
             approachScreenshotTaken = true;
             ChatUtils.print("[BaseHunter] " + Lang.t("Base photographed!", "Base photographiée !"));
         }
 
-        // After screenshot, resume
-        if (approachScreenshotTaken && (approachTicks - approachNearTicks) >= APPROACH_WAIT_TICKS + 20) {
+        // After screenshot, resume flight safely (never stop elytra mid-air)
+        if (approachScreenshotTaken && ticksSinceNear >= APPROACH_WAIT_TICKS + 20) {
+            finishApproach();
+        }
+
+        // Safety timeout: if descent takes too long, resume anyway
+        if (ticksSinceNear > APPROACH_TIMEOUT) {
+            ChatUtils.print("[BaseHunter] " + Lang.t("Approach timeout, resuming safely.", "Approche timeout, reprise sécurisée."));
             finishApproach();
         }
     }

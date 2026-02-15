@@ -77,12 +77,17 @@ public class ElytraBot {
     private int stuckTimer = 0;
     private Vec3 lastPosition = null;
 
+    // Safe approach fields - controlled descent for base photography
+    private BlockPos approachTarget = null;
+    private double approachTargetAltitude = 80.0;
+
     public enum FlightState {
         IDLE,
         TAKING_OFF,
         CLIMBING,
         CRUISING,
         DESCENDING,
+        SAFE_DESCENDING, // Controlled descent for base approach - prevents fall damage
         LANDING,
         REFUELING // Looking for fireworks in inventory
     }
@@ -151,6 +156,7 @@ public class ElytraBot {
             case CLIMBING -> handleClimbing();
             case CRUISING -> handleCruising();
             case DESCENDING -> handleDescending();
+            case SAFE_DESCENDING -> handleSafeDescent();
             case LANDING -> handleLanding();
             case REFUELING -> handleRefueling();
         }
@@ -572,6 +578,86 @@ public class ElytraBot {
         }
     }
 
+    // ===== SAFE DESCENT (BASE APPROACH) =====
+
+    /**
+     * Start a controlled descent to a target altitude while maintaining elytra flight.
+     * Used when approaching a detected base for screenshot - prevents the fall damage
+     * that occurred when elytra was stopped abruptly at cruise altitude.
+     */
+    public void startSafeDescent(BlockPos target, double targetAltitude) {
+        this.approachTarget = target;
+        this.approachTargetAltitude = targetAltitude;
+        this.destination = target;
+        this.state = FlightState.SAFE_DESCENDING;
+        this.isFlying = true;
+        LOGGER.info("[ElytraBot] Starting safe descent to altitude {} for base at {}", (int) targetAltitude, target.toShortString());
+    }
+
+    /**
+     * Handle controlled descent: gently lower altitude while maintaining elytra flight.
+     * Never stops elytra mid-air. Maintains enough speed to keep flying.
+     */
+    private void handleSafeDescent() {
+        if (mc.player == null) return;
+
+        if (!mc.player.isFallFlying()) {
+            // Lost elytra flight - try to restart to avoid freefall
+            state = FlightState.TAKING_OFF;
+            takeoffTimer = 0;
+            LOGGER.warn("[ElytraBot] Lost flight during safe descent! Restarting...");
+            return;
+        }
+
+        // Aim towards the approach target
+        if (approachTarget != null) {
+            targetYaw = calculateYawToTarget(approachTarget);
+        }
+
+        double currentY = mc.player.getY();
+
+        // Controlled descent in stages
+        if (currentY > approachTargetAltitude + 40) {
+            targetPitch = 12.0f; // moderate descent when far above
+        } else if (currentY > approachTargetAltitude + 15) {
+            targetPitch = 6.0f; // gentle descent getting closer
+        } else if (currentY > approachTargetAltitude + 5) {
+            targetPitch = 2.0f; // very gentle, almost level
+        } else if (currentY >= approachTargetAltitude - 5) {
+            targetPitch = -2.0f; // level flight at target altitude
+            // Use firework to maintain altitude if sinking too fast
+            Vec3 velocity = mc.player.getDeltaMovement();
+            if (velocity.y < -0.15) {
+                useFireworkIfNeeded();
+            }
+        } else {
+            // Below target - climb back up gently
+            targetPitch = -12.0f;
+            useFireworkIfNeeded();
+        }
+
+        applyRotation();
+
+        // Maintain minimum forward speed to keep elytra active
+        Vec3 velocity = mc.player.getDeltaMovement();
+        double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        if (hSpeed < 0.5) {
+            useFireworkIfNeeded();
+        }
+    }
+
+    /**
+     * Check if the player has reached the safe approach altitude (within tolerance).
+     */
+    public boolean isAtApproachAltitude() {
+        if (mc.player == null) return false;
+        return Math.abs(mc.player.getY() - approachTargetAltitude) < 10;
+    }
+
+    public boolean isSafeDescending() {
+        return state == FlightState.SAFE_DESCENDING;
+    }
+
     private void handleLanding() {
         // Just let the player land naturally
         if (mc.player != null && mc.player.onGround()) {
@@ -582,9 +668,10 @@ public class ElytraBot {
     }
 
     private void handleRefueling() {
-        // Try to find fireworks in inventory and switch to hotbar
-        int fireworkSlot = findFireworkSlot();
-        if (fireworkSlot >= 0) {
+        // Try to find fireworks anywhere in inventory (hotbar + main)
+        boolean hasInHotbar = findFireworkInHotbar() >= 0;
+        boolean hasInInventory = findFireworkInInventory() >= 0;
+        if (hasInHotbar || hasInInventory) {
             state = FlightState.CRUISING;
             lowFireworkWarned = false;
         } else {
@@ -704,10 +791,15 @@ public class ElytraBot {
     /**
      * Use a firework rocket if cooldown allows.
      * Uses a 2-tick delay between slot switch and use to allow server sync.
+     *
+     * Search order:
+     * 1. Hotbar (direct use, no swap needed)
+     * 2. Main inventory slots 9-35 (swap to hotbar slot 8 via SWAP click)
      */
     private int pendingFireworkSlot = -1;
     private int pendingFireworkDelay = 0;
     private int previousSlotBeforeFirework = -1;
+    private boolean pendingInventorySwap = false; // True if we just did an inventory swap and need to wait
 
     private void useFireworkIfNeeded() {
         if (fireworkCooldown > 0 || mc.player == null || mc.gameMode == null) return;
@@ -720,30 +812,47 @@ public class ElytraBot {
                 mc.player.getInventory().selected = previousSlotBeforeFirework;
                 fireworkCooldown = fireworkInterval;
                 pendingFireworkSlot = -1;
+                pendingInventorySwap = false;
             }
             return;
         }
 
-        int slot = findFireworkInHotbar();
-        if (slot < 0) {
-            // Try to move firework from inventory to hotbar
-            int invSlot = findFireworkSlot();
-            if (invSlot >= 0) {
-                // Swap to hotbar slot 8
-                InventoryUtils.swapSlots(invSlot, 44); // slot 44 = hotbar slot 8 (index 8)
-                slot = 8;
-            } else {
-                return;
-            }
+        // Step 1: Check hotbar for firework rockets
+        int hotbarSlot = findFireworkInHotbar();
+        if (hotbarSlot >= 0) {
+            // Found in hotbar - switch and use
+            previousSlotBeforeFirework = mc.player.getInventory().selected;
+            mc.player.getInventory().selected = hotbarSlot;
+            pendingFireworkSlot = hotbarSlot;
+            pendingFireworkDelay = 1; // Wait 1 tick for server to sync
+            return;
         }
 
-        // Switch to firework slot and schedule use for next tick
-        previousSlotBeforeFirework = mc.player.getInventory().selected;
-        mc.player.getInventory().selected = slot;
-        pendingFireworkSlot = slot;
-        pendingFireworkDelay = 1; // Wait 1 tick for server to sync
+        // Step 2: Check main inventory (slots 9-35 in inventoryMenu)
+        int invSlot = findFireworkInInventory();
+        if (invSlot >= 0) {
+            // Found in inventory - swap to hotbar slot 8 using reliable SWAP click
+            int containerId = mc.player.inventoryMenu.containerId;
+            mc.gameMode.handleInventoryMouseClick(containerId, invSlot, 8, ClickType.SWAP, mc.player);
+
+            LOGGER.info("[ElytraBot] Swapped firework from inventory slot {} to hotbar slot 8", invSlot);
+
+            // Now select hotbar slot 8 and schedule use after 2 ticks (swap needs extra sync time)
+            previousSlotBeforeFirework = mc.player.getInventory().selected;
+            mc.player.getInventory().selected = 8;
+            pendingFireworkSlot = 8;
+            pendingFireworkDelay = 2; // Extra tick for inventory swap to sync
+            pendingInventorySwap = true;
+            return;
+        }
+
+        // No fireworks found anywhere
     }
 
+    /**
+     * Search hotbar (slots 0-8) for firework rockets.
+     * Returns hotbar index (0-8) or -1 if not found.
+     */
     private int findFireworkInHotbar() {
         if (mc.player == null) return -1;
         for (int i = 0; i < 9; i++) {
@@ -753,12 +862,30 @@ public class ElytraBot {
         return -1;
     }
 
-    private int findFireworkSlot() {
-        return InventoryUtils.findItem(Items.FIREWORK_ROCKET, true, false);
+    /**
+     * Search full inventory (slots 9-35 in inventoryMenu = main inventory) for firework rockets.
+     * Returns inventoryMenu slot index or -1 if not found.
+     * Prefers the largest stack to minimize swap operations.
+     */
+    private int findFireworkInInventory() {
+        if (mc.player == null) return -1;
+
+        int bestSlot = -1;
+        int bestCount = 0;
+
+        // Main inventory: inventoryMenu slots 9-35
+        for (int i = 9; i <= 35; i++) {
+            ItemStack stack = mc.player.inventoryMenu.getSlot(i).getItem();
+            if (stack.is(Items.FIREWORK_ROCKET) && stack.getCount() > bestCount) {
+                bestSlot = i;
+                bestCount = stack.getCount();
+            }
+        }
+        return bestSlot;
     }
 
     private boolean hasFireworks() {
-        return findFireworkSlot() >= 0 || findFireworkInHotbar() >= 0;
+        return findFireworkInHotbar() >= 0 || findFireworkInInventory() >= 0;
     }
 
     // ===== ANTI-KICK FLIGHT NOISE =====
@@ -836,10 +963,27 @@ public class ElytraBot {
     public void setLagDetector(LagDetector detector) { this.lagDetector = detector; }
     public boolean hasUnloadedChunksAhead() { return unloadedChunksAhead; }
 
+    /**
+     * Count ALL firework rockets in the player's inventory (hotbar + main inventory).
+     * Manual scan for reliability instead of relying on InventoryUtils.
+     */
     public int getFireworkCount() {
+        if (mc.player == null) return 0;
+
         int count = 0;
-        if (mc.player != null) {
-            count = InventoryUtils.getItemCount(Items.FIREWORK_ROCKET, true, false);
+        // Hotbar (slots 0-8 in player inventory)
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (stack.is(Items.FIREWORK_ROCKET)) {
+                count += stack.getCount();
+            }
+        }
+        // Main inventory (slots 9-35 in inventoryMenu)
+        for (int i = 9; i <= 35; i++) {
+            ItemStack stack = mc.player.inventoryMenu.getSlot(i).getItem();
+            if (stack.is(Items.FIREWORK_ROCKET)) {
+                count += stack.getCount();
+            }
         }
         return count;
     }

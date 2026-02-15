@@ -5,6 +5,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -60,9 +61,9 @@ public class BlockAnalyzer {
             Blocks.PURPUR_SLAB,
             Blocks.QUARTZ_BLOCK,
             Blocks.SMOOTH_QUARTZ,
-            Blocks.POLISHED_BLACKSTONE_BRICKS,
-            Blocks.POLISHED_DEEPSLATE,
-            Blocks.GILDED_BLACKSTONE,
+            // NOTE: POLISHED_DEEPSLATE removed - generates naturally in ancient cities!
+            // NOTE: POLISHED_BLACKSTONE_BRICKS removed - generates in bastion remnants!
+            // NOTE: GILDED_BLACKSTONE removed - generates in bastion remnants!
 
             // Redstone machines - not natural
             Blocks.PISTON,
@@ -110,6 +111,41 @@ public class BlockAnalyzer {
             Blocks.BROWN_CONCRETE, Blocks.GREEN_CONCRETE, Blocks.RED_CONCRETE,
             Blocks.BLACK_CONCRETE
     ));
+
+    /**
+     * ANCIENT CITY / DEEP DARK blocks - these generate naturally and cause false positives.
+     * Sculk blocks are the #1 indicator of an ancient city, NOT a player base.
+     * Deepslate bricks and polished deepslate also generate in ancient cities.
+     */
+    private static final Set<Block> ANCIENT_CITY_BLOCKS = new HashSet<>(Arrays.asList(
+            Blocks.SCULK,
+            Blocks.SCULK_CATALYST,
+            Blocks.SCULK_SENSOR,
+            Blocks.SCULK_SHRIEKER,
+            Blocks.SCULK_VEIN,
+            Blocks.DEEPSLATE_BRICKS,
+            Blocks.DEEPSLATE_TILES,
+            Blocks.CRACKED_DEEPSLATE_BRICKS,
+            Blocks.CRACKED_DEEPSLATE_TILES,
+            Blocks.POLISHED_DEEPSLATE,
+            Blocks.DEEPSLATE_BRICK_WALL,
+            Blocks.DEEPSLATE_TILE_WALL,
+            Blocks.DEEPSLATE_BRICK_STAIRS,
+            Blocks.DEEPSLATE_TILE_STAIRS,
+            Blocks.DEEPSLATE_BRICK_SLAB,
+            Blocks.DEEPSLATE_TILE_SLAB,
+            Blocks.SOUL_LANTERN,
+            Blocks.SOUL_FIRE,
+            Blocks.CANDLE,
+            Blocks.GRAY_WOOL // Gray wool generates in ancient city structures
+    ));
+
+    /**
+     * Check if a block is an ancient city / deep dark indicator.
+     */
+    public static boolean isAncientCityBlock(Block block) {
+        return ANCIENT_CITY_BLOCKS.contains(block);
+    }
 
     /**
      * Trail blocks - only blocks that strongly indicate player-made paths.
@@ -187,6 +223,17 @@ public class BlockAnalyzer {
             BlockPos center = new BlockPos(
                     chunk.getPos().getMiddleBlockX(), 64, chunk.getPos().getMiddleBlockZ());
             Holder<Biome> biomeHolder = level.getBiome(center);
+
+            // Also check underground biome at ancient city depth (Y = -40)
+            BlockPos deepCenter = new BlockPos(
+                    chunk.getPos().getMiddleBlockX(), -40, chunk.getPos().getMiddleBlockZ());
+            Holder<Biome> deepBiomeHolder = level.getBiome(deepCenter);
+
+            // DEEP DARK biome = ancient city territory - very heavy penalty
+            // This is the #1 source of false positives (sculk, deepslate bricks, etc.)
+            if (deepBiomeHolder.is(net.minecraft.world.level.biome.Biomes.DEEP_DARK)) {
+                return 0.15; // 85% penalty - almost everything here is natural
+            }
 
             // Villages generate in plains, desert, savanna, taiga, snowy plains
             // Temples generate in desert, jungle, swamp, snowy taiga
@@ -266,6 +313,7 @@ public class BlockAnalyzer {
         int mapArtBlockCount = 0;
         int shulkerCount = 0;
         int signWithTextCount = 0;
+        int ancientCityBlockCount = 0; // Sculk, deepslate bricks, etc.
 
         // Multi-Y scanning: track blocks at special Y levels
         int bedrockLayerBlocks = 0;  // Y 0-10: hidden stashes in bedrock
@@ -312,6 +360,12 @@ public class BlockAnalyzer {
 
                         if (isMapArtBlock(block)) {
                             mapArtBlockCount++;
+                        }
+
+                        // Ancient city / deep dark block detection
+                        // These generate naturally and are NOT player-placed
+                        if (isAncientCityBlock(block) && worldY < 0) {
+                            ancientCityBlockCount++;
                         }
 
                         // Sign text detection - signs with text are strong base indicators
@@ -388,6 +442,27 @@ public class BlockAnalyzer {
             double shulkerScore = shulkerCount * 25.0;
             double otherScore = score - shulkerScore;
             score = shulkerScore + otherScore * biomePenalty;
+        }
+
+        // ANCIENT CITY PENALTY: If significant sculk/deepslate blocks found underground,
+        // this is almost certainly an ancient city, NOT a player base.
+        // Only shulker boxes override this (player stash hidden in ancient city).
+        if (ancientCityBlockCount >= 5 && shulkerCount == 0) {
+            // Heavy penalty: ancient city blocks strongly indicate natural generation
+            double ancientCityPenalty;
+            if (ancientCityBlockCount >= 30) {
+                ancientCityPenalty = 0.05; // 95% reduction - definitely ancient city
+            } else if (ancientCityBlockCount >= 15) {
+                ancientCityPenalty = 0.15; // 85% reduction - very likely ancient city
+            } else {
+                ancientCityPenalty = 0.3;  // 70% reduction - probably ancient city
+            }
+            score *= ancientCityPenalty;
+
+            // If score dropped below threshold, mark as NONE to avoid false detection
+            if (score < 10.0) {
+                analysis.setBaseType(BaseType.NONE);
+            }
         }
 
         // Spawn distance: calculate and store for sensitivity adjustment
