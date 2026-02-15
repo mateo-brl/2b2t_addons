@@ -157,7 +157,7 @@ public class TrailFollower {
             }
         }
 
-        if (trailCandidates.size() < 3) return null;
+        if (trailCandidates.size() < 5) return null;
 
         // Calculate direction from the trail candidates using PCA-like approach
         return calculateChunkTrailDirection(trailCandidates);
@@ -342,7 +342,7 @@ public class TrailFollower {
             }
         }
 
-        if (nearbyTrailBlocks.size() < 5) return false;
+        if (nearbyTrailBlocks.size() < 10) return false;
 
         trailDirection = calculateBlockTrailDirection(nearbyTrailBlocks);
         if (trailDirection == null) return false;

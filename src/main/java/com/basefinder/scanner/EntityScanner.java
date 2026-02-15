@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.entity.decoration.Painting;
 import net.minecraft.world.entity.animal.*;
 import net.minecraft.world.entity.animal.horse.Horse;
 import net.minecraft.world.entity.animal.horse.Donkey;
@@ -27,6 +28,9 @@ import java.util.List;
  * - Minecarts with chests/hoppers: redstone machines or transport
  * - Animals in small areas: farms (pens, breeding)
  * - Villagers far from villages: trading halls
+ * - Named entities: 100% player on 2b2t (name tags)
+ * - Tamed animals: wolves, cats with owners
+ * - Paintings: decorative, player-placed
  */
 public class EntityScanner {
 
@@ -36,8 +40,6 @@ public class EntityScanner {
     /**
      * Scan entities in a chunk area and add entity-based scores to the analysis.
      * This is additive - it only increases scores, never decreases them.
-     *
-     * @param analysis the existing chunk analysis to enhance
      */
     public void scanEntities(ChunkAnalysis analysis) {
         if (mc.level == null) return;
@@ -46,7 +48,6 @@ public class EntityScanner {
         int minX = chunkPos.getMinBlockX();
         int minZ = chunkPos.getMinBlockZ();
 
-        // Get all entities in this chunk's area
         AABB chunkBox = new AABB(minX, mc.level.getMinY(), minZ,
                 minX + 16, mc.level.getMaxY(), minZ + 16);
 
@@ -54,7 +55,7 @@ public class EntityScanner {
         try {
             entities = mc.level.getEntities((Entity) null, chunkBox, e -> true);
         } catch (Exception e) {
-            return; // Silently fail if entity query fails
+            return;
         }
 
         if (entities.isEmpty()) return;
@@ -65,8 +66,16 @@ public class EntityScanner {
         int hopperMinecartCount = 0;
         int farmAnimalCount = 0;
         int villagerCount = 0;
+        int namedEntityCount = 0;
+        int tamedAnimalCount = 0;
+        int paintingCount = 0;
 
         for (Entity entity : entities) {
+            // Check for custom names first (applies to any entity type)
+            if (entity.hasCustomName()) {
+                namedEntityCount++;
+            }
+
             if (entity instanceof ItemFrame) {
                 itemFrameCount++;
             } else if (entity instanceof ArmorStand) {
@@ -77,6 +86,12 @@ public class EntityScanner {
                 hopperMinecartCount++;
             } else if (entity instanceof Villager) {
                 villagerCount++;
+            } else if (entity instanceof Painting) {
+                paintingCount++;
+            } else if (entity instanceof Wolf wolf && wolf.isTame()) {
+                tamedAnimalCount++;
+            } else if (entity instanceof Cat cat && cat.isTame()) {
+                tamedAnimalCount++;
             } else if (isFarmAnimal(entity)) {
                 farmAnimalCount++;
             }
@@ -85,24 +100,33 @@ public class EntityScanner {
         // Calculate entity score
         double entityScore = 0;
 
-        // Item frames: 3 pts each (maps, decorations = player activity)
+        // Item frames: 3 pts each
         entityScore += itemFrameCount * 3.0;
 
-        // Armor stands: 5 pts each (rarely natural)
+        // Armor stands: 5 pts each
         entityScore += armorStandCount * 5.0;
 
-        // Chest minecarts: 8 pts each (storage/transport = strong indicator)
+        // Chest minecarts: 8 pts each
         entityScore += chestMinecartCount * 8.0;
 
-        // Hopper minecarts: 10 pts each (redstone machines)
+        // Hopper minecarts: 10 pts each
         entityScore += hopperMinecartCount * 10.0;
 
-        // Villagers: need 2+ in one chunk to be a trading hall (not natural village)
+        // Named entities: 8 pts each (100% player on 2b2t - requires name tags)
+        entityScore += namedEntityCount * 8.0;
+
+        // Tamed animals: 6 pts each (wolves/cats with owners)
+        entityScore += tamedAnimalCount * 6.0;
+
+        // Paintings: 4 pts each
+        entityScore += paintingCount * 4.0;
+
+        // Villagers: need 2+ in one chunk to be a trading hall
         if (villagerCount >= 2) {
             entityScore += villagerCount * 5.0;
         }
 
-        // Farm animals: need 5+ in one chunk to be a farm (natural spawns are sparse)
+        // Farm animals: need 5+ in one chunk to be a farm
         if (farmAnimalCount >= 5) {
             entityScore += farmAnimalCount * 2.0;
         }
@@ -113,9 +137,12 @@ public class EntityScanner {
         // Add entity data to analysis
         analysis.setEntityScore(entityScore);
         analysis.setEntityCount(itemFrameCount + armorStandCount + chestMinecartCount
-                + hopperMinecartCount + villagerCount + farmAnimalCount);
+                + hopperMinecartCount + villagerCount + farmAnimalCount
+                + namedEntityCount + tamedAnimalCount + paintingCount);
+        analysis.setNamedEntityCount(namedEntityCount);
+        analysis.setTamedAnimalCount(tamedAnimalCount);
 
-        // Upgrade base type if entity evidence is stronger
+        // Upgrade base type based on entity evidence
         if (chestMinecartCount >= 1 || hopperMinecartCount >= 1) {
             if (analysis.getBaseType() == BaseType.NONE || analysis.getBaseType() == BaseType.TRAIL) {
                 analysis.setBaseType(BaseType.STORAGE);
@@ -130,13 +157,26 @@ public class EntityScanner {
             analysis.setBaseType(BaseType.CONSTRUCTION);
         }
 
+        // FARM detection: animals >= 10 OR villagers >= 3
+        if (farmAnimalCount >= 10 || villagerCount >= 3) {
+            if (analysis.getBaseType() == BaseType.NONE || analysis.getBaseType() == BaseType.TRAIL) {
+                analysis.setBaseType(BaseType.FARM);
+            }
+        }
+
+        // Named entities are very strong - upgrade to construction if nothing else
+        if (namedEntityCount >= 1 && analysis.getBaseType() == BaseType.NONE) {
+            analysis.setBaseType(BaseType.CONSTRUCTION);
+        }
+
         // Add entity score to total
         analysis.setScore(analysis.getScore() + entityScore);
 
         if (entityScore >= 10) {
-            LOGGER.info("[EntityScanner] Chunk ({}, {}) entity score: {} (frames:{}, stands:{}, carts:{}, villagers:{}, animals:{})",
+            LOGGER.info("[EntityScanner] Chunk ({}, {}) entity score: {} (frames:{}, stands:{}, carts:{}, villagers:{}, animals:{}, named:{}, tamed:{}, paintings:{})",
                     chunkPos.x, chunkPos.z, entityScore, itemFrameCount, armorStandCount,
-                    chestMinecartCount + hopperMinecartCount, villagerCount, farmAnimalCount);
+                    chestMinecartCount + hopperMinecartCount, villagerCount, farmAnimalCount,
+                    namedEntityCount, tamedAnimalCount, paintingCount);
         }
     }
 

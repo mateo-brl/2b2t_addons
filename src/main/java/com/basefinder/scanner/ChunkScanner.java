@@ -263,9 +263,14 @@ public class ChunkScanner {
                 }
             }
 
-            if (neighborCount >= 2 && neighborScore >= 15) {
+            // Stricter cluster thresholds to avoid village/structure amplification
+            // Require at least 1 strong block OR 1 storage in central chunk
+            boolean hasCentralEvidence = analysis.getPlayerBlockCount() > 0 || analysis.getStorageCount() > 0;
+            if (neighborCount >= 3 && neighborScore >= 30 && hasCentralEvidence) {
                 // This chunk is part of a cluster
-                double clusterBonus = neighborScore * 0.3; // 30% of neighbor scores as bonus
+                double clusterBonus = neighborScore * 0.15; // 15% of neighbor scores (reduced from 30%)
+                // Cap the bonus to avoid runaway amplification
+                clusterBonus = Math.min(clusterBonus, minScore * 0.5);
                 analysis.setClusterScore(neighborScore);
                 analysis.setClusterSize(neighborCount);
                 double newScore = analysis.getScore() + clusterBonus;
@@ -297,12 +302,19 @@ public class ChunkScanner {
         }
     }
 
+    private boolean detectStash = true;
+    private boolean detectFarm = true;
+    private boolean detectPortal = true;
+
     private boolean shouldDetect(BaseType type) {
         return switch (type) {
             case MAP_ART -> detectMapArt;
             case STORAGE -> detectStorage;
             case CONSTRUCTION -> detectConstruction;
             case TRAIL -> detectTrails;
+            case STASH -> detectStash;
+            case FARM -> detectFarm;
+            case PORTAL -> detectPortal;
             case NONE -> false;
         };
     }
@@ -372,6 +384,9 @@ public class ChunkScanner {
     public void setDetectTrails(boolean v) { this.detectTrails = v; }
     public void setUseEntityScanning(boolean v) { this.useEntityScanning = v; }
     public void setUseClusterScoring(boolean v) { this.useClusterScoring = v; }
+    public void setDetectStash(boolean v) { this.detectStash = v; }
+    public void setDetectFarm(boolean v) { this.detectFarm = v; }
+    public void setDetectPortal(boolean v) { this.detectPortal = v; }
     public void setFreshnessEstimator(FreshnessEstimator estimator) { this.freshnessEstimator = estimator; }
     public void setLagDetector(LagDetector detector) { this.lagDetector = detector; }
 }

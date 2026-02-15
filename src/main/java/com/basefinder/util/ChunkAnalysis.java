@@ -23,13 +23,21 @@ public class ChunkAnalysis {
     private BaseType baseType = BaseType.NONE;
     private final List<SignificantBlock> significantBlocks = new ArrayList<>();
 
+    // Medium player blocks (crying obsidian, furnaces, etc.)
+    private int mediumBlockCount;
+
     // Entity scanner data
     private double entityScore;
     private int entityCount;
+    private int namedEntityCount;
+    private int tamedAnimalCount;
 
     // Cluster scoring data
     private double clusterScore;
     private int clusterSize;
+
+    // Dimension context
+    private String dimension = "overworld";
 
     // Freshness estimation
     private Freshness freshness = Freshness.UNKNOWN;
@@ -79,11 +87,19 @@ public class ChunkAnalysis {
     public void setBaseType(BaseType baseType) { this.baseType = baseType; }
     public List<SignificantBlock> getSignificantBlocks() { return significantBlocks; }
 
+    // Medium block accessors
+    public int getMediumBlockCount() { return mediumBlockCount; }
+    public void setMediumBlockCount(int count) { this.mediumBlockCount = count; }
+
     // Entity scanner accessors
     public double getEntityScore() { return entityScore; }
     public void setEntityScore(double entityScore) { this.entityScore = entityScore; }
     public int getEntityCount() { return entityCount; }
     public void setEntityCount(int entityCount) { this.entityCount = entityCount; }
+    public int getNamedEntityCount() { return namedEntityCount; }
+    public void setNamedEntityCount(int count) { this.namedEntityCount = count; }
+    public int getTamedAnimalCount() { return tamedAnimalCount; }
+    public void setTamedAnimalCount(int count) { this.tamedAnimalCount = count; }
 
     // Cluster scoring accessors
     public double getClusterScore() { return clusterScore; }
@@ -96,6 +112,10 @@ public class ChunkAnalysis {
     public void setFreshness(Freshness freshness) { this.freshness = freshness; }
     public double getFreshnessConfidence() { return freshnessConfidence; }
     public void setFreshnessConfidence(double confidence) { this.freshnessConfidence = confidence; }
+
+    // Dimension accessors
+    public String getDimension() { return dimension; }
+    public void setDimension(String dimension) { this.dimension = dimension; }
 
     // Distance from spawn
     public double getDistanceFromSpawn() { return distanceFromSpawn; }

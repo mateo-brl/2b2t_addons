@@ -8,7 +8,10 @@ public enum BaseType {
     CONSTRUCTION("Construction"),
     STORAGE("Stockage"),
     MAP_ART("Map Art"),
-    TRAIL("Piste");
+    TRAIL("Piste"),
+    STASH("Stash"),
+    FARM("Ferme"),
+    PORTAL("Portail");
 
     private final String displayName;
 

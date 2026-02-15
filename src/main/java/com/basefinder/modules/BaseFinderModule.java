@@ -120,6 +120,9 @@ public class BaseFinderModule extends ToggleableModule {
     private final BooleanSetting detectStorage = new BooleanSetting("Stashes", "Shulkers, ender chests, stockage", true);
     private final BooleanSetting detectMapArt = new BooleanSetting("Map Art", "Détecter les map arts au sol", true);
     private final BooleanSetting detectTrails = new BooleanSetting("Pistes", "Autoroutes de glace, chemins d'obsidienne", true);
+    private final BooleanSetting detectStash = new BooleanSetting("Stashs", "Shulkers isolés sans construction", true);
+    private final BooleanSetting detectFarm = new BooleanSetting("Fermes", "Fermes d'animaux, halls de villageois", true);
+    private final BooleanSetting detectPortal = new BooleanSetting("Portails", "Portails du Nether (obsidienne >= 10)", true);
     private final NumberSetting<Double> minScore = new NumberSetting<>("Sensibilité", 30.0, 5.0, 200.0);
     private final BooleanSetting useEntityScanning = new BooleanSetting("Scan entités", "Scanner véhicules, animaux dressés, armures", true);
     private final BooleanSetting useClusterScoring = new BooleanSetting("Score cluster", "Regrouper les blocs proches pour un meilleur score", true);
@@ -180,6 +183,7 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Détection
         detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails,
+                detectStash, detectFarm, detectPortal,
                 minScore, useEntityScanning, useClusterScoring, followTrails, autoScreenshot, visitBases);
 
         // Survie
@@ -376,6 +380,9 @@ public class BaseFinderModule extends ToggleableModule {
         scanner.setDetectStorage(detectStorage.getValue());
         scanner.setDetectMapArt(detectMapArt.getValue());
         scanner.setDetectTrails(detectTrails.getValue());
+        scanner.setDetectStash(detectStash.getValue());
+        scanner.setDetectFarm(detectFarm.getValue());
+        scanner.setDetectPortal(detectPortal.getValue());
 
         // New optimization settings
         scanner.setUseEntityScanning(useEntityScanning.getValue());
