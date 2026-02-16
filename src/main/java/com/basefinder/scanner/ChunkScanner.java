@@ -54,6 +54,10 @@ public class ChunkScanner {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("BaseFinder");
     private int debugCounter = 0;
 
+    // Batch limits to prevent freezing when many chunks need scanning
+    private static final int MAX_CHUNKS_PER_TICK = 50;
+    private static final int MAX_DEFERRED_RETRIES_PER_TICK = 20;
+
     private int deferredRetryCounter = 0;
     private static final int DEFERRED_RETRY_INTERVAL = 10; // Retry deferred chunks every 10 scan cycles
 
@@ -121,6 +125,7 @@ public class ChunkScanner {
                                 }
                             }
                             retried++;
+                            if (retried >= MAX_DEFERRED_RETRIES_PER_TICK) break;
                         }
                     }
                 }
@@ -129,6 +134,7 @@ public class ChunkScanner {
                 }
             }
 
+            scanLoop:
             for (int x = playerChunkX - renderDist; x <= playerChunkX + renderDist; x++) {
                 for (int z = playerChunkZ - renderDist; z <= playerChunkZ + renderDist; z++) {
                     try {
@@ -212,6 +218,10 @@ public class ChunkScanner {
                                 }
                                 foundBases.add(record);
                             }
+                        }
+
+                        if (chunksScanned >= MAX_CHUNKS_PER_TICK) {
+                            break scanLoop;
                         }
                     } catch (Exception e) {
                         LOGGER.error("[ChunkScanner] Error scanning chunk ({}, {}): {}", x, z, e.getMessage());
@@ -320,8 +330,8 @@ public class ChunkScanner {
     }
 
     private int cleanupCounter = 0;
-    private static final int CLEANUP_INTERVAL = 600; // Every 30 seconds (at 1 call/sec)
-    private static final int MAX_ANALYSES_SIZE = 50000; // Max cached analyses before cleanup
+    private static final int CLEANUP_INTERVAL = 200; // Every ~10 seconds (at 1 call/sec)
+    private static final int MAX_ANALYSES_SIZE = 25000; // Max cached analyses before cleanup
 
     /**
      * Periodically clean up memory by removing old analysis data far from the player.
