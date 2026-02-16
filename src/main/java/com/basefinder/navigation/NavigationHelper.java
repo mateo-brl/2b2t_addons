@@ -5,7 +5,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Manages navigation waypoints and search patterns for base hunting.
@@ -48,8 +47,9 @@ public class NavigationHelper {
     private int zoneMaxZ = 500000;
     private int zoneSpacing = 1000; // Distance between waypoints in zone mode
 
-    // Zone coverage tracking - ensures ALL chunks in zone are scanned
-    private final Set<Long> expectedZoneChunks = new HashSet<>();
+    // Zone coverage tracking - uses bounds instead of enumerating all chunks
+    // to avoid OOM on large zones (e.g. 500k x 500k = 976M chunks)
+    private int zoneChunkMinX, zoneChunkMaxX, zoneChunkMinZ, zoneChunkMaxZ;
     private boolean isZoneMode = false;
     private int zoneMissedPassCount = 0; // How many cleanup passes have been done
 
@@ -76,7 +76,6 @@ public class NavigationHelper {
         this.waypoints.clear();
         this.currentWaypointIndex = 0;
         this.isZoneMode = false;
-        this.expectedZoneChunks.clear();
 
         switch (pattern) {
             case SPIRAL -> generateSpiralWaypoints(center);
@@ -187,7 +186,6 @@ public class NavigationHelper {
     private void generateZoneWaypoints() {
         isZoneMode = true;
         zoneMissedPassCount = 0;
-        expectedZoneChunks.clear();
 
         int minX = Math.min(zoneMinX, zoneMaxX);
         int maxX = Math.max(zoneMinX, zoneMaxX);
@@ -206,16 +204,11 @@ public class NavigationHelper {
 
         int effectiveSpacing = Math.min(zoneSpacing, maxSpacingForCoverage);
 
-        // Build the set of ALL expected chunks in the zone
-        int minChunkX = minX >> 4;
-        int maxChunkX = maxX >> 4;
-        int minChunkZ = minZ >> 4;
-        int maxChunkZ = maxZ >> 4;
-        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
-            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-                expectedZoneChunks.add(ChunkPos.asLong(cx, cz));
-            }
-        }
+        // Store zone chunk bounds for coverage calculations (O(1) instead of O(n^2) memory)
+        zoneChunkMinX = minX >> 4;
+        zoneChunkMaxX = maxX >> 4;
+        zoneChunkMinZ = minZ >> 4;
+        zoneChunkMaxZ = maxZ >> 4;
 
         // Generate zigzag waypoints with effective spacing
         int row = 0;
@@ -237,24 +230,51 @@ public class NavigationHelper {
      * Get the number of expected zone chunks (only valid in ZONE mode).
      */
     public int getExpectedZoneChunkCount() {
-        return expectedZoneChunks.size();
+        long count = (long)(zoneChunkMaxX - zoneChunkMinX + 1) * (zoneChunkMaxZ - zoneChunkMinZ + 1);
+        return (int) Math.min(count, Integer.MAX_VALUE);
     }
 
     /**
      * Check zone coverage: returns the set of zone chunks that have NOT been scanned yet.
      */
     public Set<ChunkPos> getMissedZoneChunks(Set<ChunkPos> scannedChunks) {
-        if (!isZoneMode || expectedZoneChunks.isEmpty()) return Collections.emptySet();
+        if (!isZoneMode) return Collections.emptySet();
+        long totalExpected = (long)(zoneChunkMaxX - zoneChunkMinX + 1) * (zoneChunkMaxZ - zoneChunkMinZ + 1);
+        if (totalExpected <= 0) return Collections.emptySet();
 
-        Set<Long> scannedLongs = scannedChunks.stream()
-                .map(cp -> ChunkPos.asLong(cp.x, cp.z))
-                .collect(Collectors.toSet());
-
-        Set<ChunkPos> missed = new HashSet<>();
-        for (long expected : expectedZoneChunks) {
-            if (!scannedLongs.contains(expected)) {
-                missed.add(new ChunkPos(ChunkPos.getX(expected), ChunkPos.getZ(expected)));
+        // For small zones, enumerate all missed chunks directly
+        if (totalExpected <= 100_000) {
+            Set<ChunkPos> missed = new HashSet<>();
+            for (int cx = zoneChunkMinX; cx <= zoneChunkMaxX; cx++) {
+                for (int cz = zoneChunkMinZ; cz <= zoneChunkMaxZ; cz++) {
+                    ChunkPos pos = new ChunkPos(cx, cz);
+                    if (!scannedChunks.contains(pos)) {
+                        missed.add(pos);
+                    }
+                }
             }
+            return missed;
+        }
+
+        // For large zones, sample gaps near waypoints instead of enumerating all chunks
+        int renderDist = mc.options != null ? mc.options.renderDistance().get() : 8;
+        Set<ChunkPos> missed = new HashSet<>();
+        for (BlockPos wp : waypoints) {
+            int wcx = wp.getX() >> 4;
+            int wcz = wp.getZ() >> 4;
+            for (int dx = -renderDist; dx <= renderDist; dx++) {
+                for (int dz = -renderDist; dz <= renderDist; dz++) {
+                    int cx = wcx + dx;
+                    int cz = wcz + dz;
+                    if (cx >= zoneChunkMinX && cx <= zoneChunkMaxX && cz >= zoneChunkMinZ && cz <= zoneChunkMaxZ) {
+                        ChunkPos pos = new ChunkPos(cx, cz);
+                        if (!scannedChunks.contains(pos)) {
+                            missed.add(pos);
+                        }
+                    }
+                }
+            }
+            if (missed.size() > 10_000) break;
         }
         return missed;
     }
@@ -263,12 +283,15 @@ public class NavigationHelper {
      * Get zone coverage percentage.
      */
     public double getZoneCoveragePercent(Set<ChunkPos> scannedChunks) {
-        if (!isZoneMode || expectedZoneChunks.isEmpty()) return 100.0;
-        Set<Long> scannedLongs = scannedChunks.stream()
-                .map(cp -> ChunkPos.asLong(cp.x, cp.z))
-                .collect(Collectors.toSet());
-        long covered = expectedZoneChunks.stream().filter(scannedLongs::contains).count();
-        return (double) covered / expectedZoneChunks.size() * 100.0;
+        if (!isZoneMode) return 100.0;
+        long totalExpected = (long)(zoneChunkMaxX - zoneChunkMinX + 1) * (zoneChunkMaxZ - zoneChunkMinZ + 1);
+        if (totalExpected <= 0) return 100.0;
+        // Count scanned chunks that fall within zone bounds
+        long covered = scannedChunks.stream()
+                .filter(cp -> cp.x >= zoneChunkMinX && cp.x <= zoneChunkMaxX
+                           && cp.z >= zoneChunkMinZ && cp.z <= zoneChunkMaxZ)
+                .count();
+        return (double) covered / totalExpected * 100.0;
     }
 
     /**
