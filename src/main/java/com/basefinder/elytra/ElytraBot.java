@@ -105,7 +105,7 @@ public class ElytraBot {
     private int acceptedFallDamage = 3; // half-hearts
     private BaritoneController baritoneController = null;
     private int baritoneLandingTimer = 0;
-    private static final int BARITONE_LANDING_TIMEOUT = 200; // 10 seconds
+    private static final int BARITONE_LANDING_TIMEOUT = 60; // 3 seconds
 
     // Terrain prediction
     private TerrainPredictor terrainPredictor = null;
@@ -679,13 +679,8 @@ public class ElytraBot {
                     Math.pow(mc.player.getX() - destination.getX(), 2) +
                     Math.pow(mc.player.getZ() - destination.getZ(), 2)
             );
-            if (distXZ < 50) {
-                // Try Baritone landing first if enabled
-                if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable()) {
-                    startBaritoneLanding();
-                } else {
-                    state = FlightState.DESCENDING;
-                }
+            if (distXZ < 300) {
+                state = FlightState.DESCENDING;
             }
         }
 
@@ -707,22 +702,25 @@ public class ElytraBot {
             targetYaw = calculateYawToTarget(destination);
         }
 
-        // Adaptive descent based on ground distance
+        // Gradual glide slope based on ground distance
         double groundDist = getGroundDistance();
-        if (groundDist > 80) {
-            targetPitch = 12.0f;  // fast descent, we're high
-        } else if (groundDist > 40) {
-            targetPitch = 6.0f;   // moderate
-        } else if (groundDist >= 20) {
-            targetPitch = 2.0f;   // gentle
+        if (groundDist > 100) {
+            targetPitch = 12.0f;  // moderate descent from high altitude
+        } else if (groundDist > 50) {
+            targetPitch = 6.0f;   // easing off
+        } else if (groundDist >= 30) {
+            targetPitch = 3.0f;   // shallow approach
         } else {
-            // Close to ground - transition to flaring
+            // Close to ground - transition to flaring (30 blocks gives more braking room)
             LOGGER.info("[ElytraBot] Ground at {} blocks, starting flare", (int) groundDist);
             state = FlightState.FLARING;
             return;
         }
 
         applyRotation();
+
+        // Do NOT use fireworks during descent — avoid building speed
+        // (useFireworkIfNeeded() intentionally omitted)
 
         if (mc.player.onGround()) {
             state = FlightState.LANDING;
@@ -827,13 +825,23 @@ public class ElytraBot {
             return;
         }
 
-        // Pitch up progressively (-35° to -45°) to bleed speed
         Vec3 velocity = mc.player.getDeltaMovement();
         double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+
+        // Gentler pitch angles: -20° to -30° (was -35° to -45° which caused stalling)
         if (hSpeed > 0.8) {
-            targetPitch = -35.0f; // initial flare
+            targetPitch = -20.0f; // gentle initial flare
         } else {
-            targetPitch = -45.0f; // harder flare when slower (needs more AoA to keep braking)
+            targetPitch = -30.0f; // stronger flare once slower
+        }
+
+        // Firework braking: if falling too fast close to ground, fire a cushioning firework
+        if (velocity.y < -0.8 && groundDist < 15) {
+            LOGGER.info("[ElytraBot] Firework braking! vy={}, ground={}", String.format("%.2f", velocity.y), (int) groundDist);
+            targetPitch = -60.0f;
+            applyRotation();
+            fireworkCooldown = 0;
+            useFireworkIfNeeded();
         }
 
         // Keep yaw towards destination
@@ -842,8 +850,8 @@ public class ElytraBot {
         }
         applyRotation();
 
-        // Transition conditions
-        if (hSpeed < 0.3 && groundDist < 8) {
+        // Transition conditions — more forgiving thresholds
+        if (hSpeed < 0.5 && groundDist < 10) {
             // Slow enough and close to ground → land
             LOGGER.info("[ElytraBot] Flare complete, hSpeed={}, groundDist={}, landing", String.format("%.2f", hSpeed), (int) groundDist);
             state = FlightState.LANDING;
@@ -851,11 +859,9 @@ public class ElytraBot {
             return;
         }
 
-        if (groundDist > 25) {
-            // Flared too hard, gaining altitude → go back to descending
-            LOGGER.info("[ElytraBot] Flare over-climbed (ground={}), back to descending", (int) groundDist);
-            state = FlightState.DESCENDING;
-            return;
+        if (groundDist > 40) {
+            // Over-climbed — reduce flare angle instead of re-entering DESCENDING
+            targetPitch = -10.0f;
         }
 
         if (mc.player.onGround()) {
@@ -870,15 +876,16 @@ public class ElytraBot {
 
         landingTimer++;
 
-        // Still flying with elytra → keep nose up to slow down
+        // Still flying with elytra → keep nose up and brake
         if (mc.player.isFallFlying()) {
             targetPitch = -25.0f;
             applyRotation();
 
-            // Emergency retro-rocket if falling fast close to ground
+            // Emergency firework if falling fast close to ground
+            Vec3 vel = mc.player.getDeltaMovement();
             double groundDist = getGroundDistance();
-            if (mc.player.getDeltaMovement().y < -0.5 && groundDist < 6) {
-                LOGGER.warn("[ElytraBot] Emergency retro-rocket! vy={}, ground={}", String.format("%.2f", mc.player.getDeltaMovement().y), (int) groundDist);
+            if (vel.y < -0.5 && groundDist < 15) {
+                LOGGER.warn("[ElytraBot] Emergency retro-rocket! vy={}, ground={}", String.format("%.2f", vel.y), (int) groundDist);
                 targetPitch = -80.0f;
                 applyRotation();
                 fireworkCooldown = 0;
@@ -886,7 +893,7 @@ public class ElytraBot {
             }
         }
 
-        // Landed
+        // Only set IDLE when actually on the ground
         if (mc.player.onGround()) {
             state = FlightState.IDLE;
             isFlying = false;
@@ -895,12 +902,17 @@ public class ElytraBot {
             return;
         }
 
-        // Safety timeout - 100 ticks (5 seconds) without landing
+        // Safety timeout — if still airborne after 100 ticks, go back to FLARING (not IDLE)
         if (landingTimer > 100) {
-            LOGGER.warn("[ElytraBot] Landing timeout, forcing IDLE");
-            state = FlightState.IDLE;
-            isFlying = false;
-            landingTimer = 0;
+            if (mc.player.isFallFlying()) {
+                LOGGER.warn("[ElytraBot] Landing timeout but still airborne, returning to FLARING");
+                state = FlightState.FLARING;
+                landingTimer = 0;
+            } else {
+                // Not elytra-flying and not on ground (e.g. falling) — just wait for ground contact
+                LOGGER.warn("[ElytraBot] Landing timeout, waiting for ground contact");
+                landingTimer = 50; // reset partially to avoid spamming, keep checking
+            }
         }
     }
 
