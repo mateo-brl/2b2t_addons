@@ -99,31 +99,22 @@ public class BaseFinderHud extends HudElement {
         double x = getX();
         double y = getY();
 
-        // Draw background + border
-        renderer.begin(context.pose(), font);
+        // Draw background + border (renderer is already in building state from framework)
         renderer.drawOutlinedRectangle(x, y, panelWidth, panelHeight, BORDER_WIDTH, BG_COLOR, BORDER_COLOR);
-        renderer.end();
 
-        // Draw content
-        font.begin(context.pose());
-
+        // Draw content (font doesn't need begin/end, like TextHudElement)
         double curY = y + PADDING;
         for (PanelLine line : lines) {
             if (line.isSeparator) {
                 // Draw separator line
                 curY += SECTION_GAP;
-                renderer.begin(context.pose(), font);
                 renderer.drawLine(x + PADDING, curY, x + panelWidth - PADDING, curY, 0.5f, SEPARATOR_COLOR);
-                renderer.end();
-                font.begin(context.pose());
                 curY += 1 + SECTION_GAP;
             } else {
                 font.drawString(line.text, x + PADDING + line.indent, curY, line.color, true);
                 curY += lineHeight;
             }
         }
-
-        font.end();
     }
 
     // ===== LINE BUILDING =====
