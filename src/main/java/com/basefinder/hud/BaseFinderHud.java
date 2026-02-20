@@ -102,19 +102,35 @@ public class BaseFinderHud extends HudElement {
         // Draw background + border (renderer is already in building state from framework)
         renderer.drawOutlinedRectangle(x, y, panelWidth, panelHeight, BORDER_WIDTH, BG_COLOR, BORDER_COLOR);
 
-        // Draw content (font doesn't need begin/end, like TextHudElement)
+        // Draw separator lines (renderer already building, no begin/end needed)
         double curY = y + PADDING;
-        for (PanelLine line : lines) {
+        double[] sepYPositions = new double[lines.size()];
+        for (int i = 0; i < lines.size(); i++) {
+            PanelLine line = lines.get(i);
             if (line.isSeparator) {
-                // Draw separator line
                 curY += SECTION_GAP;
+                sepYPositions[i] = curY;
                 renderer.drawLine(x + PADDING, curY, x + panelWidth - PADDING, curY, 0.5f, SEPARATOR_COLOR);
                 curY += 1 + SECTION_GAP;
+            } else {
+                sepYPositions[i] = -1;
+                curY += lineHeight;
+            }
+        }
+
+        // Draw text (font has separate lifecycle, needs begin/end)
+        font.begin(context.pose());
+        curY = y + PADDING;
+        for (int i = 0; i < lines.size(); i++) {
+            PanelLine line = lines.get(i);
+            if (line.isSeparator) {
+                curY += SECTION_GAP + 1 + SECTION_GAP;
             } else {
                 font.drawString(line.text, x + PADDING + line.indent, curY, line.color, true);
                 curY += lineHeight;
             }
         }
+        font.end();
     }
 
     // ===== LINE BUILDING =====
