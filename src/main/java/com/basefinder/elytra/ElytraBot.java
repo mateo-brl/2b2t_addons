@@ -80,9 +80,11 @@ public class ElytraBot {
     private Vec3 lastPosition = null;
 
     // Takeoff state machine
-    private int takeoffPhase = 0;      // 0=JUMP, 1=WAIT_APEX, 2=DEPLOY, 3=BOOST
-    private int takeoffAttempts = 0;    // max 5 retries
+    // -1=PRE_ROTATE, 0=JUMP, 1=WAIT_APEX, 2=DEPLOY, 3=BOOST
+    private int takeoffPhase = -1;     // start with PRE_ROTATE
+    private int takeoffAttempts = 0;   // max 5 retries
     private int takeoffAirTicks = 0;   // ticks spent in air during takeoff
+    private boolean isTakingOff = false; // flag for faster rotation rate during takeoff
 
     // Landing state
     private int landingTimer = 0;
@@ -217,6 +219,8 @@ public class ElytraBot {
             if (chest.is(Items.ELYTRA)) {
                 state = FlightState.TAKING_OFF;
                 takeoffTimer = 0;
+                takeoffPhase = -1; // start with PRE_ROTATE
+                isTakingOff = true;
             }
         }
     }
@@ -229,6 +233,8 @@ public class ElytraBot {
         elytraSwapSlot = -1;
         lastFireworkCount = -1;
         lowFireworkWarned = false;
+        isTakingOff = false;
+        takeoffPhase = -1;
         // Reset circling state
         circleCenter = null;
         circleTicks = 0;
@@ -506,6 +512,7 @@ public class ElytraBot {
         if (mc.player == null) return;
 
         takeoffTimer++;
+        isTakingOff = true;
 
         // Already flying? Transition to boost phase
         if (mc.player.isFallFlying() && takeoffPhase < 3) {
@@ -513,14 +520,32 @@ public class ElytraBot {
         }
 
         switch (takeoffPhase) {
-            case 0 -> { // JUMP
+            case -1 -> { // PRE_ROTATE - orient player nose-up BEFORE jumping
+                targetPitch = -45.0f;
+                applyRotation();
+                // Wait until pitch is sufficiently upward before jumping
+                if (mc.player.getXRot() < -30.0f) {
+                    LOGGER.info("[ElytraBot] Pre-rotation complete (pitch={}), jumping", String.format("%.1f", mc.player.getXRot()));
+                    takeoffPhase = 0;
+                }
+                // Safety: if pre-rotation takes too long (>40 ticks / 2s), jump anyway
+                if (takeoffTimer > 40 && takeoffPhase == -1) {
+                    LOGGER.warn("[ElytraBot] Pre-rotation timeout, forcing jump (pitch={})", String.format("%.1f", mc.player.getXRot()));
+                    takeoffPhase = 0;
+                }
+            }
+            case 0 -> { // JUMP - jump while maintaining upward pitch
+                targetPitch = -45.0f;
+                applyRotation();
                 if (mc.player.onGround()) {
                     mc.player.jumpFromGround();
                     takeoffAirTicks = 0;
                     takeoffPhase = 1;
                 }
             }
-            case 1 -> { // WAIT_APEX - wait for near-apex of jump
+            case 1 -> { // WAIT_APEX - wait for near-apex of jump, keep nose up
+                targetPitch = -45.0f;
+                applyRotation();
                 if (!mc.player.onGround()) {
                     takeoffAirTicks++;
                     // Wait until velocity is near zero (apex) or enough time has passed
@@ -529,11 +554,13 @@ public class ElytraBot {
                         takeoffAirTicks = 0; // reuse as deploy tick counter
                     }
                 } else {
-                    // Fell back to ground before reaching apex - retry jump
-                    takeoffPhase = 0;
+                    // Fell back to ground before reaching apex - retry from PRE_ROTATE
+                    takeoffPhase = -1;
                 }
             }
-            case 2 -> { // DEPLOY - spam elytra packet until it works
+            case 2 -> { // DEPLOY - spam elytra packet until it works, maintain pitch
+                targetPitch = -45.0f;
+                applyRotation();
                 takeoffAirTicks++;
                 if (mc.player.isFallFlying()) {
                     takeoffPhase = 3;
@@ -554,7 +581,7 @@ public class ElytraBot {
                         // Stay in TAKING_OFF - the existing timeout will handle it
                     } else {
                         LOGGER.info("[ElytraBot] Deploy failed, retrying (attempt {})", takeoffAttempts + 1);
-                        takeoffPhase = 0; // back to JUMP
+                        takeoffPhase = -1; // back to PRE_ROTATE for clean retry
                     }
                 }
             }
@@ -565,7 +592,8 @@ public class ElytraBot {
                 applyRotation();
                 useFireworkIfNeeded();
                 // Reset takeoff state and transition to CLIMBING
-                takeoffPhase = 0;
+                isTakingOff = false;
+                takeoffPhase = -1;
                 takeoffAttempts = 0;
                 takeoffAirTicks = 0;
                 takeoffTimer = 0;
@@ -576,7 +604,8 @@ public class ElytraBot {
         // Global timeout - reset everything after 200 ticks (10 seconds)
         if (takeoffTimer > 200) {
             LOGGER.warn("[ElytraBot] Takeoff global timeout, resetting");
-            takeoffPhase = 0;
+            isTakingOff = false;
+            takeoffPhase = -1;
             takeoffAttempts = 0;
             takeoffAirTicks = 0;
             takeoffTimer = 0;
@@ -590,6 +619,8 @@ public class ElytraBot {
             LOGGER.info("[ElytraBot] Lost flight during climbing, going back to takeoff");
             state = FlightState.TAKING_OFF;
             takeoffTimer = 0;
+            takeoffPhase = -1; // restart with PRE_ROTATE
+            isTakingOff = true;
             return;
         }
 
@@ -621,6 +652,8 @@ public class ElytraBot {
         if (!mc.player.isFallFlying()) {
             state = FlightState.TAKING_OFF;
             takeoffTimer = 0;
+            takeoffPhase = -1;
+            isTakingOff = true;
             return;
         }
 
@@ -755,6 +788,8 @@ public class ElytraBot {
             // Lost elytra flight - try to restart to avoid freefall
             state = FlightState.TAKING_OFF;
             takeoffTimer = 0;
+            takeoffPhase = -1;
+            isTakingOff = true;
             LOGGER.warn("[ElytraBot] Lost flight during safe descent! Restarting...");
             return;
         }
@@ -976,6 +1011,8 @@ public class ElytraBot {
         if (!mc.player.isFallFlying()) {
             state = FlightState.TAKING_OFF;
             takeoffTimer = 0;
+            takeoffPhase = -1;
+            isTakingOff = true;
             return;
         }
 
@@ -1370,14 +1407,19 @@ public class ElytraBot {
         float currentYaw = mc.player.getYRot();
         float currentPitch = mc.player.getXRot();
 
-        float noiseY = useFlightNoise ? yawNoise : 0;
-        float noiseP = useFlightNoise ? pitchNoise : 0;
+        // Disable noise during takeoff for precise orientation
+        float noiseY = (useFlightNoise && !isTakingOff) ? yawNoise : 0;
+        float noiseP = (useFlightNoise && !isTakingOff) ? pitchNoise : 0;
 
         float yawDiff = wrapDegrees((targetYaw + noiseY) - currentYaw);
         float pitchDiff = (targetPitch + noiseP) - currentPitch;
 
-        float yawStep = Math.min(Math.abs(yawDiff), 5.0f) * Math.signum(yawDiff);
-        float pitchStep = Math.min(Math.abs(pitchDiff), 3.0f) * Math.signum(pitchDiff);
+        // Use faster rotation rate during takeoff (10°/tick) vs normal (3-5°/tick)
+        float maxYawRate = isTakingOff ? 15.0f : 5.0f;
+        float maxPitchRate = isTakingOff ? 10.0f : 3.0f;
+
+        float yawStep = Math.min(Math.abs(yawDiff), maxYawRate) * Math.signum(yawDiff);
+        float pitchStep = Math.min(Math.abs(pitchDiff), maxPitchRate) * Math.signum(pitchDiff);
 
         mc.player.setYRot(currentYaw + yawStep);
         mc.player.setXRot(currentPitch + pitchStep);
