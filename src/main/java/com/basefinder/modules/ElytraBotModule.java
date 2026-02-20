@@ -1,6 +1,7 @@
 package com.basefinder.modules;
 
 import com.basefinder.elytra.ElytraBot;
+import com.basefinder.util.BaritoneController;
 import com.basefinder.util.Lang;
 import net.minecraft.core.BlockPos;
 import org.rusherhack.client.api.events.client.EventUpdate;
@@ -18,6 +19,7 @@ import org.rusherhack.core.setting.NumberSetting;
 public class ElytraBotModule extends ToggleableModule {
 
     private final ElytraBot elytraBot = new ElytraBot();
+    private final BaritoneController baritoneController = new BaritoneController();
 
     private final NumberSetting<Integer> targetX = new NumberSetting<>("Cible X", 0, -30000000, 30000000).incremental(1.0);
     private final NumberSetting<Integer> targetZ = new NumberSetting<>("Cible Z", 0, -30000000, 30000000).incremental(1.0);
@@ -87,6 +89,13 @@ public class ElytraBotModule extends ToggleableModule {
         elytraBot.setFireworkInterval(fireworkInterval.getValue());
         elytraBot.setMinElytraDurability(minDurability.getValue());
         elytraBot.setUseFlightNoise(antiKickNoise.getValue());
+
+        // Wire up Baritone for landing
+        elytraBot.setBaritoneController(baritoneController);
+        elytraBot.setUseBaritoneLanding(baritoneController.isAvailable());
+        if (baritoneController.isAvailable()) {
+            ChatUtils.print("[ElytraBot] " + Lang.t("Baritone connected - smart landing enabled", "Baritone connecté - atterrissage intelligent activé"));
+        }
 
         BlockPos target = new BlockPos(targetX.getValue(), 200, targetZ.getValue());
         elytraBot.startFlight(target);
