@@ -82,14 +82,14 @@ public class BaseFinderHud extends HudElement {
             if (w > maxTextWidth) maxTextWidth = w;
         }
 
-        panelWidth = maxTextWidth + PADDING * 2 + 4; // extra room for icons
+        panelWidth = maxTextWidth + PADDING * 2 + 4;
         if (panelWidth < 160) panelWidth = 160;
 
         // Compute height: count lines + separators
         double contentHeight = 0;
         for (PanelLine line : lines) {
             if (line.isSeparator) {
-                contentHeight += SECTION_GAP + 1 + SECTION_GAP; // gap + line + gap
+                contentHeight += SECTION_GAP + 1 + SECTION_GAP;
             } else {
                 contentHeight += lineHeight;
             }
@@ -99,38 +99,56 @@ public class BaseFinderHud extends HudElement {
         double x = getX();
         double y = getY();
 
-        // Draw background + border (renderer is already in building state from framework)
-        renderer.drawOutlinedRectangle(x, y, panelWidth, panelHeight, BORDER_WIDTH, BG_COLOR, BORDER_COLOR);
+        try {
+            // End the framework's renderer batch so we can work freely
+            renderer.end();
 
-        // Draw separator lines (renderer already building, no begin/end needed)
-        double curY = y + PADDING;
-        double[] sepYPositions = new double[lines.size()];
-        for (int i = 0; i < lines.size(); i++) {
-            PanelLine line = lines.get(i);
-            if (line.isSeparator) {
-                curY += SECTION_GAP;
-                sepYPositions[i] = curY;
-                renderer.drawLine(x + PADDING, curY, x + panelWidth - PADDING, curY, 0.5f, SEPARATOR_COLOR);
-                curY += 1 + SECTION_GAP;
-            } else {
-                sepYPositions[i] = -1;
-                curY += lineHeight;
-            }
-        }
+            // === PASS 1: Geometry (background + separator lines) ===
+            renderer.begin(context.pose(), font);
+            renderer.drawOutlinedRectangle(x, y, panelWidth, panelHeight, BORDER_WIDTH, BG_COLOR, BORDER_COLOR);
 
-        // Draw text (font has separate lifecycle, needs begin/end)
-        font.begin(context.pose());
-        curY = y + PADDING;
-        for (int i = 0; i < lines.size(); i++) {
-            PanelLine line = lines.get(i);
-            if (line.isSeparator) {
-                curY += SECTION_GAP + 1 + SECTION_GAP;
-            } else {
-                font.drawString(line.text, x + PADDING + line.indent, curY, line.color, true);
-                curY += lineHeight;
+            double curY = y + PADDING;
+            for (PanelLine line : lines) {
+                if (line.isSeparator) {
+                    curY += SECTION_GAP;
+                    renderer.drawLine(x + PADDING, curY, x + panelWidth - PADDING, curY, 0.5f, SEPARATOR_COLOR);
+                    curY += 1 + SECTION_GAP;
+                } else {
+                    curY += lineHeight;
+                }
             }
+            renderer.end();
+
+            // === PASS 2: Text ===
+            font.begin(context.pose());
+            curY = y + PADDING;
+            for (PanelLine line : lines) {
+                if (line.isSeparator) {
+                    curY += SECTION_GAP + 1 + SECTION_GAP;
+                } else {
+                    font.drawString(line.text, x + PADDING + line.indent, curY, line.color, true);
+                    curY += lineHeight;
+                }
+            }
+            font.end();
+
+            // Reopen renderer batch for framework (it will call end() after us)
+            renderer.begin(context.pose(), font);
+        } catch (Exception e) {
+            // Fallback: if bookend approach fails, try direct rendering
+            try {
+                if (!renderer.isBuilding()) {
+                    renderer.begin(context.pose(), font);
+                }
+                double curY2 = y + PADDING;
+                for (PanelLine line : lines) {
+                    if (!line.isSeparator) {
+                        font.drawString(line.text, x + PADDING + line.indent, curY2, line.color, true);
+                    }
+                    curY2 += lineHeight;
+                }
+            } catch (Exception ignored) {}
         }
-        font.end();
     }
 
     // ===== LINE BUILDING =====

@@ -942,28 +942,36 @@ public class ElytraBot {
             return;
         }
 
-        // Progressive braking based on speed and distance
+        // Aggressive braking based on speed — fast pitch change (15°/tick now)
         Vec3 velocity = mc.player.getDeltaMovement();
         double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
 
-        if (hSpeed > 1.0) {
-            targetPitch = -25.0f; // initial braking
-        } else if (hSpeed > 0.5) {
-            targetPitch = -35.0f; // stronger braking
+        if (hSpeed > 1.5) {
+            targetPitch = -40.0f; // very fast → hard brake
+        } else if (hSpeed > 0.8) {
+            targetPitch = -55.0f; // fast → aggressive brake
+        } else if (hSpeed > 0.3) {
+            targetPitch = -70.0f; // moderate → near-vertical to stall
         } else {
-            targetPitch = -45.0f; // stall maximal
+            targetPitch = -85.0f; // slow → hover mode, nearly vertical
         }
 
-        // Proactive firework braking: falling too fast close to ground
-        if (velocity.y < -0.3 && groundDist < 25) {
-            targetPitch = -60.0f;
+        // Proactive firework braking: ANY significant downward velocity near ground
+        if (velocity.y < -0.2 && groundDist < 30) {
+            targetPitch = -80.0f;
             fireworkCooldown = 0;
             useFireworkIfNeeded();
         }
 
-        // Cushion firework: very close to ground, any downward velocity
-        if (groundDist < 8 && velocity.y < -0.15) {
-            targetPitch = -80.0f;
+        // Cushion firework: close to ground with any descent
+        if (groundDist < 12 && velocity.y < -0.1) {
+            targetPitch = -85.0f;
+            fireworkCooldown = 0;
+            useFireworkIfNeeded();
+        }
+
+        // Emergency: very close, fire regardless
+        if (groundDist < 6 && velocity.y < -0.05) {
             fireworkCooldown = 0;
             useFireworkIfNeeded();
         }
@@ -974,8 +982,8 @@ public class ElytraBot {
         }
         applyRotation();
 
-        // Stricter landing transition: slow, close, and not falling fast
-        if (hSpeed < 0.3 && groundDist < 6 && velocity.y > -0.2) {
+        // Landing transition: slow enough and close to ground
+        if (hSpeed < 0.3 && groundDist < 8 && velocity.y > -0.15) {
             LOGGER.info("[ElytraBot] Flare complete, hSpeed={}, groundDist={}, vy={}, landing",
                     String.format("%.2f", hSpeed), (int) groundDist, String.format("%.2f", velocity.y));
             state = FlightState.LANDING;
@@ -983,8 +991,8 @@ public class ElytraBot {
             return;
         }
 
-        // Over-climbed: gentle descent, don't re-enter DESCENDING
-        if (groundDist > 50) {
+        // Over-climbed: gentle descent back down
+        if (groundDist > 60) {
             targetPitch = -5.0f;
         }
 
@@ -1000,25 +1008,25 @@ public class ElytraBot {
 
         landingTimer++;
 
-        // Still flying with elytra → aggressive nose up to slow down
+        // Still flying with elytra → maximum nose up to kill all speed
         if (mc.player.isFallFlying()) {
-            targetPitch = -40.0f;
+            targetPitch = -60.0f;
             applyRotation();
 
             double groundDist = getGroundDistance();
             Vec3 vel = mc.player.getDeltaMovement();
 
-            // Cushion firework: any downward velocity close to ground
-            if (vel.y < -0.15 && groundDist < 10) {
+            // Cushion firework: any descent near ground
+            if (vel.y < -0.1 && groundDist < 15) {
                 LOGGER.warn("[ElytraBot] Cushion firework! vy={}, ground={}", String.format("%.2f", vel.y), (int) groundDist);
-                targetPitch = -80.0f;
+                targetPitch = -85.0f;
                 applyRotation();
                 fireworkCooldown = 0;
                 useFireworkIfNeeded();
             }
 
-            // Emergency: very close to ground, fire no matter what
-            if (groundDist < 5 && vel.y < -0.1) {
+            // Emergency: close to ground, fire regardless of velocity
+            if (groundDist < 8 && vel.y < -0.05) {
                 LOGGER.warn("[ElytraBot] Emergency landing firework! vy={}, ground={}", String.format("%.2f", vel.y), (int) groundDist);
                 fireworkCooldown = 0;
                 useFireworkIfNeeded();
@@ -1500,20 +1508,29 @@ public class ElytraBot {
 
     private void applyRotation() {
         if (mc.player == null) return;
-        // Smoothly interpolate rotation with optional noise
         float currentYaw = mc.player.getYRot();
         float currentPitch = mc.player.getXRot();
 
-        // Disable noise during takeoff for precise orientation
-        float noiseY = (useFlightNoise && !isTakingOff) ? yawNoise : 0;
-        float noiseP = (useFlightNoise && !isTakingOff) ? pitchNoise : 0;
+        // Disable noise during critical maneuvers
+        boolean criticalPhase = isTakingOff || state == FlightState.FLARING
+                || state == FlightState.LANDING || state == FlightState.DESCENDING;
+        float noiseY = (useFlightNoise && !criticalPhase) ? yawNoise : 0;
+        float noiseP = (useFlightNoise && !criticalPhase) ? pitchNoise : 0;
 
         float yawDiff = wrapDegrees((targetYaw + noiseY) - currentYaw);
         float pitchDiff = (targetPitch + noiseP) - currentPitch;
 
-        // Use faster rotation rate during takeoff (10°/tick) vs normal (3-5°/tick)
-        float maxYawRate = isTakingOff ? 15.0f : 5.0f;
-        float maxPitchRate = isTakingOff ? 10.0f : 3.0f;
+        // Fast rotation during critical phases, smooth during cruise
+        float maxYawRate, maxPitchRate;
+        if (isTakingOff) {
+            maxYawRate = 15.0f; maxPitchRate = 10.0f;
+        } else if (state == FlightState.FLARING || state == FlightState.LANDING) {
+            maxYawRate = 10.0f; maxPitchRate = 15.0f; // Very fast pitch for emergency braking
+        } else if (state == FlightState.DESCENDING) {
+            maxYawRate = 8.0f; maxPitchRate = 8.0f; // Faster than cruise for speed control
+        } else {
+            maxYawRate = 5.0f; maxPitchRate = 3.0f; // Smooth cruise
+        }
 
         float yawStep = Math.min(Math.abs(yawDiff), maxYawRate) * Math.signum(yawDiff);
         float pitchStep = Math.min(Math.abs(pitchDiff), maxPitchRate) * Math.signum(pitchDiff);
