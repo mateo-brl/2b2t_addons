@@ -78,8 +78,10 @@ public class BaseFinderHud extends HudElement {
         // Compute dynamic width from longest line
         double maxTextWidth = 0;
         for (PanelLine line : lines) {
-            double w = font.getStringWidth(line.text);
-            if (w > maxTextWidth) maxTextWidth = w;
+            if (!line.isSeparator) {
+                double w = font.getStringWidth(line.text) + line.indent;
+                if (w > maxTextWidth) maxTextWidth = w;
+            }
         }
 
         panelWidth = maxTextWidth + PADDING * 2 + 4;
@@ -96,58 +98,34 @@ public class BaseFinderHud extends HudElement {
         }
         panelHeight = contentHeight + PADDING * 2;
 
-        double x = getX();
-        double y = getY();
+        // Use relative coordinates (0,0) since the framework already translates
+        // the matrix to the top-left corner of this HUD element
+        double x = 0;
+        double y = 0;
 
-        try {
-            // End the framework's renderer batch so we can work freely
-            renderer.end();
+        // === Background + separator lines ===
+        renderer.drawOutlinedRectangle(x, y, panelWidth, panelHeight, BORDER_WIDTH, BG_COLOR, BORDER_COLOR);
 
-            // === PASS 1: Geometry (background + separator lines) ===
-            renderer.begin(context.pose(), font);
-            renderer.drawOutlinedRectangle(x, y, panelWidth, panelHeight, BORDER_WIDTH, BG_COLOR, BORDER_COLOR);
-
-            double curY = y + PADDING;
-            for (PanelLine line : lines) {
-                if (line.isSeparator) {
-                    curY += SECTION_GAP;
-                    renderer.drawLine(x + PADDING, curY, x + panelWidth - PADDING, curY, 0.5f, SEPARATOR_COLOR);
-                    curY += 1 + SECTION_GAP;
-                } else {
-                    curY += lineHeight;
-                }
+        double curY = y + PADDING;
+        for (PanelLine line : lines) {
+            if (line.isSeparator) {
+                curY += SECTION_GAP;
+                renderer.drawLine(x + PADDING, curY, x + panelWidth - PADDING, curY, 0.5f, SEPARATOR_COLOR);
+                curY += 1 + SECTION_GAP;
+            } else {
+                curY += lineHeight;
             }
-            renderer.end();
+        }
 
-            // === PASS 2: Text ===
-            font.begin(context.pose());
-            curY = y + PADDING;
-            for (PanelLine line : lines) {
-                if (line.isSeparator) {
-                    curY += SECTION_GAP + 1 + SECTION_GAP;
-                } else {
-                    font.drawString(line.text, x + PADDING + line.indent, curY, line.color, true);
-                    curY += lineHeight;
-                }
+        // === Text ===
+        curY = y + PADDING;
+        for (PanelLine line : lines) {
+            if (line.isSeparator) {
+                curY += SECTION_GAP + 1 + SECTION_GAP;
+            } else {
+                font.drawString(line.text, x + PADDING + line.indent, curY, line.color, true);
+                curY += lineHeight;
             }
-            font.end();
-
-            // Reopen renderer batch for framework (it will call end() after us)
-            renderer.begin(context.pose(), font);
-        } catch (Exception e) {
-            // Fallback: if bookend approach fails, try direct rendering
-            try {
-                if (!renderer.isBuilding()) {
-                    renderer.begin(context.pose(), font);
-                }
-                double curY2 = y + PADDING;
-                for (PanelLine line : lines) {
-                    if (!line.isSeparator) {
-                        font.drawString(line.text, x + PADDING + line.indent, curY2, line.color, true);
-                    }
-                    curY2 += lineHeight;
-                }
-            } catch (Exception ignored) {}
         }
     }
 

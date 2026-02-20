@@ -706,19 +706,21 @@ public class ElytraBot {
 
         applyRotation();
 
-        // Check if near destination — dynamic descent start based on altitude
+        // Check if near destination — dynamic descent start based on altitude above destination
         if (destination != null) {
             double distXZ = Math.sqrt(
                     Math.pow(mc.player.getX() - destination.getX(), 2) +
                     Math.pow(mc.player.getZ() - destination.getZ(), 2)
             );
+            // Use altitude above the DESTINATION ground level (not below the player)
+            double destGroundY = estimateGroundHeightAtDestination();
+            double altAboveDest = mc.player.getY() - destGroundY;
             // Start descent early enough for a gentle ~8° glide slope
-            // At 200m altitude this gives ~1400 blocks of descent distance
-            double groundDist = getGroundDistance();
-            double descentStartDist = Math.max(500, groundDist * 7);
+            // altitude / tan(8°) ≈ altitude * 7
+            double descentStartDist = Math.max(500, altAboveDest * 7);
             if (distXZ < descentStartDist) {
-                LOGGER.info("[ElytraBot] Starting descent: dist={}, alt={}, descentDist={}",
-                        (int) distXZ, (int) mc.player.getY(), (int) descentStartDist);
+                LOGGER.info("[ElytraBot] Starting descent: dist={}, alt={}, altAboveDest={}, descentDist={}",
+                        (int) distXZ, (int) mc.player.getY(), (int) altAboveDest, (int) descentStartDist);
                 state = FlightState.DESCENDING;
             }
         }
@@ -763,31 +765,39 @@ public class ElytraBot {
             }
         }
 
+        // === GROUND PROXIMITY: transition to flare/Baritone FIRST (highest priority) ===
+        if (groundDist < 50) {
+            if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable() && hSpeed < 1.0) {
+                // Slow enough for Baritone handoff
+                LOGGER.info("[ElytraBot] Ground at {} blocks, hSpeed={}, delegating to Baritone",
+                        (int) groundDist, String.format("%.2f", hSpeed));
+                startBaritoneLanding();
+            } else {
+                LOGGER.info("[ElytraBot] Ground at {} blocks, hSpeed={}, starting flare",
+                        (int) groundDist, String.format("%.2f", hSpeed));
+                state = FlightState.FLARING;
+            }
+            return;
+        }
+
         // === SPEED CONTROL: max safe speed decreases as we get closer to ground ===
         double maxSafeSpeed;
-        if (groundDist < 60) {
-            maxSafeSpeed = 0.6;
-        } else if (groundDist < 120) {
-            maxSafeSpeed = 1.0;
+        if (groundDist < 80) {
+            maxSafeSpeed = 0.8;
+        } else if (groundDist < 150) {
+            maxSafeSpeed = 1.2;
         } else {
-            maxSafeSpeed = 1.5;
+            maxSafeSpeed = 1.8;
         }
 
         if (hSpeed > maxSafeSpeed) {
             // Brake: pitch up proportionally to excess speed
-            float brakeAngle = (float) Math.min(25.0, (hSpeed - maxSafeSpeed) * 20.0 + 5.0);
+            float brakeAngle = (float) Math.min(20.0, (hSpeed - maxSafeSpeed) * 15.0 + 5.0);
             targetPitch = -brakeAngle;
             if (tickCounter % 40 == 0) {
                 LOGGER.info("[ElytraBot] Descent braking: hSpeed={}, maxSafe={}, pitch={}",
                         String.format("%.2f", hSpeed), String.format("%.1f", maxSafeSpeed), targetPitch);
             }
-        }
-        // === GROUND PROXIMITY: transition to flare ===
-        else if (groundDist < 50) {
-            LOGGER.info("[ElytraBot] Ground at {} blocks, hSpeed={}, starting flare",
-                    (int) groundDist, String.format("%.2f", hSpeed));
-            state = FlightState.FLARING;
-            return;
         }
         // === GLIDE SLOPE: computed descent angle toward destination ===
         else if (distToDest > 50 && altAboveDest > 20) {
@@ -812,8 +822,9 @@ public class ElytraBot {
         applyRotation();
 
         if (mc.player.onGround()) {
-            state = FlightState.LANDING;
-            landingTimer = 0;
+            state = FlightState.IDLE;
+            isFlying = false;
+            ChatUtils.print("[ElytraBot] " + Lang.t("Landed.", "Atterri."));
         }
     }
 
@@ -926,8 +937,9 @@ public class ElytraBot {
     }
 
     /**
-     * Flare maneuver: pitch up sharply to convert horizontal speed into altitude,
-     * bleeding speed before landing. Transitions to LANDING when slow enough.
+     * Flare maneuver: pitch up to bleed horizontal speed, then transition to landing.
+     * Key principle: only use fireworks when falling too fast near ground (cushion),
+     * never at extreme upward angles which would launch the player skyward.
      */
     private void handleFlaring() {
         if (mc.player == null) return;
@@ -942,38 +954,33 @@ public class ElytraBot {
             return;
         }
 
-        // Aggressive braking based on speed — fast pitch change (15°/tick now)
         Vec3 velocity = mc.player.getDeltaMovement();
         double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
 
+        // === SPEED BRAKING: pitch up proportionally to bleed horizontal speed ===
+        // Use moderate angles to avoid launching the player skyward
         if (hSpeed > 1.5) {
-            targetPitch = -40.0f; // very fast → hard brake
+            targetPitch = -30.0f; // fast → firm brake but not extreme
         } else if (hSpeed > 0.8) {
-            targetPitch = -55.0f; // fast → aggressive brake
+            targetPitch = -40.0f; // moderate → steeper brake
         } else if (hSpeed > 0.3) {
-            targetPitch = -70.0f; // moderate → near-vertical to stall
+            targetPitch = -50.0f; // slow → steep to stall
         } else {
-            targetPitch = -85.0f; // slow → hover mode, nearly vertical
+            targetPitch = -60.0f; // nearly stalled → let gravity bring us down
         }
 
-        // Proactive firework braking: ANY significant downward velocity near ground
-        if (velocity.y < -0.2 && groundDist < 30) {
-            targetPitch = -80.0f;
+        // === CUSHION: only use fireworks as a last resort near ground to prevent crash ===
+        // Critical: do NOT fire at extreme upward angles (causes skyward launch)
+        if (groundDist < 8 && velocity.y < -0.3) {
+            // Very close to ground and falling fast → one cushion firework at moderate angle
+            targetPitch = -45.0f;
             fireworkCooldown = 0;
             useFireworkIfNeeded();
         }
 
-        // Cushion firework: close to ground with any descent
-        if (groundDist < 12 && velocity.y < -0.1) {
-            targetPitch = -85.0f;
-            fireworkCooldown = 0;
-            useFireworkIfNeeded();
-        }
-
-        // Emergency: very close, fire regardless
-        if (groundDist < 6 && velocity.y < -0.05) {
-            fireworkCooldown = 0;
-            useFireworkIfNeeded();
+        // === OVER-CLIMBED: if we got too high, nose down to come back ===
+        if (groundDist > 50) {
+            targetPitch = 5.0f; // gentle descent back towards ground
         }
 
         // Keep yaw towards destination
@@ -982,18 +989,19 @@ public class ElytraBot {
         }
         applyRotation();
 
-        // Landing transition: slow enough and close to ground
-        if (hSpeed < 0.3 && groundDist < 8 && velocity.y > -0.15) {
+        // === LANDING TRANSITION ===
+        // Slow enough and close to ground → transition to landing
+        if (hSpeed < 0.4 && groundDist < 12) {
             LOGGER.info("[ElytraBot] Flare complete, hSpeed={}, groundDist={}, vy={}, landing",
                     String.format("%.2f", hSpeed), (int) groundDist, String.format("%.2f", velocity.y));
-            state = FlightState.LANDING;
-            landingTimer = 0;
+            // Try Baritone for final approach if available
+            if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable()) {
+                startBaritoneLanding();
+            } else {
+                state = FlightState.LANDING;
+                landingTimer = 0;
+            }
             return;
-        }
-
-        // Over-climbed: gentle descent back down
-        if (groundDist > 60) {
-            targetPitch = -5.0f;
         }
 
         if (mc.player.onGround()) {
@@ -1008,32 +1016,29 @@ public class ElytraBot {
 
         landingTimer++;
 
-        // Still flying with elytra → maximum nose up to kill all speed
+        // Still flying with elytra → try to stop elytra for clean ground landing
         if (mc.player.isFallFlying()) {
-            targetPitch = -60.0f;
-            applyRotation();
-
             double groundDist = getGroundDistance();
             Vec3 vel = mc.player.getDeltaMovement();
+            double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
 
-            // Cushion firework: any descent near ground
-            if (vel.y < -0.1 && groundDist < 15) {
-                LOGGER.warn("[ElytraBot] Cushion firework! vy={}, ground={}", String.format("%.2f", vel.y), (int) groundDist);
-                targetPitch = -85.0f;
+            // If slow enough and near ground, toggle elytra OFF for natural landing
+            if (hSpeed < 0.5 && groundDist < 20) {
+                if (mc.getConnection() != null) {
+                    mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                            mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
+                    ));
+                    LOGGER.info("[ElytraBot] Toggling elytra off for ground landing (hSpeed={}, groundDist={})",
+                            String.format("%.2f", hSpeed), (int) groundDist);
+                }
+            } else {
+                // Still too fast or high → pitch up to slow down
+                targetPitch = -40.0f;
                 applyRotation();
-                fireworkCooldown = 0;
-                useFireworkIfNeeded();
-            }
-
-            // Emergency: close to ground, fire regardless of velocity
-            if (groundDist < 8 && vel.y < -0.05) {
-                LOGGER.warn("[ElytraBot] Emergency landing firework! vy={}, ground={}", String.format("%.2f", vel.y), (int) groundDist);
-                fireworkCooldown = 0;
-                useFireworkIfNeeded();
             }
         }
 
-        // Only set IDLE when actually on the ground
+        // On the ground → success
         if (mc.player.onGround()) {
             state = FlightState.IDLE;
             isFlying = false;
@@ -1042,16 +1047,26 @@ public class ElytraBot {
             return;
         }
 
-        // Safety timeout — if still airborne after 100 ticks, go back to FLARING (not IDLE)
+        // Safety timeout — if still airborne after 100 ticks
         if (landingTimer > 100) {
             if (mc.player.isFallFlying()) {
-                LOGGER.warn("[ElytraBot] Landing timeout but still airborne, returning to FLARING");
-                state = FlightState.FLARING;
+                // Still elytra-flying: try Baritone as fallback, or go to descent
+                if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable()) {
+                    LOGGER.warn("[ElytraBot] Landing timeout, falling back to Baritone landing");
+                    startBaritoneLanding();
+                } else {
+                    LOGGER.warn("[ElytraBot] Landing timeout, returning to DESCENDING");
+                    state = FlightState.DESCENDING;
+                }
                 landingTimer = 0;
             } else {
-                // Not elytra-flying and not on ground (e.g. falling) — just wait for ground contact
-                LOGGER.warn("[ElytraBot] Landing timeout, waiting for ground contact");
-                landingTimer = 50; // reset partially to avoid spamming, keep checking
+                // Not elytra-flying and not on ground (free-falling) — just wait
+                if (landingTimer > 200) {
+                    LOGGER.warn("[ElytraBot] Extended landing timeout, forcing IDLE");
+                    state = FlightState.IDLE;
+                    isFlying = false;
+                    landingTimer = 0;
+                }
             }
         }
     }
@@ -1204,10 +1219,14 @@ public class ElytraBot {
     // ===== BARITONE LANDING =====
 
     /**
-     * Start landing via Baritone - finds the ground position and delegates.
+     * Start landing via Baritone - stops elytra, finds ground, delegates to Baritone.
+     * Baritone cannot pathfind while the player is elytra-flying, so we must stop first.
      */
     private void startBaritoneLanding() {
         if (mc.player == null || baritoneController == null) return;
+
+        // CRITICAL: stop elytra flight before Baritone can take over
+        baritoneController.stopElytra();
 
         BlockPos groundPos;
         if (destination != null) {
