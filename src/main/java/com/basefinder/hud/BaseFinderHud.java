@@ -65,9 +65,7 @@ public class BaseFinderHud extends HudElement {
     }
 
     @Override
-    public void render(RenderContext context, double mouseX, double mouseY) {
-        super.render(context, mouseX, mouseY);
-
+    public void renderContent(RenderContext context, double mouseX, double mouseY) {
         IRenderer2D renderer = getRenderer();
         IFontRenderer font = getFontRenderer();
 
