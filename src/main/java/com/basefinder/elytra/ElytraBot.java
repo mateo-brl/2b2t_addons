@@ -107,7 +107,7 @@ public class ElytraBot {
     private int acceptedFallDamage = 3; // half-hearts
     private BaritoneController baritoneController = null;
     private int baritoneLandingTimer = 0;
-    private static final int BARITONE_LANDING_TIMEOUT = 60; // 3 seconds
+    private static final int BARITONE_LANDING_TIMEOUT = 200; // 10 seconds for walking
 
     // Terrain prediction
     private TerrainPredictor terrainPredictor = null;
@@ -492,11 +492,12 @@ public class ElytraBot {
     /**
      * Raycast straight down to find distance to ground.
      * Returns distance in blocks (max 320). Ignores air and liquids.
+     * Starts from 1 block below player feet to avoid detecting the player's own position.
      */
     private double getGroundDistance() {
         if (mc.player == null || mc.level == null) return 320;
         BlockPos pos = mc.player.blockPosition();
-        for (int dy = 0; dy <= 320; dy++) {
+        for (int dy = 1; dy <= 320; dy++) {
             BlockPos check = pos.below(dy);
             BlockState blockState = mc.level.getBlockState(check);
             if (!blockState.isAir() && !blockState.liquid()) {
@@ -732,13 +733,13 @@ public class ElytraBot {
     private void handleDescending() {
         if (mc.player == null) return;
 
+        // Elytra stopped mid-descent → we're falling, go to LANDING
         if (!mc.player.isFallFlying()) {
             state = FlightState.LANDING;
             landingTimer = 0;
             return;
         }
 
-        // Aim towards destination
         if (destination != null) {
             targetYaw = calculateYawToTarget(destination);
         }
@@ -748,8 +749,6 @@ public class ElytraBot {
         double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
         double currentY = mc.player.getY();
         double distToDest = destination != null ? getDistanceToDestination() : 500;
-
-        // === TERRAIN PREDICTION: estimate ground height at destination ===
         double destGroundY = estimateGroundHeightAtDestination();
         double altAboveDest = currentY - destGroundY;
 
@@ -757,7 +756,6 @@ public class ElytraBot {
         if (terrainPredictor != null) {
             int terrainMax = terrainPredictor.getMaxHeightAhead(mc.player.position(), vel, 300);
             if (terrainMax > 0 && currentY < terrainMax + terrainSafetyMargin) {
-                LOGGER.warn("[ElytraBot] Terrain ahead! predicted={}, Y={}, pulling up", terrainMax, (int) currentY);
                 targetPitch = -20.0f;
                 useFireworkIfNeeded();
                 applyRotation();
@@ -765,66 +763,43 @@ public class ElytraBot {
             }
         }
 
-        // === GROUND PROXIMITY: transition to flare/Baritone FIRST (highest priority) ===
-        if (groundDist < 50) {
-            if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable() && hSpeed < 1.0) {
-                // Slow enough for Baritone handoff
-                LOGGER.info("[ElytraBot] Ground at {} blocks, hSpeed={}, delegating to Baritone",
-                        (int) groundDist, String.format("%.2f", hSpeed));
-                startBaritoneLanding();
-            } else {
-                LOGGER.info("[ElytraBot] Ground at {} blocks, hSpeed={}, starting flare",
-                        (int) groundDist, String.format("%.2f", hSpeed));
-                state = FlightState.FLARING;
-            }
+        // === TRANSITION TO FLARING when close to ground ===
+        // This is the FIRST check - never skip it regardless of speed
+        if (groundDist < 40) {
+            LOGGER.info("[ElytraBot] Descent→Flare: groundDist={}, hSpeed={}",
+                    (int) groundDist, String.format("%.2f", hSpeed));
+            state = FlightState.FLARING;
             return;
         }
 
-        // === SPEED CONTROL: max safe speed decreases as we get closer to ground ===
-        double maxSafeSpeed;
-        if (groundDist < 80) {
-            maxSafeSpeed = 0.8;
-        } else if (groundDist < 150) {
-            maxSafeSpeed = 1.2;
-        } else {
-            maxSafeSpeed = 1.8;
-        }
+        // === GLIDE SLOPE ===
+        // Target: arrive at the flare altitude (~40 blocks above ground at destination)
+        double targetArrivalAlt = destGroundY + 40;
+        double altToLose = currentY - targetArrivalAlt;
 
-        if (hSpeed > maxSafeSpeed) {
-            // Brake: pitch up proportionally to excess speed
-            float brakeAngle = (float) Math.min(20.0, (hSpeed - maxSafeSpeed) * 15.0 + 5.0);
-            targetPitch = -brakeAngle;
-            if (tickCounter % 40 == 0) {
-                LOGGER.info("[ElytraBot] Descent braking: hSpeed={}, maxSafe={}, pitch={}",
-                        String.format("%.2f", hSpeed), String.format("%.1f", maxSafeSpeed), targetPitch);
-            }
-        }
-        // === GLIDE SLOPE: computed descent angle toward destination ===
-        else if (distToDest > 50 && altAboveDest > 20) {
-            // Target: arrive at 40 blocks above destination ground level
-            double targetArrivalAlt = destGroundY + 40;
-            double altToLose = currentY - targetArrivalAlt;
-            if (altToLose > 0) {
-                double idealAngleDeg = Math.toDegrees(Math.atan2(altToLose, distToDest));
-                // Clamp between 2° and 8° — never too steep
-                idealAngleDeg = Math.max(2.0, Math.min(idealAngleDeg, 8.0));
-                targetPitch = (float) idealAngleDeg;
+        if (altToLose > 0 && distToDest > 50) {
+            // Compute ideal descent angle
+            double idealAngleDeg = Math.toDegrees(Math.atan2(altToLose, distToDest));
+            idealAngleDeg = Math.max(2.0, Math.min(idealAngleDeg, 10.0));
+
+            // If going too fast, pitch up slightly to brake (no fireworks!)
+            if (hSpeed > 1.5) {
+                targetPitch = (float) (-5.0); // slight pitch up to slow down
             } else {
-                // Already at or below target altitude — level off
-                targetPitch = -2.0f;
+                targetPitch = (float) idealAngleDeg; // positive = nose down = descend
             }
-        }
-        // === CLOSE BUT STILL HIGH: gentle descent ===
-        else {
-            targetPitch = 3.0f;
+        } else if (altToLose <= 0) {
+            // Already at or below target - level flight, don't descend further
+            targetPitch = -2.0f;
+        } else {
+            // Close to destination, gentle descent
+            targetPitch = 5.0f;
         }
 
         applyRotation();
 
         if (mc.player.onGround()) {
-            state = FlightState.IDLE;
-            isFlying = false;
-            ChatUtils.print("[ElytraBot] " + Lang.t("Landed.", "Atterri."));
+            finishLanding();
         }
     }
 
@@ -937,18 +912,19 @@ public class ElytraBot {
     }
 
     /**
-     * Flare maneuver: pitch up to bleed horizontal speed, then transition to landing.
-     * Key principle: only use fireworks when falling too fast near ground (cushion),
-     * never at extreme upward angles which would launch the player skyward.
+     * Flare maneuver: pitch up to bleed horizontal speed naturally.
+     * CRITICAL RULE: ZERO fireworks during flare. Fireworks add thrust
+     * and will launch the player skyward, causing the infinite bounce loop.
+     * The elytra will naturally slow down and deactivate from low speed.
      */
     private void handleFlaring() {
         if (mc.player == null) return;
 
         double groundDist = getGroundDistance();
 
-        // Lost elytra mid-flare → go straight to landing
+        // Elytra deactivated naturally (speed too low) → landing phase
         if (!mc.player.isFallFlying()) {
-            LOGGER.info("[ElytraBot] Lost flight during flare, switching to landing");
+            LOGGER.info("[ElytraBot] Elytra deactivated during flare (natural stall), switching to landing");
             state = FlightState.LANDING;
             landingTimer = 0;
             return;
@@ -957,30 +933,23 @@ public class ElytraBot {
         Vec3 velocity = mc.player.getDeltaMovement();
         double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
 
-        // === SPEED BRAKING: pitch up proportionally to bleed horizontal speed ===
-        // Use moderate angles to avoid launching the player skyward
-        if (hSpeed > 1.5) {
-            targetPitch = -30.0f; // fast → firm brake but not extreme
-        } else if (hSpeed > 0.8) {
-            targetPitch = -40.0f; // moderate → steeper brake
-        } else if (hSpeed > 0.3) {
-            targetPitch = -50.0f; // slow → steep to stall
+        // === PITCH UP to convert speed → altitude (natural braking) ===
+        // Moderate angles only - aggressive angles cause the player to yo-yo
+        if (hSpeed > 1.2) {
+            targetPitch = -25.0f; // fast: firm brake
+        } else if (hSpeed > 0.6) {
+            targetPitch = -35.0f; // moderate: steeper
+        } else if (hSpeed > 0.2) {
+            targetPitch = -45.0f; // slow: steep to stall elytra naturally
         } else {
-            targetPitch = -60.0f; // nearly stalled → let gravity bring us down
+            // Nearly stalled - the elytra should deactivate soon on its own
+            // Nose slightly down to let gravity pull us to ground
+            targetPitch = 10.0f;
         }
 
-        // === CUSHION: only use fireworks as a last resort near ground to prevent crash ===
-        // Critical: do NOT fire at extreme upward angles (causes skyward launch)
-        if (groundDist < 8 && velocity.y < -0.3) {
-            // Very close to ground and falling fast → one cushion firework at moderate angle
-            targetPitch = -45.0f;
-            fireworkCooldown = 0;
-            useFireworkIfNeeded();
-        }
-
-        // === OVER-CLIMBED: if we got too high, nose down to come back ===
+        // === OVER-CLIMBED: if flaring sent us too high, descend gently ===
         if (groundDist > 50) {
-            targetPitch = 5.0f; // gentle descent back towards ground
+            targetPitch = 8.0f; // nose down to come back
         }
 
         // Keep yaw towards destination
@@ -989,86 +958,79 @@ public class ElytraBot {
         }
         applyRotation();
 
-        // === LANDING TRANSITION ===
-        // Slow enough and close to ground → transition to landing
-        if (hSpeed < 0.4 && groundDist < 12) {
-            LOGGER.info("[ElytraBot] Flare complete, hSpeed={}, groundDist={}, vy={}, landing",
-                    String.format("%.2f", hSpeed), (int) groundDist, String.format("%.2f", velocity.y));
-            // Try Baritone for final approach if available
-            if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable()) {
-                startBaritoneLanding();
-            } else {
-                state = FlightState.LANDING;
-                landingTimer = 0;
+        // === TRANSITION TO LANDING ===
+        // When slow AND close to ground: toggle elytra off manually for clean landing
+        if (hSpeed < 0.3 && groundDist < 10) {
+            LOGGER.info("[ElytraBot] Flare→Landing: hSpeed={}, groundDist={}, toggling elytra off",
+                    String.format("%.2f", hSpeed), (int) groundDist);
+            // Toggle elytra off - player will freefall the last few blocks
+            if (mc.getConnection() != null) {
+                mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                        mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
+                ));
             }
+            state = FlightState.LANDING;
+            landingTimer = 0;
             return;
         }
 
+        // Already on ground somehow
         if (mc.player.onGround()) {
-            state = FlightState.IDLE;
-            isFlying = false;
-            ChatUtils.print("[ElytraBot] " + Lang.t("Landed.", "Atterri."));
+            finishLanding();
         }
     }
 
+    /**
+     * Landing state: elytra should already be OFF at this point.
+     * Player is either falling the last few blocks or already on the ground.
+     * After touchdown, optionally delegate to Baritone for walking to exact destination.
+     */
     private void handleLanding() {
         if (mc.player == null) return;
 
         landingTimer++;
 
-        // Still flying with elytra → try to stop elytra for clean ground landing
+        // If somehow still elytra-flying, force it off
         if (mc.player.isFallFlying()) {
-            double groundDist = getGroundDistance();
-            Vec3 vel = mc.player.getDeltaMovement();
-            double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
-
-            // If slow enough and near ground, toggle elytra OFF for natural landing
-            if (hSpeed < 0.5 && groundDist < 20) {
-                if (mc.getConnection() != null) {
-                    mc.getConnection().send(new ServerboundPlayerCommandPacket(
-                            mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
-                    ));
-                    LOGGER.info("[ElytraBot] Toggling elytra off for ground landing (hSpeed={}, groundDist={})",
-                            String.format("%.2f", hSpeed), (int) groundDist);
-                }
-            } else {
-                // Still too fast or high → pitch up to slow down
-                targetPitch = -40.0f;
-                applyRotation();
+            if (mc.getConnection() != null) {
+                mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                        mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
+                ));
             }
+            // Also pitch up to slow down if still flying
+            targetPitch = -30.0f;
+            applyRotation();
         }
 
-        // On the ground → success
+        // On the ground → SUCCESS
         if (mc.player.onGround()) {
-            state = FlightState.IDLE;
-            isFlying = false;
-            landingTimer = 0;
-            ChatUtils.print("[ElytraBot] " + Lang.t("Landed.", "Atterri."));
+            LOGGER.info("[ElytraBot] Touched ground! Checking Baritone for final approach.");
+
+            // Use Baritone to WALK to exact destination (only on ground, never in air)
+            if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable()
+                    && destination != null && getDistanceToDestination() > 5) {
+                startBaritoneLanding();
+            } else {
+                finishLanding();
+            }
             return;
         }
 
-        // Safety timeout — if still airborne after 100 ticks
-        if (landingTimer > 100) {
-            if (mc.player.isFallFlying()) {
-                // Still elytra-flying: try Baritone as fallback, or go to descent
-                if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable()) {
-                    LOGGER.warn("[ElytraBot] Landing timeout, falling back to Baritone landing");
-                    startBaritoneLanding();
-                } else {
-                    LOGGER.warn("[ElytraBot] Landing timeout, returning to DESCENDING");
-                    state = FlightState.DESCENDING;
-                }
-                landingTimer = 0;
-            } else {
-                // Not elytra-flying and not on ground (free-falling) — just wait
-                if (landingTimer > 200) {
-                    LOGGER.warn("[ElytraBot] Extended landing timeout, forcing IDLE");
-                    state = FlightState.IDLE;
-                    isFlying = false;
-                    landingTimer = 0;
-                }
-            }
+        // Safety: if falling for too long (>10 seconds), force IDLE to prevent stuck state
+        if (landingTimer > 200) {
+            LOGGER.warn("[ElytraBot] Extended landing timeout ({} ticks), forcing IDLE", landingTimer);
+            finishLanding();
         }
+    }
+
+    /**
+     * Common method to finalize landing and reset state.
+     */
+    private void finishLanding() {
+        state = FlightState.IDLE;
+        isFlying = false;
+        landingTimer = 0;
+        ChatUtils.print("[ElytraBot] " + Lang.t("Landed.", "Atterri."));
     }
 
     private void handleRefueling() {
@@ -1219,18 +1181,15 @@ public class ElytraBot {
     // ===== BARITONE LANDING =====
 
     /**
-     * Start landing via Baritone - stops elytra, finds ground, delegates to Baritone.
-     * Baritone cannot pathfind while the player is elytra-flying, so we must stop first.
+     * Delegate ground navigation to Baritone.
+     * PRECONDITION: Player must be ON THE GROUND with elytra OFF.
+     * Baritone cannot pathfind while flying or falling.
      */
     private void startBaritoneLanding() {
         if (mc.player == null || baritoneController == null) return;
 
-        // CRITICAL: stop elytra flight before Baritone can take over
-        baritoneController.stopElytra();
-
         BlockPos groundPos;
         if (destination != null) {
-            // Find ground below destination
             groundPos = findGroundBelow(destination);
         } else {
             groundPos = findGroundBelow(mc.player.blockPosition());
@@ -1241,45 +1200,41 @@ public class ElytraBot {
         baritoneController.landAt(groundPos);
         baritoneLandingTimer = 0;
         state = FlightState.BARITONE_LANDING;
-        LOGGER.info("[ElytraBot] Delegating landing to Baritone at {}", groundPos.toShortString());
-        ChatUtils.print("[ElytraBot] " + Lang.t("Baritone landing at ", "Atterrissage Baritone à ") + groundPos.toShortString());
+        LOGGER.info("[ElytraBot] Baritone walking to {}", groundPos.toShortString());
+        ChatUtils.print("[ElytraBot] " + Lang.t("Baritone walking to ", "Baritone marche vers ") + groundPos.toShortString());
     }
 
     /**
-     * Handle Baritone landing: monitor progress, fallback on timeout/error.
+     * Handle Baritone ground navigation: monitor Baritone walking to destination.
+     * Player is already on the ground at this point.
      */
     private void handleBaritoneLanding() {
         if (mc.player == null) return;
 
         baritoneLandingTimer++;
 
-        // Check if Baritone completed the landing
+        // Check if Baritone completed navigation
         if (baritoneController != null && baritoneController.isLandingComplete()) {
-            LOGGER.info("[ElytraBot] Baritone landing complete!");
-            ChatUtils.print("[ElytraBot] " + Lang.t("Landed via Baritone.", "Atterri via Baritone."));
-            state = FlightState.IDLE;
-            isFlying = false;
-            baritoneLandingTimer = 0;
+            LOGGER.info("[ElytraBot] Baritone navigation complete!");
+            ChatUtils.print("[ElytraBot] " + Lang.t("Arrived at destination via Baritone.", "Arrivé à destination via Baritone."));
+            finishLanding();
             return;
         }
 
-        // Check if player is on ground (Baritone may have finished without signal)
-        if (mc.player.onGround() && !mc.player.isFallFlying()) {
-            LOGGER.info("[ElytraBot] Player on ground during Baritone landing - assuming success");
+        // Check if close enough to destination
+        if (destination != null && getDistanceToDestination() < 5 && mc.player.onGround()) {
+            LOGGER.info("[ElytraBot] Close enough to destination, finishing");
             if (baritoneController != null) baritoneController.cancelLanding();
-            state = FlightState.IDLE;
-            isFlying = false;
-            baritoneLandingTimer = 0;
+            finishLanding();
             return;
         }
 
-        // Timeout → fallback to custom landing
+        // Timeout → just finish, we're on the ground already
         if (baritoneLandingTimer >= BARITONE_LANDING_TIMEOUT) {
-            LOGGER.warn("[ElytraBot] Baritone landing timeout! Falling back to custom landing");
-            ChatUtils.print("[ElytraBot] " + Lang.t("Baritone landing timeout - fallback to manual", "Baritone timeout - atterrissage manuel"));
+            LOGGER.warn("[ElytraBot] Baritone navigation timeout after {} ticks", baritoneLandingTimer);
+            ChatUtils.print("[ElytraBot] " + Lang.t("Baritone timeout - stopping here.", "Baritone timeout - arrêt ici."));
             if (baritoneController != null) baritoneController.cancelLanding();
-            baritoneLandingTimer = 0;
-            state = FlightState.DESCENDING;
+            finishLanding();
         }
     }
 
