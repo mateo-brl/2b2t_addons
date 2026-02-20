@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.feature.command.Command;
+import org.rusherhack.client.api.feature.hud.HudElement;
 import org.rusherhack.client.api.feature.module.IModule;
 import org.rusherhack.core.command.annotations.CommandExecutor;
 
@@ -24,8 +25,8 @@ public class BaseFinderCommand extends Command {
 
     @CommandExecutor
     private String base() {
-        return Lang.t("Commands: status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear",
-                       "Commandes : status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear");
+        return Lang.t("Commands: status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear, resethud",
+                       "Commandes : status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear, resethud");
     }
 
     @CommandExecutor(subCommand = "status")
@@ -193,6 +194,16 @@ public class BaseFinderCommand extends Command {
         module.getBaseLogger().clear();
         module.getScanner().reset();
         return Lang.t("Cleared all data.", "Données effacées.");
+    }
+
+    @CommandExecutor(subCommand = "resethud")
+    private String resethud() {
+        HudElement hud = (HudElement) RusherHackAPI.getHudManager().getFeature("BaseFinderHud").orElse(null);
+        if (hud == null) return Lang.t("HUD element not found!", "Élément HUD introuvable !");
+
+        hud.setX(5);
+        hud.setY(5);
+        return Lang.t("HUD position reset to top-left (5, 5).", "Position du HUD réinitialisée en haut à gauche (5, 5).");
     }
 
     private BaseFinderModule getModule() {

@@ -706,13 +706,19 @@ public class ElytraBot {
 
         applyRotation();
 
-        // Check if near destination
+        // Check if near destination — dynamic descent start based on altitude
         if (destination != null) {
             double distXZ = Math.sqrt(
                     Math.pow(mc.player.getX() - destination.getX(), 2) +
                     Math.pow(mc.player.getZ() - destination.getZ(), 2)
             );
-            if (distXZ < 300) {
+            // Start descent early enough for a gentle ~8° glide slope
+            // At 200m altitude this gives ~1400 blocks of descent distance
+            double groundDist = getGroundDistance();
+            double descentStartDist = Math.max(500, groundDist * 7);
+            if (distXZ < descentStartDist) {
+                LOGGER.info("[ElytraBot] Starting descent: dist={}, alt={}, descentDist={}",
+                        (int) distXZ, (int) mc.player.getY(), (int) descentStartDist);
                 state = FlightState.DESCENDING;
             }
         }
@@ -735,25 +741,72 @@ public class ElytraBot {
             targetYaw = calculateYawToTarget(destination);
         }
 
-        // Adaptive descent based on ground distance and speed
         double groundDist = getGroundDistance();
         Vec3 vel = mc.player.getDeltaMovement();
         double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+        double currentY = mc.player.getY();
+        double distToDest = destination != null ? getDistanceToDestination() : 500;
 
-        // Speed control: if too fast, pitch up slightly to brake
-        if (hSpeed > 1.2) {
-            targetPitch = -5.0f; // brake
-        } else if (groundDist > 100) {
-            targetPitch = 8.0f;  // gentle descent, we're high
-        } else if (groundDist > 70) {
-            targetPitch = 5.0f;  // moderate
-        } else if (groundDist >= 50) {
-            targetPitch = 3.0f;  // gentle
+        // === TERRAIN PREDICTION: estimate ground height at destination ===
+        double destGroundY = estimateGroundHeightAtDestination();
+        double altAboveDest = currentY - destGroundY;
+
+        // === TERRAIN SAFETY: high terrain ahead → pull up ===
+        if (terrainPredictor != null) {
+            int terrainMax = terrainPredictor.getMaxHeightAhead(mc.player.position(), vel, 300);
+            if (terrainMax > 0 && currentY < terrainMax + terrainSafetyMargin) {
+                LOGGER.warn("[ElytraBot] Terrain ahead! predicted={}, Y={}, pulling up", terrainMax, (int) currentY);
+                targetPitch = -20.0f;
+                useFireworkIfNeeded();
+                applyRotation();
+                return;
+            }
+        }
+
+        // === SPEED CONTROL: max safe speed decreases as we get closer to ground ===
+        double maxSafeSpeed;
+        if (groundDist < 60) {
+            maxSafeSpeed = 0.6;
+        } else if (groundDist < 120) {
+            maxSafeSpeed = 1.0;
         } else {
-            // Start flaring earlier at 50 blocks
-            LOGGER.info("[ElytraBot] Ground at {} blocks, starting flare", (int) groundDist);
+            maxSafeSpeed = 1.5;
+        }
+
+        if (hSpeed > maxSafeSpeed) {
+            // Brake: pitch up proportionally to excess speed
+            float brakeAngle = (float) Math.min(25.0, (hSpeed - maxSafeSpeed) * 20.0 + 5.0);
+            targetPitch = -brakeAngle;
+            if (tickCounter % 40 == 0) {
+                LOGGER.info("[ElytraBot] Descent braking: hSpeed={}, maxSafe={}, pitch={}",
+                        String.format("%.2f", hSpeed), String.format("%.1f", maxSafeSpeed), targetPitch);
+            }
+        }
+        // === GROUND PROXIMITY: transition to flare ===
+        else if (groundDist < 50) {
+            LOGGER.info("[ElytraBot] Ground at {} blocks, hSpeed={}, starting flare",
+                    (int) groundDist, String.format("%.2f", hSpeed));
             state = FlightState.FLARING;
             return;
+        }
+        // === GLIDE SLOPE: computed descent angle toward destination ===
+        else if (distToDest > 50 && altAboveDest > 20) {
+            // Target: arrive at 40 blocks above destination ground level
+            double targetArrivalAlt = destGroundY + 40;
+            double altToLose = currentY - targetArrivalAlt;
+            if (altToLose > 0) {
+                double idealAngleDeg = Math.toDegrees(Math.atan2(altToLose, distToDest));
+                // Clamp between 2° and 8° — never too steep
+                idealAngleDeg = Math.max(2.0, Math.min(idealAngleDeg, 8.0));
+                targetPitch = (float) idealAngleDeg;
+            } else {
+                // Already at or below target altitude — level off
+                targetPitch = -2.0f;
+            }
+        }
+        // === CLOSE BUT STILL HIGH: gentle descent ===
+        else {
+            targetPitch = 3.0f;
         }
 
         applyRotation();
@@ -762,6 +815,32 @@ public class ElytraBot {
             state = FlightState.LANDING;
             landingTimer = 0;
         }
+    }
+
+    /**
+     * Estimate the ground height at the destination for glide slope calculation.
+     * Uses: 1) actual block data if chunks loaded, 2) terrain predictor, 3) fallback 64.
+     */
+    private double estimateGroundHeightAtDestination() {
+        if (destination == null) return 64;
+
+        // Try actual loaded chunks at destination
+        if (mc.level != null) {
+            BlockPos ground = findGroundBelow(new BlockPos(destination.getX(), 320, destination.getZ()));
+            if (ground.getY() > mc.level.getMinY() + 1) {
+                return ground.getY();
+            }
+        }
+
+        // Fallback: terrain predictor along flight path
+        if (terrainPredictor != null && mc.player != null) {
+            Vec3 vel = mc.player.getDeltaMovement();
+            int predicted = terrainPredictor.getMaxHeightAhead(mc.player.position(), vel, 500);
+            if (predicted > 0) return predicted;
+        }
+
+        // Default: assume sea level
+        return 64;
     }
 
     // ===== SAFE DESCENT (BASE APPROACH) =====
