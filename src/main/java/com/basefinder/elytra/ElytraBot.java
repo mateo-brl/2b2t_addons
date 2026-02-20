@@ -735,25 +735,28 @@ public class ElytraBot {
             targetYaw = calculateYawToTarget(destination);
         }
 
-        // Gradual glide slope based on ground distance
+        // Adaptive descent based on ground distance and speed
         double groundDist = getGroundDistance();
-        if (groundDist > 100) {
-            targetPitch = 12.0f;  // moderate descent from high altitude
-        } else if (groundDist > 50) {
-            targetPitch = 6.0f;   // easing off
-        } else if (groundDist >= 30) {
-            targetPitch = 3.0f;   // shallow approach
+        Vec3 vel = mc.player.getDeltaMovement();
+        double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+
+        // Speed control: if too fast, pitch up slightly to brake
+        if (hSpeed > 1.2) {
+            targetPitch = -5.0f; // brake
+        } else if (groundDist > 100) {
+            targetPitch = 8.0f;  // gentle descent, we're high
+        } else if (groundDist > 70) {
+            targetPitch = 5.0f;  // moderate
+        } else if (groundDist >= 50) {
+            targetPitch = 3.0f;  // gentle
         } else {
-            // Close to ground - transition to flaring (30 blocks gives more braking room)
+            // Start flaring earlier at 50 blocks
             LOGGER.info("[ElytraBot] Ground at {} blocks, starting flare", (int) groundDist);
             state = FlightState.FLARING;
             return;
         }
 
         applyRotation();
-
-        // Do NOT use fireworks during descent — avoid building speed
-        // (useFireworkIfNeeded() intentionally omitted)
 
         if (mc.player.onGround()) {
             state = FlightState.LANDING;
@@ -860,21 +863,28 @@ public class ElytraBot {
             return;
         }
 
+        // Progressive braking based on speed and distance
         Vec3 velocity = mc.player.getDeltaMovement();
         double hSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
 
-        // Gentler pitch angles: -20° to -30° (was -35° to -45° which caused stalling)
-        if (hSpeed > 0.8) {
-            targetPitch = -20.0f; // gentle initial flare
+        if (hSpeed > 1.0) {
+            targetPitch = -25.0f; // initial braking
+        } else if (hSpeed > 0.5) {
+            targetPitch = -35.0f; // stronger braking
         } else {
-            targetPitch = -30.0f; // stronger flare once slower
+            targetPitch = -45.0f; // stall maximal
         }
 
-        // Firework braking: if falling too fast close to ground, fire a cushioning firework
-        if (velocity.y < -0.8 && groundDist < 15) {
-            LOGGER.info("[ElytraBot] Firework braking! vy={}, ground={}", String.format("%.2f", velocity.y), (int) groundDist);
+        // Proactive firework braking: falling too fast close to ground
+        if (velocity.y < -0.3 && groundDist < 25) {
             targetPitch = -60.0f;
-            applyRotation();
+            fireworkCooldown = 0;
+            useFireworkIfNeeded();
+        }
+
+        // Cushion firework: very close to ground, any downward velocity
+        if (groundDist < 8 && velocity.y < -0.15) {
+            targetPitch = -80.0f;
             fireworkCooldown = 0;
             useFireworkIfNeeded();
         }
@@ -885,18 +895,18 @@ public class ElytraBot {
         }
         applyRotation();
 
-        // Transition conditions — more forgiving thresholds
-        if (hSpeed < 0.5 && groundDist < 10) {
-            // Slow enough and close to ground → land
-            LOGGER.info("[ElytraBot] Flare complete, hSpeed={}, groundDist={}, landing", String.format("%.2f", hSpeed), (int) groundDist);
+        // Stricter landing transition: slow, close, and not falling fast
+        if (hSpeed < 0.3 && groundDist < 6 && velocity.y > -0.2) {
+            LOGGER.info("[ElytraBot] Flare complete, hSpeed={}, groundDist={}, vy={}, landing",
+                    String.format("%.2f", hSpeed), (int) groundDist, String.format("%.2f", velocity.y));
             state = FlightState.LANDING;
             landingTimer = 0;
             return;
         }
 
-        if (groundDist > 40) {
-            // Over-climbed — reduce flare angle instead of re-entering DESCENDING
-            targetPitch = -10.0f;
+        // Over-climbed: gentle descent, don't re-enter DESCENDING
+        if (groundDist > 50) {
+            targetPitch = -5.0f;
         }
 
         if (mc.player.onGround()) {
@@ -911,18 +921,26 @@ public class ElytraBot {
 
         landingTimer++;
 
-        // Still flying with elytra → keep nose up and brake
+        // Still flying with elytra → aggressive nose up to slow down
         if (mc.player.isFallFlying()) {
-            targetPitch = -25.0f;
+            targetPitch = -40.0f;
             applyRotation();
 
-            // Emergency firework if falling fast close to ground
-            Vec3 vel = mc.player.getDeltaMovement();
             double groundDist = getGroundDistance();
-            if (vel.y < -0.5 && groundDist < 15) {
-                LOGGER.warn("[ElytraBot] Emergency retro-rocket! vy={}, ground={}", String.format("%.2f", vel.y), (int) groundDist);
+            Vec3 vel = mc.player.getDeltaMovement();
+
+            // Cushion firework: any downward velocity close to ground
+            if (vel.y < -0.15 && groundDist < 10) {
+                LOGGER.warn("[ElytraBot] Cushion firework! vy={}, ground={}", String.format("%.2f", vel.y), (int) groundDist);
                 targetPitch = -80.0f;
                 applyRotation();
+                fireworkCooldown = 0;
+                useFireworkIfNeeded();
+            }
+
+            // Emergency: very close to ground, fire no matter what
+            if (groundDist < 5 && vel.y < -0.1) {
+                LOGGER.warn("[ElytraBot] Emergency landing firework! vy={}, ground={}", String.format("%.2f", vel.y), (int) groundDist);
                 fireworkCooldown = 0;
                 useFireworkIfNeeded();
             }
