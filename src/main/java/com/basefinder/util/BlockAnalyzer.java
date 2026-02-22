@@ -41,8 +41,6 @@ public class BlockAnalyzer {
             Blocks.ENDER_CHEST,
             Blocks.BEACON,
             Blocks.ENCHANTING_TABLE,
-            Blocks.BREWING_STAND,
-            Blocks.ANVIL, Blocks.CHIPPED_ANVIL, Blocks.DAMAGED_ANVIL,
 
             // Valuable blocks - players place these, world gen doesn't
             Blocks.NETHERITE_BLOCK,
@@ -70,8 +68,6 @@ public class BlockAnalyzer {
             Blocks.COMPARATOR,
             Blocks.REPEATER,
             Blocks.HOPPER,
-            Blocks.DISPENSER,
-            Blocks.DROPPER,
 
             // Concrete - only from players
             Blocks.WHITE_CONCRETE, Blocks.ORANGE_CONCRETE, Blocks.MAGENTA_CONCRETE,
@@ -114,7 +110,12 @@ public class BlockAnalyzer {
             Blocks.CRAFTING_TABLE,
             Blocks.LECTERN,
             Blocks.CAMPFIRE,
-            Blocks.SOUL_CAMPFIRE
+            Blocks.SOUL_CAMPFIRE,
+            // Moved from STRONG: these spawn in villages, temples, trial chambers
+            Blocks.BREWING_STAND,
+            Blocks.ANVIL, Blocks.CHIPPED_ANVIL, Blocks.DAMAGED_ANVIL,
+            Blocks.DISPENSER,
+            Blocks.DROPPER
     ));
 
     /**
@@ -193,6 +194,22 @@ public class BlockAnalyzer {
     public static boolean isAncientCityBlock(Block block) {
         return ANCIENT_CITY_BLOCKS.contains(block);
     }
+
+    /**
+     * NATURAL STRUCTURE signature blocks - if ANY of these are found, the chunk is a vanilla structure.
+     * These blocks are 100% unique to their respective structures and never player-placed.
+     */
+    private static final Set<Block> VILLAGE_SIGNATURE_BLOCKS = new HashSet<>(Arrays.asList(
+            Blocks.BELL,              // 100% unique to villages
+            Blocks.COMPOSTER,         // Village farm workstation
+            Blocks.HAY_BLOCK          // Village decoration
+    ));
+
+    private static final Set<Block> TRIAL_CHAMBER_BLOCKS = new HashSet<>(Arrays.asList(
+            Blocks.TRIAL_SPAWNER,     // 100% unique to trial chambers
+            Blocks.VAULT,             // 100% unique to trial chambers
+            Blocks.HEAVY_CORE         // Trial chamber loot
+    ));
 
     /**
      * Trail blocks - only blocks that strongly indicate player-made paths.
@@ -291,45 +308,45 @@ public class BlockAnalyzer {
                 return 0.15; // 85% penalty
             }
 
-            // Villages
+            // Villages - heavy penalty, they contain many workstation blocks
             if (biomeHolder.is(BiomeTags.HAS_VILLAGE_PLAINS)
                     || biomeHolder.is(BiomeTags.HAS_VILLAGE_DESERT)
                     || biomeHolder.is(BiomeTags.HAS_VILLAGE_SAVANNA)
                     || biomeHolder.is(BiomeTags.HAS_VILLAGE_TAIGA)
                     || biomeHolder.is(BiomeTags.HAS_VILLAGE_SNOWY)) {
-                return 0.5; // 50% penalty for village biomes
+                return 0.1; // 90% penalty for village biomes
             }
 
             // Bastion remnants (gold blocks) - Nether
             if (biomeHolder.is(BiomeTags.HAS_BASTION_REMNANT)) {
-                return 0.5; // 50% penalty
+                return 0.15; // 85% penalty
             }
 
-            // Trial chambers
+            // Trial chambers - many dispensers, copper, storage
             if (biomeHolder.is(BiomeTags.HAS_TRIAL_CHAMBERS)) {
-                return 0.6; // 40% penalty
+                return 0.1; // 90% penalty
             }
 
             // Desert/jungle temples, witch huts
             if (biomeHolder.is(BiomeTags.HAS_DESERT_PYRAMID)
                     || biomeHolder.is(BiomeTags.HAS_JUNGLE_TEMPLE)
                     || biomeHolder.is(BiomeTags.HAS_SWAMP_HUT)) {
-                return 0.7; // 30% penalty
+                return 0.2; // 80% penalty
             }
 
-            // Stronghold biomes (iron blocks)
+            // Stronghold biomes
             if (biomeHolder.is(BiomeTags.HAS_STRONGHOLD)) {
-                return 0.7; // 30% penalty
+                return 0.2; // 80% penalty
             }
 
             // Woodland mansions
             if (biomeHolder.is(BiomeTags.HAS_WOODLAND_MANSION)) {
-                return 0.7; // 30% penalty
+                return 0.2; // 80% penalty
             }
 
             // Mineshaft biomes - reduce trail detection
             if (biomeHolder.is(BiomeTags.HAS_MINESHAFT)) {
-                return 0.8; // 20% penalty
+                return 0.6; // 40% penalty
             }
         } catch (Exception e) {
             // If biome check fails, don't penalize
@@ -401,6 +418,8 @@ public class BlockAnalyzer {
         int shulkerCount = 0;
         int signWithTextCount = 0;
         int ancientCityBlockCount = 0;
+        int villageSignatureCount = 0;
+        int trialChamberSignatureCount = 0;
 
         // Multi-Y scanning
         int bedrockLayerBlocks = 0;
@@ -458,6 +477,14 @@ public class BlockAnalyzer {
                             ancientCityBlockCount++;
                         }
 
+                        // Natural structure signature detection
+                        if (VILLAGE_SIGNATURE_BLOCKS.contains(block)) {
+                            villageSignatureCount++;
+                        }
+                        if (TRIAL_CHAMBER_BLOCKS.contains(block)) {
+                            trialChamberSignatureCount++;
+                        }
+
                         // Sign text detection
                         if (block instanceof SignBlock || block instanceof WallSignBlock) {
                             BlockPos signPos = new BlockPos(minX + x, worldY, minZ + z);
@@ -500,6 +527,13 @@ public class BlockAnalyzer {
                 if (!isSampledPosition(bePos, minX, minZ, minSectionY)) {
                     storageCount++;
                 }
+            }
+            // 100% coverage for structure signature blocks (bell, trial spawner, vault)
+            if (VILLAGE_SIGNATURE_BLOCKS.contains(beBlock)) {
+                villageSignatureCount++;
+            }
+            if (TRIAL_CHAMBER_BLOCKS.contains(beBlock)) {
+                trialChamberSignatureCount++;
             }
         }
 
@@ -549,6 +583,17 @@ public class BlockAnalyzer {
         }
         if (skyLayerBlocks >= 1) {
             score += skyLayerBlocks * 6.0;
+        }
+
+        // === NATURAL STRUCTURE DETECTION: signature blocks override everything ===
+        // If we find village/trial chamber signature blocks, this is 100% a natural structure
+        if (villageSignatureCount >= 1 && shulkerCount == 0) {
+            score *= 0.05; // 95% reduction - it's a village
+            if (score < 10.0) analysis.setBaseType(BaseType.NONE);
+        }
+        if (trialChamberSignatureCount >= 1 && shulkerCount == 0) {
+            score *= 0.05; // 95% reduction - it's a trial chamber
+            if (score < 10.0) analysis.setBaseType(BaseType.NONE);
         }
 
         // === UNIFIED PENALTY: ancient city vs biome (never both) ===

@@ -784,9 +784,12 @@ public class ElytraBot {
         double destGroundY = estimateGroundHeightAtDestination();
         double altAboveDest = mc.player.getY() - destGroundY;
 
-        // Terrain safety: high terrain ahead → climb
-        int terrainMax = getMaxTerrainAhead(300);
-        if (terrainMax > 0 && mc.player.getY() < terrainMax + terrainSafetyMargin) {
+        // Terrain safety during descent: only avoid actual obstacles ABOVE our glide path
+        // Don't trigger for ground-level terrain at the destination - that's where we're landing!
+        double targetArrivalAltSafe = destGroundY + 40;
+        int lookDist = Math.max(50, Math.min(200, (int) distToDest));
+        int terrainMax = getMaxTerrainAhead(lookDist);
+        if (terrainMax > targetArrivalAltSafe && mc.player.getY() < terrainMax + 10) {
             applySafePitch(-20.0f);
             useFirework();
             return;
