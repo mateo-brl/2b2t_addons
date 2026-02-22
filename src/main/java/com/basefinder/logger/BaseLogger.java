@@ -37,6 +37,7 @@ public class BaseLogger {
     private boolean logToChat = true;
     private boolean logToFile = true;
     private boolean autoScreenshot = false;
+    private final DiscordNotifier discordNotifier = new DiscordNotifier();
 
     public BaseLogger() {
         try {
@@ -78,6 +79,8 @@ public class BaseLogger {
         if (autoScreenshot) {
             takeScreenshot(record);
         }
+
+        discordNotifier.notifyBase(record);
     }
 
     /**
@@ -258,6 +261,8 @@ public class BaseLogger {
     public void setLogToChat(boolean v) { this.logToChat = v; }
     public void setLogToFile(boolean v) { this.logToFile = v; }
     public void setAutoScreenshot(boolean v) { this.autoScreenshot = v; }
+    public void setDiscordWebhook(String url) { discordNotifier.setWebhookUrl(url); }
+    public DiscordNotifier getDiscordNotifier() { return discordNotifier; }
 
     public void clear() {
         records.clear();
