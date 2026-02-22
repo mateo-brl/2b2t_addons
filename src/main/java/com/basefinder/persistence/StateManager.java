@@ -7,6 +7,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import org.rusherhack.client.api.utils.ChatUtils;
 
+import net.minecraft.world.level.ChunkPos;
+
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
@@ -60,6 +62,48 @@ public class StateManager {
     public boolean shouldAutoSave() {
         long now = System.currentTimeMillis();
         return now - lastSaveTime >= saveIntervalSeconds * 1000L;
+    }
+
+    /**
+     * Save scanned chunk positions to binary file.
+     * Format: int count, then pairs of (int x, int z).
+     * ~700KB for 89K chunks.
+     */
+    public void saveScannedChunks(Set<ChunkPos> chunks) {
+        if (chunksFile == null || chunks == null || chunks.isEmpty()) return;
+        try (DataOutputStream dos = new DataOutputStream(
+                new BufferedOutputStream(Files.newOutputStream(chunksFile)))) {
+            dos.writeInt(chunks.size());
+            for (ChunkPos pos : chunks) {
+                dos.writeInt(pos.x);
+                dos.writeInt(pos.z);
+            }
+            LOGGER.info("[StateManager] Saved {} scanned chunks to disk", chunks.size());
+        } catch (IOException e) {
+            LOGGER.error("[StateManager] Failed to save scanned chunks: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Load scanned chunk positions from binary file.
+     * Returns empty set if no file or error.
+     */
+    public Set<ChunkPos> loadScannedChunks() {
+        Set<ChunkPos> chunks = new HashSet<>();
+        if (chunksFile == null || !Files.exists(chunksFile)) return chunks;
+        try (DataInputStream dis = new DataInputStream(
+                new BufferedInputStream(Files.newInputStream(chunksFile)))) {
+            int count = dis.readInt();
+            for (int i = 0; i < count; i++) {
+                int x = dis.readInt();
+                int z = dis.readInt();
+                chunks.add(new ChunkPos(x, z));
+            }
+            LOGGER.info("[StateManager] Loaded {} scanned chunks from disk", chunks.size());
+        } catch (IOException e) {
+            LOGGER.error("[StateManager] Failed to load scanned chunks: {}", e.getMessage());
+        }
+        return chunks;
     }
 
     /**

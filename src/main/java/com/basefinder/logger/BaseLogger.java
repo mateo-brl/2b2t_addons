@@ -246,6 +246,13 @@ public class BaseLogger {
         }
     }
 
+    /**
+     * Restore a base record from saved state without triggering chat/file/screenshot.
+     */
+    public void restoreRecord(BaseRecord record) {
+        records.add(record);
+    }
+
     public List<BaseRecord> getRecords() { return Collections.unmodifiableList(records); }
     public int getCount() { return records.size(); }
     public void setLogToChat(boolean v) { this.logToChat = v; }

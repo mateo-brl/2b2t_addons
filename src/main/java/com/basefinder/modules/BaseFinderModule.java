@@ -20,6 +20,7 @@ import com.basefinder.util.LagDetector;
 import com.basefinder.util.Lang;
 import com.basefinder.util.WaypointExporter;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.ChunkPos;
 import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.events.client.EventUpdate;
 import org.rusherhack.client.api.feature.module.IModule;
@@ -33,6 +34,7 @@ import org.rusherhack.core.setting.NumberSetting;
 import org.rusherhack.core.setting.NullSetting;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Main BaseFinder module - orchestrates the entire automated base hunting process.
@@ -299,6 +301,26 @@ public class BaseFinderModule extends ToggleableModule {
         tickCounter = 0;
         scanner.reset();
 
+        // Restore scanned chunks and bases from saved state
+        if (savedState != null && enableAutoSave.getValue()) {
+            Set<ChunkPos> savedChunks = stateManager.loadScannedChunks();
+            if (!savedChunks.isEmpty()) {
+                scanner.restoreScannedChunks(savedChunks);
+                ChatUtils.print("[BaseHunter] " + Lang.t(
+                        "Restored " + savedChunks.size() + " scanned chunks from previous session",
+                        "Restauré " + savedChunks.size() + " chunks scannés de la session précédente"));
+            }
+            // Restore found bases into the logger
+            if (!savedState.bases.isEmpty()) {
+                for (BaseRecord base : savedState.bases) {
+                    logger.restoreRecord(base);
+                }
+                ChatUtils.print("[BaseHunter] " + Lang.t(
+                        "Restored " + savedState.bases.size() + " bases from previous session",
+                        "Restauré " + savedState.bases.size() + " bases de la session précédente"));
+            }
+        }
+
         // Show mode info with clear description
         String modeName;
         String modeDesc;
@@ -401,6 +423,7 @@ public class BaseFinderModule extends ToggleableModule {
                     center != null ? center.getX() : 0,
                     center != null ? center.getZ() : 0
             );
+            stateManager.saveScannedChunks(scanner.getScannedChunksSet());
         }
 
         if (mc.level != null) {
@@ -566,6 +589,7 @@ public class BaseFinderModule extends ToggleableModule {
                     center != null ? center.getX() : 0,
                     center != null ? center.getZ() : 0
             );
+            stateManager.saveScannedChunks(scanner.getScannedChunksSet());
         }
 
         // Record chunk heights for terrain prediction
