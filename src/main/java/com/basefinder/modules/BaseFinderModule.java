@@ -74,10 +74,11 @@ public class BaseFinderModule extends ToggleableModule {
     // Base approach state
     private BaseRecord pendingBaseApproach = null;
     private int approachTicks = 0;
-    private int approachNearTicks = 0;
-    private boolean approachScreenshotTaken = false;
+    private boolean approachAerialScreenshotDone = false;
+    private boolean approachGroundScreenshotDone = false;
+    private int approachLandedTick = 0;
     private FinderState stateBeforeApproach = FinderState.SCANNING;
-    private static final int APPROACH_DISTANCE = 100;
+    private static final int APPROACH_DISTANCE = 150;
     private static final int APPROACH_WAIT_TICKS = 60;
     private static final int APPROACH_TIMEOUT = 400;
 
@@ -862,8 +863,9 @@ public class BaseFinderModule extends ToggleableModule {
     private void startBaseApproach(BaseRecord record) {
         pendingBaseApproach = record;
         approachTicks = 0;
-        approachNearTicks = 0;
-        approachScreenshotTaken = false;
+        approachAerialScreenshotDone = false;
+        approachGroundScreenshotDone = false;
+        approachLandedTick = 0;
         stateBeforeApproach = state;
         state = FinderState.APPROACHING_BASE;
 
@@ -872,8 +874,8 @@ public class BaseFinderModule extends ToggleableModule {
         }
 
         ChatUtils.print("[BaseHunter] " + Lang.t(
-                "Flying to base for screenshot... (" + record.toShortString() + ")",
-                "Vol vers la base pour capture... (" + record.toShortString() + ")"));
+                "Flying to base... (" + record.toShortString() + ")",
+                "Vol vers la base... (" + record.toShortString() + ")"));
     }
 
     private void handleApproachingBase() {
@@ -888,22 +890,29 @@ public class BaseFinderModule extends ToggleableModule {
         double dz = mc.player.getZ() - basePos.getZ();
         double dist = Math.sqrt(dx * dx + dz * dz);
 
-        // Keep elytra bot alive during ENTIRE approach - NEVER stop mid-air
-        if (useElytra.getValue()) {
+        // Let ElytraBot handle ALL flight control safely - NEVER override rotations while in flight
+        if (useElytra.getValue() && elytraBot.isFlying()) {
             elytraBot.tick();
         }
 
-        // Still far from base
-        if (dist > APPROACH_DISTANCE) {
-            if (!useElytra.getValue()) {
+        // === PHASE 1: Flying toward base ===
+        if (!approachAerialScreenshotDone) {
+            if (dist <= APPROACH_DISTANCE) {
+                // Close enough - take aerial screenshot from safe cruise altitude
+                approachAerialScreenshotDone = true;
+                logger.takeScreenshot(pendingBaseApproach);
+                ChatUtils.print("[BaseHunter] " + Lang.t(
+                        "Aerial photo taken! Safe landing in progress...",
+                        "Photo aérienne prise ! Atterrissage sécurisé en cours..."));
+                // ElytraBot continues with destination=basePos
+                // Its normal safe chain handles landing: CRUISING→DESCENDING→FLARING→LANDING→BARITONE_LANDING
+            } else if (!useElytra.getValue()) {
                 // Ground movement toward base
                 float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
                 mc.player.setYRot(yaw);
                 mc.options.keyUp.setDown(true);
                 mc.options.keySprint.setDown(true);
             }
-
-            // Timeout
             if (approachTicks > APPROACH_TIMEOUT) {
                 ChatUtils.print("[BaseHunter] " + Lang.t("Approach timeout, continuing search.", "Approche timeout, reprise de la recherche."));
                 finishApproach();
@@ -911,50 +920,60 @@ public class BaseFinderModule extends ToggleableModule {
             return;
         }
 
-        // Near base - initiate SAFE controlled descent instead of stopping elytra
-        if (approachNearTicks == 0) {
-            approachNearTicks = approachTicks;
-            if (useElytra.getValue()) {
-                // Use safe descent to reach photography altitude WITHOUT stopping elytra
-                // This prevents the fatal fall damage from stopping at cruise altitude
-                double photoAltitude = Math.max(basePos.getY() + 60, 80);
-                elytraBot.startSafeDescent(basePos, photoAltitude);
+        // === PHASE 2: Aerial screenshot done - waiting for ElytraBot to land safely ===
+        if (elytraBot.isFlying()) {
+            // ElytraBot handles the entire descent safely - just wait
+            if (approachTicks > APPROACH_TIMEOUT * 2) {
+                ChatUtils.print("[BaseHunter] " + Lang.t("Landing timeout, resuming safely.", "Timeout atterrissage, reprise sécurisée."));
+                finishApproach();
+            }
+            return;
+        }
+
+        // === PHASE 3: Landed - use Baritone to walk to base if needed, then ground screenshot ===
+        if (approachLandedTick == 0) {
+            approachLandedTick = approachTicks;
+            // If we're far from the base and Baritone is available, walk there
+            if (dist > 10 && baritoneController.isAvailable()) {
+                baritoneController.configureForFastLanding();
+                baritoneController.landAt(basePos);
                 ChatUtils.print("[BaseHunter] " + Lang.t(
-                        "Safe descent to photograph base...",
-                        "Descente sécurisée pour photographier la base..."));
+                        "Walking to base via Baritone...",
+                        "Marche vers la base via Baritone..."));
             }
         }
 
-        // Look at the base for screenshot (while still flying safely)
-        float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
-        float dy = (float) (basePos.getY() - mc.player.getY());
-        float pitchAngle = (float) -Math.toDegrees(Math.atan2(dy, Math.max(dist, 1)));
-        mc.player.setYRot(yaw);
-        mc.player.setXRot(Math.max(-90, Math.min(90, pitchAngle)));
+        // Check if Baritone arrived or we're close enough
+        boolean arrivedAtBase = dist < 10 || (baritoneController.isAvailable() && baritoneController.isLandingComplete());
+        boolean walkTimeout = (approachTicks - approachLandedTick) > APPROACH_TIMEOUT;
 
-        // Wait for safe altitude + chunks to render, then screenshot
-        boolean atSafeAltitude = !useElytra.getValue() || elytraBot.isAtApproachAltitude();
-        int ticksSinceNear = approachTicks - approachNearTicks;
-        if (!approachScreenshotTaken && atSafeAltitude && ticksSinceNear >= APPROACH_WAIT_TICKS) {
-            logger.takeScreenshot(pendingBaseApproach);
-            approachScreenshotTaken = true;
-            ChatUtils.print("[BaseHunter] " + Lang.t("Base photographed!", "Base photographiée !"));
-        }
+        if (arrivedAtBase || walkTimeout) {
+            baritoneController.cancelLanding();
 
-        // After screenshot, resume flight safely (never stop elytra mid-air)
-        if (approachScreenshotTaken && ticksSinceNear >= APPROACH_WAIT_TICKS + 20) {
-            finishApproach();
-        }
+            if (!approachGroundScreenshotDone) {
+                approachGroundScreenshotDone = true;
+                // Look at the base for ground-level screenshot
+                float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
+                mc.player.setYRot(yaw);
+                mc.player.setXRot(10); // Slight downward look
+            }
 
-        // Safety timeout: if descent takes too long, resume anyway
-        if (ticksSinceNear > APPROACH_TIMEOUT) {
-            ChatUtils.print("[BaseHunter] " + Lang.t("Approach timeout, resuming safely.", "Approche timeout, reprise sécurisée."));
-            finishApproach();
+            // Wait for chunks to render before taking screenshot
+            int ticksSinceLook = approachTicks - approachLandedTick;
+            if (arrivedAtBase && ticksSinceLook >= APPROACH_WAIT_TICKS) {
+                logger.takeScreenshot(pendingBaseApproach);
+                ChatUtils.print("[BaseHunter] " + Lang.t("Base photographed from ground!", "Base photographiée depuis le sol !"));
+                finishApproach();
+            } else if (walkTimeout) {
+                ChatUtils.print("[BaseHunter] " + Lang.t("Walk timeout, continuing search.", "Timeout marche, reprise de la recherche."));
+                finishApproach();
+            }
         }
     }
 
     private void finishApproach() {
         pendingBaseApproach = null;
+        baritoneController.cancelLanding();
         state = (stateBeforeApproach == FinderState.APPROACHING_BASE) ? FinderState.SCANNING : stateBeforeApproach;
 
         // Resume flight to current waypoint
