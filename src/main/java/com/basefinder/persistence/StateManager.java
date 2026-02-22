@@ -260,6 +260,10 @@ public class StateManager {
         return "";
     }
 
+    public String getWebhookFilePath() {
+        return stateDir != null ? stateDir.resolve("discord_webhook.txt").toString() : "";
+    }
+
     public void setSaveInterval(int seconds) { this.saveIntervalSeconds = seconds; }
 
     /**
