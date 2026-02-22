@@ -37,6 +37,9 @@ Concu pour fonctionner **24h/24h sans surveillance** avec des systemes de survie
 ### Notifications Discord
 - **Webhook Discord** : recevez une notification avec embed colore a chaque base trouvee
 - Coords, type, score, shulkers, stockage, notes dans chaque notification
+- **Alertes critiques** : perte de vie, sante critique, fusees/elytra basses ou epuisees
+- **Alerte deconnexion** : notification Discord quand le bot se deconnecte d'urgence
+- Cooldown de 1 min entre les alertes du meme type (pas de spam)
 - Envoi asynchrone (pas de lag en jeu)
 - Configuration : `*basefinder discord` (voir section Commandes)
 
@@ -75,8 +78,11 @@ Systemes automatiques pour fonctionner sans surveillance :
 - **Auto Manger** : mange automatiquement quand la faim est basse
 - **Radar joueurs** : detecte les joueurs proches et deconnecte instantanement
 - **Monitoring sante** : alerte et actions d'urgence quand les PV sont critiques
+- **Auto-deconnexion** : se deconnecte automatiquement quand plus d'elytra ou de fusees pour eviter la mort
+- **Alertes equipement** : notifications Discord quand les fusees ou elytras sont basses ou epuisees
 - **Reapprovisionnement fusees** : refill automatique depuis les shulker boxes
 - **Sauvegarde automatique** : sauvegarde l'etat toutes les 5 minutes, restauration apres crash
+- **Sauvegarde d'urgence** : sauvegarde automatique avant chaque deconnexion d'urgence
 - **Compensation lag 2b2t** : adapte tous les timings au TPS reel du serveur
 
 ### Navigation intelligente
@@ -198,11 +204,11 @@ Designed for **24/7 unattended operation** with automatic survival systems.
 - **Smart detection**: constructions, storage, stashes, farms, portals, map art, trails, signs
 - **Cluster scoring**: aggregates neighbor chunks for multi-chunk base detection
 - **Freshness estimation**: ACTIVE, ABANDONED, or ANCIENT
-- **Discord notifications**: webhook alerts with colored embeds for each base found
+- **Discord notifications**: webhook alerts for bases found + critical alerts (health, elytra, fireworks, emergency disconnect)
 - **Session persistence**: scanned chunks, bases, distance, uptime survive restarts
 - **Smart waypoint start**: skips to nearest waypoint instead of always starting at WP 1
 - **Color-coded alerts**: clickable [GOTO] for Baritone with score coloring
-- **24/7 survival**: auto totem, auto eat, player radar, firework resupply, health monitoring
+- **24/7 survival**: auto totem, auto eat, player radar, firework resupply, health monitoring, auto-disconnect on missing equipment
 - **2b2t lag compensation**: adaptive TPS, deferred chunk retry, safety altitude
 - **AutoTravel**: Nether shortcut (8x faster), portal finding, auto walk/sprint/swim
 - **Terrain prediction**: uses 2b2t seed for dynamic cruise altitude
