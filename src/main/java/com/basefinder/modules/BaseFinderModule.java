@@ -265,6 +265,10 @@ public class BaseFinderModule extends ToggleableModule {
             ChatUtils.print("[BaseHunter] " + Lang.t("Discord notifications active", "Notifications Discord actives"));
         }
 
+        // Wire DiscordNotifier and ElytraBot into SurvivalManager for critical alerts
+        survivalManager.setDiscordNotifier(logger.getDiscordNotifier());
+        survivalManager.setElytraBot(elytraBot);
+
         // Connect to NewChunks module if it's active
         connectToNewChunksModule();
 
@@ -594,9 +598,24 @@ public class BaseFinderModule extends ToggleableModule {
         // Survival systems tick (highest priority)
         boolean disconnected = survivalManager.tick();
         if (disconnected) {
-            // Player detected - we disconnected, stop everything
+            // Player detected or equipment critical - we disconnected, stop everything
             state = FinderState.PAUSED;
             elytraBot.stop();
+            // Save state before disconnect
+            if (enableAutoSave.getValue()) {
+                BlockPos center = navigation.getSearchCenter();
+                stateManager.saveState(
+                        logger.getRecords(),
+                        navigation.getCurrentWaypointIndex(),
+                        navigation.getTotalDistanceTraveled(),
+                        scanner.getScannedCount(),
+                        searchMode.getValue().name(),
+                        center != null ? center.getX() : 0,
+                        center != null ? center.getZ() : 0,
+                        survivalManager.getUptimeSeconds()
+                );
+                stateManager.saveScannedChunks(scanner.getScannedChunksSet());
+            }
             return;
         }
 

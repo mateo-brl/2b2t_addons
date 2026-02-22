@@ -135,6 +135,55 @@ public class DiscordNotifier {
                 .replace("\t", "\\t");
     }
 
+    /**
+     * Send a critical alert notification asynchronously.
+     * Used for health drops, missing elytra/fireworks, etc.
+     */
+    public void notifyAlert(String title, String description, int color) {
+        if (!isEnabled()) return;
+
+        String jsonTitle = escapeJson(title);
+        String jsonDesc = escapeJson(description);
+        String json = String.format("""
+                {"embeds":[{"title":"%s","description":"%s","color":%d,"footer":{"text":"BaseFinder Alert"}}]}""",
+                jsonTitle, jsonDesc, color);
+
+        executor.submit(() -> {
+            try {
+                HttpURLConnection conn = (HttpURLConnection) URI.create(webhookUrl).toURL().openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(json.getBytes());
+                }
+
+                int code = conn.getResponseCode();
+                if (code == 429) {
+                    Thread.sleep(2000);
+                    HttpURLConnection retry = (HttpURLConnection) URI.create(webhookUrl).toURL().openConnection();
+                    retry.setRequestMethod("POST");
+                    retry.setRequestProperty("Content-Type", "application/json");
+                    retry.setDoOutput(true);
+                    try (OutputStream os = retry.getOutputStream()) {
+                        os.write(json.getBytes());
+                    }
+                    retry.getResponseCode();
+                    retry.disconnect();
+                } else if (code >= 400) {
+                    LOGGER.warn("[DiscordNotifier] Alert webhook returned HTTP {}", code);
+                }
+
+                conn.disconnect();
+            } catch (Exception e) {
+                LOGGER.error("[DiscordNotifier] Failed to send alert: {}", e.getMessage());
+            }
+        });
+    }
+
     public void shutdown() {
         executor.shutdownNow();
     }
