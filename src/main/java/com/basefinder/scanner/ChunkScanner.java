@@ -378,6 +378,18 @@ public class ChunkScanner {
         skippedCount = 0;
     }
 
+    /**
+     * Restore previously scanned chunk positions from saved state.
+     * These chunks will be skipped during future scans via the existing
+     * scannedChunks.contains() check.
+     */
+    public void restoreScannedChunks(Set<ChunkPos> chunks) {
+        if (chunks != null && !chunks.isEmpty()) {
+            scannedChunks.addAll(chunks);
+            LOGGER.info("[ChunkScanner] Restored {} scanned chunks from saved state", chunks.size());
+        }
+    }
+
     public int getScannedCount() { return scannedChunks.size(); }
     public Set<ChunkPos> getScannedChunksSet() { return Collections.unmodifiableSet(scannedChunks); }
     public int getDeferredCount() { return deferredChunks.size(); }
