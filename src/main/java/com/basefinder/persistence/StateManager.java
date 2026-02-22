@@ -233,6 +233,33 @@ public class StateManager {
         }
     }
 
+    public void saveDiscordWebhook(String url) {
+        if (stateDir == null) return;
+        try {
+            Path webhookFile = stateDir.resolve("discord_webhook.txt");
+            if (url == null || url.isEmpty()) {
+                Files.deleteIfExists(webhookFile);
+            } else {
+                Files.writeString(webhookFile, url);
+            }
+        } catch (IOException e) {
+            LOGGER.error("[StateManager] Failed to save webhook: {}", e.getMessage());
+        }
+    }
+
+    public String loadDiscordWebhook() {
+        if (stateDir == null) return "";
+        try {
+            Path webhookFile = stateDir.resolve("discord_webhook.txt");
+            if (Files.exists(webhookFile)) {
+                return Files.readString(webhookFile).trim();
+            }
+        } catch (IOException e) {
+            LOGGER.error("[StateManager] Failed to load webhook: {}", e.getMessage());
+        }
+        return "";
+    }
+
     public void setSaveInterval(int seconds) { this.saveIntervalSeconds = seconds; }
 
     /**

@@ -183,9 +183,7 @@ public class BlockAnalyzer {
             Blocks.DEEPSLATE_BRICK_SLAB,
             Blocks.DEEPSLATE_TILE_SLAB,
             Blocks.SOUL_LANTERN,
-            Blocks.SOUL_FIRE,
-            Blocks.CANDLE,
-            Blocks.GRAY_WOOL // Gray wool generates in ancient city structures
+            Blocks.SOUL_FIRE
     ));
 
     /**
@@ -359,9 +357,9 @@ public class BlockAnalyzer {
      */
     public static double getSpawnDistanceMultiplier(double distFromSpawn) {
         if (distFromSpawn < 500) {
-            return 0.3;
-        } else if (distFromSpawn < 2000) {
             return 0.5;
+        } else if (distFromSpawn < 2000) {
+            return 0.7;
         } else if (distFromSpawn < 10000) {
             return 0.8;
         } else if (distFromSpawn < 50000) {
@@ -588,7 +586,9 @@ public class BlockAnalyzer {
         // === NATURAL STRUCTURE DETECTION: signature blocks override everything ===
         // If we find village/trial chamber signature blocks, this is 100% a natural structure
         if (villageSignatureCount >= 1 && shulkerCount == 0) {
-            score *= 0.05; // 95% reduction - it's a village
+            // Less aggressive if chunk also has strong player blocks (base built in village)
+            double villagePenalty = strongBlockCount >= 3 ? 0.3 : 0.05;
+            score *= villagePenalty;
             if (score < 10.0) analysis.setBaseType(BaseType.NONE);
         }
         if (trialChamberSignatureCount >= 1 && shulkerCount == 0) {
@@ -632,6 +632,11 @@ public class BlockAnalyzer {
 
         double spawnMultiplier = getSpawnDistanceMultiplier(distFromSpawn);
         score *= spawnMultiplier;
+
+        // Shulkers guarantee minimum score - never miss a stash regardless of location
+        if (shulkerCount >= 1) {
+            score = Math.max(score, 25.0);
+        }
 
         analysis.setScore(score);
         return analysis;

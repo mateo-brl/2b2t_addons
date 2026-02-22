@@ -25,8 +25,8 @@ public class BaseFinderCommand extends Command {
 
     @CommandExecutor
     private String base() {
-        return Lang.t("Commands: status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear, resethud",
-                       "Commandes : status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear, resethud");
+        return Lang.t("Commands: status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear, resethud, discord",
+                       "Commandes : status, bases, goto, modes, zone, export, waypoints, pause, resume, skip, clear, resethud, discord");
     }
 
     @CommandExecutor(subCommand = "status")
@@ -204,6 +204,35 @@ public class BaseFinderCommand extends Command {
         hud.setX(5);
         hud.setY(5);
         return Lang.t("HUD position reset to top-left (5, 5).", "Position du HUD réinitialisée en haut à gauche (5, 5).");
+    }
+
+    @CommandExecutor(subCommand = "discord")
+    @CommandExecutor.Argument({"webhook_url"})
+    private String discord(String webhookUrl) {
+        BaseFinderModule module = getModule();
+        if (module == null) return Lang.t("BaseHunter module not found!", "Module BaseHunter introuvable !");
+
+        if (webhookUrl == null || webhookUrl.isEmpty()) {
+            boolean active = module.getBaseLogger().getDiscordNotifier().isEnabled();
+            return Lang.t("Discord notifications: " + (active ? "ON" : "OFF") + "\nUsage: *basefinder discord <webhook_url>\nUse 'off' to disable.",
+                          "Notifications Discord : " + (active ? "ON" : "OFF") + "\nUsage : *basefinder discord <webhook_url>\nUtilisez 'off' pour désactiver.");
+        }
+
+        if ("off".equalsIgnoreCase(webhookUrl)) {
+            module.getBaseLogger().setDiscordWebhook("");
+            module.getStateManager().saveDiscordWebhook("");
+            return Lang.t("Discord notifications disabled.", "Notifications Discord désactivées.");
+        }
+
+        if (!webhookUrl.startsWith("https://discord.com/api/webhooks/") && !webhookUrl.startsWith("https://discordapp.com/api/webhooks/")) {
+            return Lang.t("Invalid webhook URL! Get it from Discord: Server Settings > Integrations > Webhooks",
+                          "URL webhook invalide ! Créez-le dans Discord : Paramètres serveur > Intégrations > Webhooks");
+        }
+
+        module.getBaseLogger().setDiscordWebhook(webhookUrl);
+        module.getStateManager().saveDiscordWebhook(webhookUrl);
+        return Lang.t("Discord notifications enabled! Bases will be sent to your webhook.",
+                      "Notifications Discord activées ! Les bases seront envoyées à votre webhook.");
     }
 
     private BaseFinderModule getModule() {

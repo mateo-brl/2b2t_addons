@@ -258,6 +258,13 @@ public class BaseFinderModule extends ToggleableModule {
         // Apply settings to components
         applySettings();
 
+        // Load Discord webhook
+        String webhook = stateManager.loadDiscordWebhook();
+        if (!webhook.isEmpty()) {
+            logger.setDiscordWebhook(webhook);
+            ChatUtils.print("[BaseHunter] " + Lang.t("Discord notifications active", "Notifications Discord actives"));
+        }
+
         // Connect to NewChunks module if it's active
         connectToNewChunksModule();
 
