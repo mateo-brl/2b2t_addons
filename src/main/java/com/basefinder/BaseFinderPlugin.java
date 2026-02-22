@@ -1,5 +1,6 @@
 package com.basefinder;
 
+import com.basefinder.modules.AutoMendingModule;
 import com.basefinder.modules.AutoTravelModule;
 import com.basefinder.modules.BaseFinderModule;
 import com.basefinder.modules.ElytraBotModule;
@@ -55,6 +56,15 @@ public class BaseFinderPlugin extends Plugin {
             this.getLogger().info("Module AutoTravel enregistré (catégorie External)");
         } catch (Exception e) {
             this.getLogger().error("Échec enregistrement module AutoTravel : {}", e.getMessage());
+            e.printStackTrace();
+        }
+
+        try {
+            AutoMendingModule autoMendingModule = new AutoMendingModule();
+            RusherHackAPI.getModuleManager().registerFeature(autoMendingModule);
+            this.getLogger().info("Module AutoMending enregistré (catégorie External)");
+        } catch (Exception e) {
+            this.getLogger().error("Échec enregistrement module AutoMending : {}", e.getMessage());
             e.printStackTrace();
         }
 
