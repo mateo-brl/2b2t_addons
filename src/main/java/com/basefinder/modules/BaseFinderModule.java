@@ -295,6 +295,9 @@ public class BaseFinderModule extends ToggleableModule {
             if (savedState.distanceTraveled > 0) {
                 navigation.setTotalDistanceTraveled(savedState.distanceTraveled);
             }
+            if (savedState.uptimeSeconds > 0) {
+                survivalManager.setPreviousUptime(savedState.uptimeSeconds);
+            }
             ChatUtils.print("[BaseHunter] " + Lang.t(
                     "Session restored! Resuming from waypoint " + (savedState.waypointIndex + 1) + "/" + navigation.getWaypointCount(),
                     "Session restaurée ! Reprise au waypoint " + (savedState.waypointIndex + 1) + "/" + navigation.getWaypointCount()));
@@ -424,7 +427,8 @@ public class BaseFinderModule extends ToggleableModule {
                     scanner.getScannedCount(),
                     searchMode.getValue().name(),
                     center != null ? center.getX() : 0,
-                    center != null ? center.getZ() : 0
+                    center != null ? center.getZ() : 0,
+                    survivalManager.getUptimeSeconds()
             );
             stateManager.saveScannedChunks(scanner.getScannedChunksSet());
         }
@@ -590,7 +594,8 @@ public class BaseFinderModule extends ToggleableModule {
                     scanner.getScannedCount(),
                     searchMode.getValue().name(),
                     center != null ? center.getX() : 0,
-                    center != null ? center.getZ() : 0
+                    center != null ? center.getZ() : 0,
+                    survivalManager.getUptimeSeconds()
             );
             stateManager.saveScannedChunks(scanner.getScannedChunksSet());
         }

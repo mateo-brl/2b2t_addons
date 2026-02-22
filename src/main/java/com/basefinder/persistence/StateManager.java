@@ -110,7 +110,8 @@ public class StateManager {
      * Save the current session state.
      */
     public void saveState(List<BaseRecord> bases, int waypointIndex, double distanceTraveled,
-                          int chunksScanned, String searchMode, int centerX, int centerZ) {
+                          int chunksScanned, String searchMode, int centerX, int centerZ,
+                          long uptimeSeconds) {
         if (stateFile == null) {
             LOGGER.warn("[StateManager] Cannot save: state directory not initialized");
             return;
@@ -124,6 +125,7 @@ public class StateManager {
             props.setProperty("timestamp", String.valueOf(System.currentTimeMillis()));
             props.setProperty("centerX", String.valueOf(centerX));
             props.setProperty("centerZ", String.valueOf(centerZ));
+            props.setProperty("uptimeSeconds", String.valueOf(uptimeSeconds));
             props.setProperty("baseCount", String.valueOf(bases.size()));
 
             // Save bases
@@ -171,6 +173,7 @@ public class StateManager {
             data.searchMode = props.getProperty("searchMode", "SPIRAL");
             data.centerX = Integer.parseInt(props.getProperty("centerX", "0"));
             data.centerZ = Integer.parseInt(props.getProperty("centerZ", "0"));
+            data.uptimeSeconds = Long.parseLong(props.getProperty("uptimeSeconds", "0"));
 
             // Load bases
             String basesStr = props.getProperty("bases", "");
@@ -242,6 +245,7 @@ public class StateManager {
         public String searchMode = "SPIRAL";
         public int centerX = 0;
         public int centerZ = 0;
+        public long uptimeSeconds = 0;
         public List<BaseRecord> bases = new ArrayList<>();
     }
 }
