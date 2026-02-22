@@ -214,6 +214,67 @@ public class BaritoneController {
         this.acceptDamage = Math.max(0, Math.min(20, halfHearts));
     }
 
+    /**
+     * Execute a Baritone command string (e.g. "mine lapis_ore", "surface", "stop").
+     * Uses reflection to access Baritone's command manager.
+     */
+    public void executeCommand(String command) {
+        if (!available || baritoneInstance == null) {
+            LOGGER.warn("[BaritoneController] Cannot execute command '{}': Baritone not available", command);
+            return;
+        }
+
+        try {
+            java.lang.reflect.Method getCommandManager = baritoneInstance.getClass().getMethod("getCommandManager");
+            Object commandManager = getCommandManager.invoke(baritoneInstance);
+
+            java.lang.reflect.Method execute = commandManager.getClass().getMethod("execute", String.class);
+            execute.invoke(commandManager, command);
+
+            LOGGER.info("[BaritoneController] Executed command: {}", command);
+        } catch (Exception e) {
+            LOGGER.error("[BaritoneController] Failed to execute command '{}': {}", command, e.getMessage());
+        }
+    }
+
+    /**
+     * Check if Baritone's mine process is currently active.
+     * Returns false if unable to determine.
+     */
+    public boolean isMineProcessActive() {
+        if (!available || baritoneInstance == null) return false;
+
+        try {
+            java.lang.reflect.Method getMineProcess = baritoneInstance.getClass().getMethod("getMineProcess");
+            Object mineProcess = getMineProcess.invoke(baritoneInstance);
+
+            java.lang.reflect.Method isActive = mineProcess.getClass().getMethod("isActive");
+            return (boolean) isActive.invoke(mineProcess);
+        } catch (Exception e) {
+            LOGGER.debug("[BaritoneController] Could not check mine process: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Cancel all active Baritone processes.
+     */
+    public void cancelAll() {
+        if (!available || baritoneInstance == null) return;
+
+        try {
+            java.lang.reflect.Method getPathingBehavior = baritoneInstance.getClass().getMethod("getPathingBehavior");
+            Object pathingBehavior = getPathingBehavior.invoke(baritoneInstance);
+
+            java.lang.reflect.Method cancelEverything = pathingBehavior.getClass().getMethod("cancelEverything");
+            cancelEverything.invoke(pathingBehavior);
+
+            LOGGER.info("[BaritoneController] Cancelled all processes");
+        } catch (Exception e) {
+            LOGGER.warn("[BaritoneController] Failed to cancel all: {}", e.getMessage());
+        }
+    }
+
     // Reflection helpers for Baritone settings
     private void setBaritoneSettingBool(Object settings, String name, boolean value) {
         try {
