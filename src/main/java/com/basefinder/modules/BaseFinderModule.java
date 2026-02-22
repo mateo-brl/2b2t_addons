@@ -289,7 +289,8 @@ public class BaseFinderModule extends ToggleableModule {
 
         navigation.initializeSearch(pattern, searchCenter);
 
-        // Restore waypoint index from saved session
+        // Restore waypoint index from saved session, or skip to nearest waypoint
+        boolean sessionRestored = false;
         if (savedState != null && savedState.searchMode.equals(pattern.name()) && savedState.waypointIndex > 0) {
             navigation.skipTo(savedState.waypointIndex);
             if (savedState.distanceTraveled > 0) {
@@ -298,9 +299,30 @@ public class BaseFinderModule extends ToggleableModule {
             if (savedState.uptimeSeconds > 0) {
                 survivalManager.setPreviousUptime(savedState.uptimeSeconds);
             }
+            sessionRestored = true;
             ChatUtils.print("[BaseHunter] " + Lang.t(
                     "Session restored! Resuming from waypoint " + (savedState.waypointIndex + 1) + "/" + navigation.getWaypointCount(),
                     "Session restaurée ! Reprise au waypoint " + (savedState.waypointIndex + 1) + "/" + navigation.getWaypointCount()));
+        }
+
+        // Restore distance/uptime even when saved WP was 0
+        if (!sessionRestored && savedState != null) {
+            if (savedState.distanceTraveled > 0) {
+                navigation.setTotalDistanceTraveled(savedState.distanceTraveled);
+            }
+            if (savedState.uptimeSeconds > 0) {
+                survivalManager.setPreviousUptime(savedState.uptimeSeconds);
+            }
+        }
+
+        // If no saved WP, skip to the nearest waypoint to avoid flying 100+km to WP 1
+        if (!sessionRestored && navigation.getWaypointCount() > 1) {
+            int nearest = navigation.skipToNearest();
+            if (nearest > 0) {
+                ChatUtils.print("[BaseHunter] " + Lang.t(
+                        "Skipped to nearest waypoint " + (nearest + 1) + "/" + navigation.getWaypointCount(),
+                        "Sauté au waypoint le plus proche " + (nearest + 1) + "/" + navigation.getWaypointCount()));
+            }
         }
 
         state = FinderState.SCANNING;

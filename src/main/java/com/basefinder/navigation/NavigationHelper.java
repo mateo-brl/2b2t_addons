@@ -389,6 +389,33 @@ public class NavigationHelper {
     }
 
     /**
+     * Find the nearest waypoint to the player's current position and skip to it.
+     * Returns the index of the nearest waypoint, or 0 if no waypoints or no player.
+     */
+    public int skipToNearest() {
+        if (mc.player == null || waypoints.isEmpty()) return 0;
+
+        double playerX = mc.player.getX();
+        double playerZ = mc.player.getZ();
+        double minDist = Double.MAX_VALUE;
+        int nearestIndex = 0;
+
+        for (int i = 0; i < waypoints.size(); i++) {
+            BlockPos wp = waypoints.get(i);
+            double dx = playerX - wp.getX();
+            double dz = playerZ - wp.getZ();
+            double dist = dx * dx + dz * dz; // No need for sqrt, just comparing
+            if (dist < minDist) {
+                minDist = dist;
+                nearestIndex = i;
+            }
+        }
+
+        skipTo(nearestIndex);
+        return nearestIndex;
+    }
+
+    /**
      * Skip to a specific waypoint index.
      */
     public void skipTo(int index) {
