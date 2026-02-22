@@ -74,8 +74,8 @@ public class BaseFinderModule extends ToggleableModule {
     // Base approach state
     private BaseRecord pendingBaseApproach = null;
     private int approachTicks = 0;
-    private boolean approachAerialScreenshotDone = false;
-    private boolean approachGroundScreenshotDone = false;
+    private boolean approachReachedBase = false;
+    private boolean approachScreenshotDone = false;
     private int approachLandedTick = 0;
     private FinderState stateBeforeApproach = FinderState.SCANNING;
     private static final int APPROACH_DISTANCE = 150;
@@ -863,8 +863,8 @@ public class BaseFinderModule extends ToggleableModule {
     private void startBaseApproach(BaseRecord record) {
         pendingBaseApproach = record;
         approachTicks = 0;
-        approachAerialScreenshotDone = false;
-        approachGroundScreenshotDone = false;
+        approachReachedBase = false;
+        approachScreenshotDone = false;
         approachLandedTick = 0;
         stateBeforeApproach = state;
         state = FinderState.APPROACHING_BASE;
@@ -896,14 +896,13 @@ public class BaseFinderModule extends ToggleableModule {
         }
 
         // === PHASE 1: Flying toward base ===
-        if (!approachAerialScreenshotDone) {
+        if (!approachReachedBase) {
             if (dist <= APPROACH_DISTANCE) {
-                // Close enough - take aerial screenshot from safe cruise altitude
-                approachAerialScreenshotDone = true;
-                logger.takeScreenshot(pendingBaseApproach);
+                // Close enough - mark arrival, ElytraBot will land safely
+                approachReachedBase = true;
                 ChatUtils.print("[BaseHunter] " + Lang.t(
-                        "Aerial photo taken! Safe landing in progress...",
-                        "Photo aérienne prise ! Atterrissage sécurisé en cours..."));
+                        "Near base! Safe landing in progress...",
+                        "Proche de la base ! Atterrissage sécurisé en cours..."));
                 // ElytraBot continues with destination=basePos
                 // Its normal safe chain handles landing: CRUISING→DESCENDING→FLARING→LANDING→BARITONE_LANDING
             } else if (!useElytra.getValue()) {
@@ -950,8 +949,8 @@ public class BaseFinderModule extends ToggleableModule {
         if (arrivedAtBase || walkTimeout) {
             baritoneController.cancelLanding();
 
-            if (!approachGroundScreenshotDone) {
-                approachGroundScreenshotDone = true;
+            if (!approachScreenshotDone) {
+                approachScreenshotDone = true;
                 // Look at the base for ground-level screenshot
                 float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
                 mc.player.setYRot(yaw);
