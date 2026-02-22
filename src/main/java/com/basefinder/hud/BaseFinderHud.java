@@ -61,12 +61,11 @@ public class BaseFinderHud extends HudElement {
 
     @Override
     public boolean shouldDrawBackground() {
-        return false; // we draw our own background
+        return true; // use framework background instead of custom shapes
     }
 
     @Override
     public void renderContent(RenderContext context, double mouseX, double mouseY) {
-        IRenderer2D renderer = getRenderer();
         IFontRenderer font = getFontRenderer();
 
         // Build all lines first to compute dimensions
@@ -87,48 +86,22 @@ public class BaseFinderHud extends HudElement {
         panelWidth = maxTextWidth + PADDING * 2 + 4;
         if (panelWidth < 160) panelWidth = 160;
 
-        // Compute height: count lines + separators
+        // Compute height
         double contentHeight = 0;
         for (PanelLine line : lines) {
-            if (line.isSeparator) {
-                contentHeight += SECTION_GAP + 1 + SECTION_GAP;
-            } else {
-                contentHeight += lineHeight;
-            }
+            contentHeight += line.isSeparator ? lineHeight * 0.4 : lineHeight;
         }
         panelHeight = contentHeight + PADDING * 2;
 
-        // Use relative coordinates (0,0) since the framework already translates
-        // the matrix to the top-left corner of this HUD element
-        double x = 0;
-        double y = 0;
-
-        // End the batch that the framework started before drawing shapes
-        // (drawOutlinedRectangle/drawLine internally call begin() which
-        // would crash with "Already building" if a batch is already open)
-        try { renderer.end(); } catch (Exception ignored) {}
-
-        // === Background + separator lines ===
-        renderer.drawOutlinedRectangle(x, y, panelWidth, panelHeight, BORDER_WIDTH, BG_COLOR, BORDER_COLOR);
-
-        double curY = y + PADDING;
+        // Render text only (no shape drawing to avoid "Already building" crash)
+        double curY = PADDING;
         for (PanelLine line : lines) {
             if (line.isSeparator) {
-                curY += SECTION_GAP;
-                renderer.drawLine(x + PADDING, curY, x + panelWidth - PADDING, curY, 0.5f, SEPARATOR_COLOR);
-                curY += 1 + SECTION_GAP;
+                // Draw separator as a dim text line
+                font.drawString("---", PADDING, curY, SEPARATOR_COLOR, true);
+                curY += lineHeight * 0.4;
             } else {
-                curY += lineHeight;
-            }
-        }
-
-        // === Text ===
-        curY = y + PADDING;
-        for (PanelLine line : lines) {
-            if (line.isSeparator) {
-                curY += SECTION_GAP + 1 + SECTION_GAP;
-            } else {
-                font.drawString(line.text, x + PADDING + line.indent, curY, line.color, true);
+                font.drawString(line.text, PADDING + line.indent, curY, line.color, true);
                 curY += lineHeight;
             }
         }
