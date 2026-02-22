@@ -103,6 +103,11 @@ public class BaseFinderHud extends HudElement {
         double x = 0;
         double y = 0;
 
+        // End the batch that the framework started before drawing shapes
+        // (drawOutlinedRectangle/drawLine internally call begin() which
+        // would crash with "Already building" if a batch is already open)
+        try { renderer.end(); } catch (Exception ignored) {}
+
         // === Background + separator lines ===
         renderer.drawOutlinedRectangle(x, y, panelWidth, panelHeight, BORDER_WIDTH, BG_COLOR, BORDER_COLOR);
 
