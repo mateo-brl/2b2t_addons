@@ -38,6 +38,7 @@ public class SurvivalManager {
 
     // Statistics
     private long startTime = 0;
+    private long previousUptime = 0; // Cumulated uptime from previous sessions
     private int disconnectCount = 0;
 
     public void onEnable() {
@@ -147,7 +148,8 @@ public class SurvivalManager {
     public void setResupplyThreshold(int threshold) { fireworkResupply.setResupplyThreshold(threshold); }
 
     // Stats
-    public long getUptimeSeconds() { return (System.currentTimeMillis() - startTime) / 1000; }
+    public long getUptimeSeconds() { return previousUptime + (System.currentTimeMillis() - startTime) / 1000; }
+    public void setPreviousUptime(long seconds) { this.previousUptime = seconds; }
     public int getDisconnectCount() { return disconnectCount; }
     public int getTotemCount() { return autoTotem.getTotemCount(); }
 }
