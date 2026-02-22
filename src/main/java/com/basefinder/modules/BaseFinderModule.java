@@ -292,6 +292,9 @@ public class BaseFinderModule extends ToggleableModule {
         // Restore waypoint index from saved session
         if (savedState != null && savedState.searchMode.equals(pattern.name()) && savedState.waypointIndex > 0) {
             navigation.skipTo(savedState.waypointIndex);
+            if (savedState.distanceTraveled > 0) {
+                navigation.setTotalDistanceTraveled(savedState.distanceTraveled);
+            }
             ChatUtils.print("[BaseHunter] " + Lang.t(
                     "Session restored! Resuming from waypoint " + (savedState.waypointIndex + 1) + "/" + navigation.getWaypointCount(),
                     "Session restaurée ! Reprise au waypoint " + (savedState.waypointIndex + 1) + "/" + navigation.getWaypointCount()));

@@ -410,6 +410,7 @@ public class NavigationHelper {
     public int getWaypointCount() { return waypoints.size(); }
     public int getCurrentWaypointIndex() { return currentWaypointIndex; }
     public double getTotalDistanceTraveled() { return totalDistanceTraveled; }
+    public void setTotalDistanceTraveled(double distance) { this.totalDistanceTraveled = distance; }
     public SearchPattern getPattern() { return pattern; }
     public BlockPos getSearchCenter() { return searchCenter; }
     public List<BlockPos> getWaypoints() { return Collections.unmodifiableList(waypoints); }
