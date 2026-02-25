@@ -733,6 +733,15 @@ public class BaseFinderModule extends ToggleableModule {
 
         // If scanning is done (all loaded chunks scanned), fly to next waypoint
         if (useElytra.getValue() && navigation.getCurrentTarget() != null) {
+            // Advance waypoint if we're already near/past the current one
+            if (navigation.isNearTarget(waypointThreshold.getValue())) {
+                if (!navigation.advanceToNext()) {
+                    // No more waypoints
+                    ChatUtils.print("[BaseHunter] " + Lang.t("All waypoints visited! Total bases found: ", "Tous les waypoints visités ! Bases trouvées : ") + logger.getCount());
+                    this.toggle();
+                    return;
+                }
+            }
             state = FinderState.FLYING_TO_WAYPOINT;
             elytraBot.startFlight(navigation.getCurrentTarget());
         }
@@ -914,6 +923,19 @@ public class BaseFinderModule extends ToggleableModule {
             }
             state = FinderState.SCANNING;
             elytraBot.stop();
+        } else if (mc.player != null && navigation.getCurrentWaypointIndex() + 1 < navigation.getWaypointCount()) {
+            // Check if player overshot current waypoint and is closer to the next one
+            BlockPos nextWP = navigation.getWaypoints().get(navigation.getCurrentWaypointIndex() + 1);
+            double distCurrent = navigation.getDistanceToCurrentTarget();
+            double dx = mc.player.getX() - nextWP.getX();
+            double dz = mc.player.getZ() - nextWP.getZ();
+            double distNext = Math.sqrt(dx * dx + dz * dz);
+            if (distCurrent >= 0 && distNext < distCurrent && distNext < waypointThreshold.getValue() * 2) {
+                // Player overshot - skip to next waypoint
+                navigation.advanceToNext();
+                state = FinderState.SCANNING;
+                elytraBot.stop();
+            }
         }
 
         // Handle elytra bot issues
