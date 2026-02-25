@@ -457,4 +457,22 @@ public class NavigationHelper {
         this.zoneMaxZ = maxZ;
     }
     public void setZoneSpacing(int spacing) { this.zoneSpacing = spacing; }
+
+    /**
+     * Get progress percentage based on current waypoint index / total.
+     */
+    public double getProgressPercent() {
+        if (waypoints.isEmpty()) return 0.0;
+        return (double) currentWaypointIndex / waypoints.size() * 100.0;
+    }
+
+    /**
+     * Get horizontal distance from player to current target.
+     */
+    public double getDistanceToCurrentTarget() {
+        if (mc.player == null || currentTarget == null) return -1;
+        double dx = mc.player.getX() - currentTarget.getX();
+        double dz = mc.player.getZ() - currentTarget.getZ();
+        return Math.sqrt(dx * dx + dz * dz);
+    }
 }
