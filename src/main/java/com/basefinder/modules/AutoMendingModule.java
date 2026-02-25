@@ -25,16 +25,28 @@ import java.util.List;
 
 /**
  * AutoMending - Automatically repairs Mending elytras by mining XP-giving ores.
- * Equips the most damaged elytra, uses Baritone to mine lapis/redstone for XP,
+ * Supports all XP-dropping ores: lapis, redstone, diamond, emerald, coal, iron, gold,
+ * copper, nether gold, nether quartz (with deepslate variants). Each ore type can be
+ * individually toggled. Equips the most damaged elytra, uses Baritone to mine ores for XP,
  * swaps to the next elytra when repaired, and surfaces when all are done.
  */
 public class AutoMendingModule extends ToggleableModule {
 
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("AutoMending");
 
-    // --- Settings ---
-    private final BooleanSetting mineLapis = new BooleanSetting("Mine Lapis", "Mine lapis_ore and deepslate_lapis_ore for XP", true);
-    private final BooleanSetting mineRedstone = new BooleanSetting("Mine Redstone", "Mine redstone_ore and deepslate_redstone_ore for XP", true);
+    // --- Ore Toggle Settings ---
+    private final BooleanSetting mineLapis = new BooleanSetting("Mine Lapis", "Mine lapis_ore and deepslate_lapis_ore (2-5 XP)", true);
+    private final BooleanSetting mineRedstone = new BooleanSetting("Mine Redstone", "Mine redstone_ore and deepslate_redstone_ore (1-5 XP)", true);
+    private final BooleanSetting mineDiamond = new BooleanSetting("Mine Diamond", "Mine diamond_ore and deepslate_diamond_ore (3-7 XP)", true);
+    private final BooleanSetting mineEmerald = new BooleanSetting("Mine Emerald", "Mine emerald_ore and deepslate_emerald_ore (3-7 XP)", true);
+    private final BooleanSetting mineCoal = new BooleanSetting("Mine Coal", "Mine coal_ore and deepslate_coal_ore (0-2 XP)", false);
+    private final BooleanSetting mineIron = new BooleanSetting("Mine Iron", "Mine iron_ore and deepslate_iron_ore (raw iron drop = XP)", false);
+    private final BooleanSetting mineGold = new BooleanSetting("Mine Gold", "Mine gold_ore and deepslate_gold_ore (raw gold drop = XP)", false);
+    private final BooleanSetting mineCopper = new BooleanSetting("Mine Copper", "Mine copper_ore and deepslate_copper_ore (raw copper drop = XP)", false);
+    private final BooleanSetting mineNetherGold = new BooleanSetting("Mine Nether Gold", "Mine nether_gold_ore (0-1 XP)", false);
+    private final BooleanSetting mineNetherQuartz = new BooleanSetting("Mine Nether Quartz", "Mine nether_quartz_ore (2-5 XP)", false);
+
+    // --- General Settings ---
     private final NumberSetting<Integer> repairThreshold = new NumberSetting<>("Seuil réparation", "Durability considered 'repaired'", 430, 1, 432);
     private final BooleanSetting autoDisable = new BooleanSetting("Auto désactiver", "Disable module when all elytras are repaired", true);
     private final BooleanSetting goSurface = new BooleanSetting("Remonter surface", "Use Baritone 'surface' when done", true);
@@ -68,6 +80,14 @@ public class AutoMendingModule extends ToggleableModule {
         this.registerSettings(
                 mineLapis,
                 mineRedstone,
+                mineDiamond,
+                mineEmerald,
+                mineCoal,
+                mineIron,
+                mineGold,
+                mineCopper,
+                mineNetherGold,
+                mineNetherQuartz,
                 repairThreshold,
                 autoDisable,
                 goSurface,
@@ -93,7 +113,7 @@ public class AutoMendingModule extends ToggleableModule {
         }
 
         // Check at least one ore type selected
-        if (!mineLapis.getValue() && !mineRedstone.getValue()) {
+        if (!isAnyOreEnabled()) {
             ChatUtils.print("[AutoMending] " + Lang.t("ERROR: Select at least one ore type!", "ERREUR : Sélectionnez au moins un type de minerai !"));
             this.toggle();
             return;
@@ -231,20 +251,72 @@ public class AutoMendingModule extends ToggleableModule {
     }
 
     /**
+     * Check if at least one ore type is enabled.
+     */
+    private boolean isAnyOreEnabled() {
+        return mineLapis.getValue() || mineRedstone.getValue() || mineDiamond.getValue()
+                || mineEmerald.getValue() || mineCoal.getValue() || mineIron.getValue()
+                || mineGold.getValue() || mineCopper.getValue() || mineNetherGold.getValue()
+                || mineNetherQuartz.getValue();
+    }
+
+    /**
      * Start the Baritone mine command for selected ores.
      */
     private void startMining() {
         StringBuilder cmd = new StringBuilder("mine");
+
         if (mineLapis.getValue()) {
             cmd.append(" lapis_ore deepslate_lapis_ore");
         }
         if (mineRedstone.getValue()) {
             cmd.append(" redstone_ore deepslate_redstone_ore");
         }
+        if (mineDiamond.getValue()) {
+            cmd.append(" diamond_ore deepslate_diamond_ore");
+        }
+        if (mineEmerald.getValue()) {
+            cmd.append(" emerald_ore deepslate_emerald_ore");
+        }
+        if (mineCoal.getValue()) {
+            cmd.append(" coal_ore deepslate_coal_ore");
+        }
+        if (mineIron.getValue()) {
+            cmd.append(" iron_ore deepslate_iron_ore");
+        }
+        if (mineGold.getValue()) {
+            cmd.append(" gold_ore deepslate_gold_ore");
+        }
+        if (mineCopper.getValue()) {
+            cmd.append(" copper_ore deepslate_copper_ore");
+        }
+        if (mineNetherGold.getValue()) {
+            cmd.append(" nether_gold_ore");
+        }
+        if (mineNetherQuartz.getValue()) {
+            cmd.append(" nether_quartz_ore");
+        }
 
         baritoneController.executeCommand(cmd.toString());
         state = MendingState.MINING;
-        ChatUtils.print("[AutoMending] " + Lang.t("Mining for XP...", "Minage pour XP..."));
+
+        // Count enabled ore types for the chat message
+        int oreCount = 0;
+        if (mineLapis.getValue()) oreCount++;
+        if (mineRedstone.getValue()) oreCount++;
+        if (mineDiamond.getValue()) oreCount++;
+        if (mineEmerald.getValue()) oreCount++;
+        if (mineCoal.getValue()) oreCount++;
+        if (mineIron.getValue()) oreCount++;
+        if (mineGold.getValue()) oreCount++;
+        if (mineCopper.getValue()) oreCount++;
+        if (mineNetherGold.getValue()) oreCount++;
+        if (mineNetherQuartz.getValue()) oreCount++;
+
+        ChatUtils.print("[AutoMending] " + Lang.t(
+                "Mining " + oreCount + " ore type(s) for XP...",
+                "Minage de " + oreCount + " type(s) de minerai pour XP..."
+        ));
         LOGGER.info("[AutoMending] Started mining: {}", cmd);
     }
 
