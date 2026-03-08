@@ -166,10 +166,23 @@ IDLE → TAKING_OFF → CRUISING → LANDING
 1. Aller dans l'onglet **[Releases](../../releases)**
 2. Telecharger `basefinder-2.0.0.jar`
 3. Placer le `.jar` dans `.minecraft/rusherhack/plugins/`
-4. Lancer Minecraft avec RusherHack
-5. Les modules apparaissent dans la categorie **External**
+4. Ajouter les **arguments JVM requis** (voir ci-dessous)
+5. Lancer Minecraft avec RusherHack
+6. Les modules apparaissent dans la categorie **External**
 
 > **Prerequis :** RusherHack + Minecraft 1.21.4
+
+### Arguments JVM requis
+
+Les arguments suivants doivent etre ajoutes aux JVM Arguments de votre launcher pour que RusherHack charge les plugins :
+
+```
+-XX:+DisableAttachMechanism -DFabricMcEmu=net.minecraft.client.main.Main --add-opens java.base/java.lang=ALL-UNNAMED -Drusherhack.enablePlugins=true
+```
+
+**PrismLauncher / MultiMC :** Clic droit sur l'instance > Parametres > Java > Arguments JVM supplementaires > coller les arguments.
+
+**Vanilla Launcher :** Installations > Modifier > Autres options > Arguments JVM > ajouter a la fin.
 
 ### Build depuis les sources
 
@@ -180,6 +193,8 @@ cd 2b2t_addons
 ```
 
 Le jar se trouve dans `build/libs/basefinder-2.0.0.jar`.
+
+> **Important :** Utilisez le jar de `build/libs/` (remapped intermediary), **pas** celui de `build/devlibs/` (Mojang mappings) qui causera des `NoClassDefFoundError` au chargement.
 
 > Le `.jar` est build automatiquement par GitHub Actions a chaque push.
 
@@ -420,10 +435,23 @@ Designed for **24/7 unattended operation** with automatic survival systems.
 1. Go to the **[Releases](../../releases)** tab
 2. Download `basefinder-2.0.0.jar`
 3. Place in `.minecraft/rusherhack/plugins/`
-4. Launch Minecraft with RusherHack
-5. Modules appear in the **External** category
+4. Add the **required JVM arguments** (see below)
+5. Launch Minecraft with RusherHack
+6. Modules appear in the **External** category
 
 > **Required:** RusherHack + Minecraft 1.21.4
+
+### Required JVM Arguments
+
+The following arguments must be added to your launcher's JVM Arguments for RusherHack to load plugins:
+
+```
+-XX:+DisableAttachMechanism -DFabricMcEmu=net.minecraft.client.main.Main --add-opens java.base/java.lang=ALL-UNNAMED -Drusherhack.enablePlugins=true
+```
+
+**PrismLauncher / MultiMC:** Right-click instance > Settings > Java > Additional JVM Arguments > paste the arguments.
+
+**Vanilla Launcher:** Installations > Edit > More Options > JVM Arguments > append at the end.
 
 ### Build from source
 
@@ -434,6 +462,8 @@ cd 2b2t_addons
 ```
 
 Output: `build/libs/basefinder-2.0.0.jar`
+
+> **Important:** Use the jar from `build/libs/` (remapped intermediary), **not** the one from `build/devlibs/` (Mojang mappings) which will cause `NoClassDefFoundError` at load time.
 
 ## 24/7 Setup Guide
 
