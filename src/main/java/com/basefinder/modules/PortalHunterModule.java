@@ -1268,7 +1268,7 @@ public class PortalHunterModule extends ToggleableModule {
                 currentZoneWaypoint, zoneWaypoints.size(), portalQueue.size()));
     }
 
-    // === PUBLIC GETTERS (for HUD integration) ===
+    // === PUBLIC API ===
     public HunterState getHunterState() { return state; }
     public int getPortalsVisited() { return portalsVisited; }
     public int getBasesFound() { return basesFound; }
@@ -1277,4 +1277,27 @@ public class PortalHunterModule extends ToggleableModule {
     public BaseLogger getBaseLogger() { return baseLogger; }
     public int getZoneProgress() { return currentZoneWaypoint; }
     public int getZoneTotal() { return zoneWaypoints.size(); }
+    public int getVisitedPortalsCount() { return visitedPortals.size(); }
+
+    public int[] getZoneBounds() {
+        return new int[] {
+                zoneMinX.getValue(), zoneMaxX.getValue(),
+                zoneMinZ.getValue(), zoneMaxZ.getValue()
+        };
+    }
+
+    public void setZoneBounds(int minX, int maxX, int minZ, int maxZ) {
+        zoneMinX.setValue(minX);
+        zoneMaxX.setValue(maxX);
+        zoneMinZ.setValue(minZ);
+        zoneMaxZ.setValue(maxZ);
+    }
+
+    public int getSweepRadius() { return sweepRadius.getValue(); }
+    public void setSweepRadius(int radius) { sweepRadius.setValue(radius); }
+
+    public void clearVisitedPortals() {
+        visitedPortals.clear();
+        saveVisitedPortals();
+    }
 }
