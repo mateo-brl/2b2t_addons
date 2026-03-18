@@ -548,21 +548,24 @@ public class PortalHunterModule extends ToggleableModule {
                     debug("DANS portail block, attente TP...");
                 }
             } else {
-                double distToPortal = Math.sqrt(mc.player.blockPosition().distSqr(currentPortalNether));
+                double distXZ = horizontalDist(mc.player.getX(), mc.player.getZ(),
+                        currentPortalNether.getX() + 0.5, currentPortalNether.getZ() + 0.5);
+                int yDiff = Math.abs(mc.player.blockPosition().getY() - currentPortalNether.getY());
 
-                if (distToPortal > 4) {
-                    // Far from portal — use Baritone for 3D navigation to correct Y
+                if (distXZ > 3 || yDiff > 2) {
+                    // Not close enough OR wrong Y level — Baritone 3D navigation
                     if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
-                        BlockPos floorPos = currentPortalNether.below();
-                        baritone.goToNear(floorPos, 2);
-                        debug("Baritone -> portail 3D (dist=" + String.format("%.0f", distToPortal) + ")");
+                        baritone.goToNear(currentPortalNether, 1);
+                        debug("Baritone -> portail 3D (distXZ=" + String.format("%.0f", distXZ) + " yDiff=" + yDiff + ")");
                     }
                 } else {
-                    // Close to portal — cancel Baritone and walk directly into it
-                    baritone.cancelAll();
+                    // Close AND at correct Y — walk into the portal
+                    if (baritone.isPathing()) {
+                        baritone.cancelAll(); // cancel once
+                    }
                     walkTowards(currentPortalNether);
                     if (portalWaitTimer % 40 == 0) {
-                        debug("walkTowards portail (dist=" + String.format("%.1f", distToPortal) + ")");
+                        debug("walkTowards portail (distXZ=" + String.format("%.1f", distXZ) + " yDiff=" + yDiff + ")");
                     }
                 }
             }
