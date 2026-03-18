@@ -11,7 +11,8 @@ public enum BaseType {
     TRAIL("Piste"),
     STASH("Stash"),
     FARM("Ferme"),
-    PORTAL("Portail");
+    PORTAL("Portail"),
+    CAVE_MINING("Ancienne zone minée (tunnel/galerie)");
 
     private final String displayName;
 
