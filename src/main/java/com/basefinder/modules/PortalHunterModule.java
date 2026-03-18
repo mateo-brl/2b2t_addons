@@ -130,7 +130,8 @@ public class PortalHunterModule extends ToggleableModule {
 
     // Portal entry timer
     private int portalWaitTimer = 0;
-    private static final int PORTAL_TIMEOUT = 300; // 15 seconds
+    private static final int PORTAL_TIMEOUT = 900; // 45 seconds
+    private boolean portalWalkPhase = false; // once walkTowards starts, don't go back to Baritone
 
     // Sweep state
     private final List<BlockPos> sweepWaypoints = new ArrayList<>();
@@ -529,6 +530,7 @@ public class PortalHunterModule extends ToggleableModule {
     private void beginEnteringPortal() {
         state = HunterState.ENTERING_PORTAL;
         portalWaitTimer = 0;
+        portalWalkPhase = false;
         releaseMovementKeys();
         baritone.cancelAll();
     }
@@ -553,21 +555,21 @@ public class PortalHunterModule extends ToggleableModule {
                         currentPortalNether.getX() + 0.5, currentPortalNether.getZ() + 0.5);
                 int yDiff = Math.abs(mc.player.blockPosition().getY() - currentPortalNether.getY());
 
-                if (distXZ > 3 || yDiff > 2) {
-                    // Not close enough OR wrong Y level — Baritone 3D navigation
+                // Once in walkTowards phase, stay there (no oscillation)
+                if (!portalWalkPhase && (distXZ > 3 || yDiff > 4)) {
+                    // Far or wrong Y — Baritone 3D navigation
                     if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
                         baritone.goToNear(currentPortalNether, 1);
                         debug("Baritone -> portail 3D (distXZ=" + String.format("%.0f", distXZ) + " yDiff=" + yDiff + ")");
                     }
                 } else {
-                    // Close AND at correct Y — walk into the portal
-                    if (baritone.isPathing()) {
-                        baritone.cancelAll(); // cancel once
+                    // Close enough — walk into the portal (and stay in this phase)
+                    if (!portalWalkPhase) {
+                        portalWalkPhase = true;
+                        baritone.cancelAll();
+                        debug("Phase walkTowards activée");
                     }
                     walkTowards(currentPortalNether);
-                    if (portalWaitTimer % 40 == 0) {
-                        debug("walkTowards portail (distXZ=" + String.format("%.1f", distXZ) + " yDiff=" + yDiff + ")");
-                    }
                 }
             }
         }
@@ -773,6 +775,7 @@ public class PortalHunterModule extends ToggleableModule {
     private void beginEnteringNether() {
         state = HunterState.ENTERING_NETHER;
         portalWaitTimer = 0;
+        portalWalkPhase = false;
         releaseMovementKeys();
         baritone.cancelAll();
         printChat(Lang.t("Entering portal to return to Nether...",
@@ -794,12 +797,15 @@ public class PortalHunterModule extends ToggleableModule {
                         currentPortalOverworld.getX() + 0.5, currentPortalOverworld.getZ() + 0.5);
                 int yDiff = Math.abs(mc.player.blockPosition().getY() - currentPortalOverworld.getY());
 
-                if (distXZ > 3 || yDiff > 2) {
+                if (!portalWalkPhase && (distXZ > 3 || yDiff > 4)) {
                     if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
                         baritone.goToNear(currentPortalOverworld, 1);
                     }
                 } else {
-                    if (baritone.isPathing()) baritone.cancelAll();
+                    if (!portalWalkPhase) {
+                        portalWalkPhase = true;
+                        baritone.cancelAll();
+                    }
                     walkTowards(currentPortalOverworld);
                 }
             }
