@@ -548,12 +548,22 @@ public class PortalHunterModule extends ToggleableModule {
                     debug("DANS portail block, attente TP...");
                 }
             } else {
-                // Not in portal yet — navigate to portal in 3D (range 2 for tolerance)
-                // Target Y-1 (obsidian frame below portal block) so Baritone walks ON it
-                if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
-                    BlockPos floorPos = currentPortalNether.below(); // obsidian frame
-                    baritone.goToNear(floorPos, 2);
-                    debug("Baritone -> portail 3D " + floorPos.toShortString() + " (range 2)");
+                double distToPortal = Math.sqrt(mc.player.blockPosition().distSqr(currentPortalNether));
+
+                if (distToPortal > 4) {
+                    // Far from portal — use Baritone for 3D navigation to correct Y
+                    if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
+                        BlockPos floorPos = currentPortalNether.below();
+                        baritone.goToNear(floorPos, 2);
+                        debug("Baritone -> portail 3D (dist=" + String.format("%.0f", distToPortal) + ")");
+                    }
+                } else {
+                    // Close to portal — cancel Baritone and walk directly into it
+                    baritone.cancelAll();
+                    walkTowards(currentPortalNether);
+                    if (portalWaitTimer % 40 == 0) {
+                        debug("walkTowards portail (dist=" + String.format("%.1f", distToPortal) + ")");
+                    }
                 }
             }
         }
