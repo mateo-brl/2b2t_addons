@@ -619,7 +619,16 @@ public class ElytraBot {
                 if (takeoffAirTicks > 5 || mc.player.onGround()) {
                     takeoffAttempts++;
                     if (takeoffAttempts >= 5) {
+                        LOGGER.warn("[ElytraBot] Takeoff failed after 5 attempts, resetting to IDLE");
                         ChatUtils.print("[ElytraBot] " + Lang.t("Takeoff failed after 5 attempts!", "Décollage échoué après 5 tentatives !"));
+                        state = FlightPhase.IDLE;
+                        isFlying = false;
+                        isTakingOff = false;
+                        takeoffAttempts = 0;
+                        takeoffPhase = -1;
+                        takeoffAirTicks = 0;
+                        takeoffTimer = 0;
+                        return;
                     } else {
                         takeoffPhase = -1;
                     }

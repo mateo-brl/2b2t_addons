@@ -442,6 +442,9 @@ public class BaseFinderModule extends ToggleableModule {
         trailFollower.stopFollowing();
         survivalManager.stop();
 
+        // Shutdown Discord notifier executor
+        logger.getDiscordNotifier().shutdown();
+
         // Release movement keys safely
         try {
             mc.options.keyUp.setDown(false);
