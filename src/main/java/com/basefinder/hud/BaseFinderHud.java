@@ -2,7 +2,6 @@ package com.basefinder.hud;
 
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.modules.BaseFinderModule;
-import com.basefinder.modules.NewChunksModule;
 import com.basefinder.survival.SurvivalManager;
 import com.basefinder.terrain.TerrainPredictor;
 import com.basefinder.trail.TrailFollower;
@@ -319,24 +318,9 @@ public class BaseFinderHud extends HudElement {
             ));
         }
 
-        // NewChunks info
-        IModule ncModule = RusherHackAPI.getModuleManager().getFeature("ChunkHistory").orElse(null);
+        // Deferred chunks info
         int deferred = baseFinder.getScanner().getDeferredCount();
-        if (ncModule instanceof NewChunksModule nc && nc.isToggled()) {
-            int newCount = nc.getDetector().getNewChunkCount();
-            int oldCount = nc.getDetector().getOldChunkCount();
-            List<TextSegment> ncSegs = new ArrayList<>();
-            ncSegs.add(seg("NC:", LABEL_COLOR));
-            ncSegs.add(seg(" " + newCount, newCount > 0 ? ORANGE_COLOR : TEXT_COLOR));
-            ncSegs.add(seg(" new ", DIM_COLOR));
-            ncSegs.add(seg(String.valueOf(oldCount), TEXT_COLOR));
-            ncSegs.add(seg(" old", DIM_COLOR));
-            if (deferred > 0) {
-                ncSegs.add(seg("  " + Lang.t("Def:", "Dif:"), LABEL_COLOR));
-                ncSegs.add(seg(" " + deferred, YELLOW_COLOR));
-            }
-            lines.add(multiColor(DETAIL_INDENT, ncSegs.toArray(new TextSegment[0])));
-        } else if (deferred > 0) {
+        if (deferred > 0) {
             lines.add(multiColor(DETAIL_INDENT,
                 seg(Lang.t("Deferred:", "Differes:"), LABEL_COLOR),
                 seg(" " + deferred, DIM_COLOR)

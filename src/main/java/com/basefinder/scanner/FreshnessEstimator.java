@@ -12,20 +12,13 @@ import net.minecraft.core.BlockPos;
  * Estimates whether a detected base is active, abandoned, or ancient.
  *
  * Uses multiple signals:
- * 1. Chunk age data from NewChunkDetector (new chunks nearby = active player)
- * 2. Block version analysis (pre-1.18 blocks = old generation)
- * 3. Weathering indicators (vines, moss growing on structures)
- * 4. Surrounding chunk state (isolated old chunks in new terrain = old base)
+ * 1. Block version analysis (pre-1.18 blocks = old generation)
+ * 2. Weathering indicators (vines, moss growing on structures)
  */
 public class FreshnessEstimator {
 
     private final Minecraft mc = Minecraft.getInstance();
-    private NewChunkDetector newChunkDetector;
     private ChunkAgeAnalyzer chunkAgeAnalyzer;
-
-    public void setNewChunkDetector(NewChunkDetector detector) {
-        this.newChunkDetector = detector;
-    }
 
     public void setChunkAgeAnalyzer(ChunkAgeAnalyzer analyzer) {
         this.chunkAgeAnalyzer = analyzer;
@@ -44,33 +37,7 @@ public class FreshnessEstimator {
         double ancientSignals = 0;
         int totalSignals = 0;
 
-        // Signal 1: NewChunk data - are nearby chunks new or old?
-        if (newChunkDetector != null && newChunkDetector.isEnabled()) {
-            int newNearby = 0;
-            int oldNearby = 0;
-
-            for (int dx = -2; dx <= 2; dx++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    ChunkPos neighbor = new ChunkPos(pos.x + dx, pos.z + dz);
-                    if (newChunkDetector.isNewChunk(neighbor)) newNearby++;
-                    if (newChunkDetector.isOldChunk(neighbor)) oldNearby++;
-                }
-            }
-
-            totalSignals++;
-            if (newNearby > oldNearby * 2) {
-                // Mostly new chunks = this is new territory, base is active or recently found
-                activeSignals += 2;
-            } else if (oldNearby > newNearby * 2) {
-                // Mostly old chunks = well-traveled area, base may be abandoned
-                abandonedSignals += 1;
-            } else {
-                // Mixed = moderate activity
-                activeSignals += 0.5;
-            }
-        }
-
-        // Signal 2: Chunk generation version
+        // Signal 1: Chunk generation version (replaces old NewChunk signal)
         if (chunkAgeAnalyzer != null) {
             try {
                 var chunkSource = mc.level.getChunkSource();
@@ -99,7 +66,7 @@ public class FreshnessEstimator {
             }
         }
 
-        // Signal 3: Weathering indicators in the chunk
+        // Signal 2: Weathering indicators in the chunk
         try {
             var chunkSource = mc.level.getChunkSource();
             LevelChunk chunk = chunkSource.getChunk(pos.x, pos.z, false);
