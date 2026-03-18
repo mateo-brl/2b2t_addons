@@ -4,7 +4,6 @@ import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.navigation.NavigationHelper;
 import com.basefinder.persistence.StateManager;
-import com.basefinder.scanner.ChunkAgeAnalyzer;
 import com.basefinder.scanner.ChunkScanner;
 import com.basefinder.scanner.FreshnessEstimator;
 import com.basefinder.survival.SurvivalManager;
@@ -64,7 +63,6 @@ public class BaseFinderModule extends ToggleableModule {
     private final LagDetector lagDetector = new LagDetector();
     private final BaritoneController baritoneController = new BaritoneController();
     private final HeightmapCache heightmapCache = new HeightmapCache();
-    private final ChunkAgeAnalyzer chunkAgeAnalyzer = new ChunkAgeAnalyzer();
     private TerrainPredictor terrainPredictor = null;
 
     // State
@@ -293,9 +291,6 @@ public class BaseFinderModule extends ToggleableModule {
         // Wire DiscordNotifier and ElytraBot into SurvivalManager for critical alerts
         survivalManager.setDiscordNotifier(logger.getDiscordNotifier());
         survivalManager.setElytraBot(elytraBot);
-
-        // Connect to NewChunks module if it's active
-        connectToNewChunksModule();
 
         // Initialize navigation with selected search mode
         NavigationHelper.SearchPattern pattern = searchMode.getValue();
@@ -559,7 +554,7 @@ public class BaseFinderModule extends ToggleableModule {
         // Terrain prediction
         if (useTerrainPrediction.getValue()) {
             SeedTerrainGenerator seedGen = new SeedTerrainGenerator();
-            terrainPredictor = new TerrainPredictor(heightmapCache, seedGen, chunkAgeAnalyzer);
+            terrainPredictor = new TerrainPredictor(heightmapCache, seedGen, new com.basefinder.scanner.ChunkAgeAnalyzer());
             elytraBot.setTerrainPredictor(terrainPredictor);
             elytraBot.setTerrainSafetyMargin(terrainSafetyMargin.getValue());
         } else {
@@ -581,32 +576,7 @@ public class BaseFinderModule extends ToggleableModule {
         scanInterval = scanIntervalSetting.getValue();
     }
 
-    /**
-     * Connect TrailFollower and FreshnessEstimator to NewChunks module's detector and analyzer
-     * so they can use chunk age data for trail detection and freshness estimation.
-     */
-    private void connectToNewChunksModule() {
-        IModule ncModule = RusherHackAPI.getModuleManager().getFeature("ChunkHistory").orElse(null);
-        if (ncModule instanceof NewChunksModule newChunksModule) {
-            if (useChunkTrails.getValue()) {
-                trailFollower.setNewChunkDetector(newChunksModule.getDetector());
-                ChatUtils.print("[BaseHunter] " + Lang.t("Connected to NewChunks - chunk trail detection enabled", "Connecté à NewChunks - détection pistes de chunks activée"));
-            }
-            if (useVersionBorders.getValue()) {
-                trailFollower.setChunkAgeAnalyzer(newChunksModule.getAgeAnalyzer());
-                ChatUtils.print("[BaseHunter] " + Lang.t("Connected to NewChunks - version border detection enabled", "Connecté à NewChunks - détection bordures de version activée"));
-            }
 
-            // Connect freshness estimator
-            freshnessEstimator.setNewChunkDetector(newChunksModule.getDetector());
-            freshnessEstimator.setChunkAgeAnalyzer(newChunksModule.getAgeAnalyzer());
-            ChatUtils.print("[BaseHunter] " + Lang.t("Freshness estimation enabled", "Estimation fraîcheur activée"));
-        } else {
-            if (useChunkTrails.getValue() || useVersionBorders.getValue()) {
-                ChatUtils.print("[BaseHunter] " + Lang.t("Enable NewChunks module for chunk trail & version border detection", "Activez le module NewChunks pour la détection des pistes et bordures"));
-            }
-        }
-    }
 
     @Subscribe
     private void onUpdate(EventUpdate event) {

@@ -4,7 +4,6 @@ import com.basefinder.modules.AutoMendingModule;
 import com.basefinder.modules.AutoTravelModule;
 import com.basefinder.modules.BaseFinderModule;
 import com.basefinder.modules.ElytraBotModule;
-import com.basefinder.modules.NewChunksModule;
 import com.basefinder.hud.BaseFinderHud;
 import com.basefinder.command.BaseFinderCommand;
 import org.rusherhack.client.api.RusherHackAPI;
@@ -23,15 +22,6 @@ public class BaseFinderPlugin extends Plugin {
         this.getLogger().info("Plugin BaseFinder en chargement...");
 
         // Enregistrer les modules individuellement avec try/catch
-        try {
-            NewChunksModule newChunksModule = new NewChunksModule();
-            RusherHackAPI.getModuleManager().registerFeature(newChunksModule);
-            this.getLogger().info("Module ChunkHistory enregistré (catégorie External)");
-        } catch (Exception e) {
-            this.getLogger().error("Échec enregistrement module NewChunks : {}", e.getMessage());
-            e.printStackTrace();
-        }
-
         try {
             BaseFinderModule baseFinderModule = new BaseFinderModule();
             RusherHackAPI.getModuleManager().registerFeature(baseFinderModule);
