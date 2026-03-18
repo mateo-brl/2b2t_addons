@@ -58,9 +58,17 @@ tasks.withType(JavaCompile).configureEach {
     it.options.release = Integer.parseInt(project.java_version)
 }
 
+
+
 java {
     sourceCompatibility = JavaVersion.toVersion(project.java_version)
     targetCompatibility = JavaVersion.toVersion(project.java_version)
+}
+
+// Use system JDK directly, bypass Gradle toolchain resolution
+tasks.withType(JavaCompile).configureEach {
+    options.fork = true
+    options.forkOptions.executable = '/usr/bin/javac'
 }
 
 jar {

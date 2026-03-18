@@ -4,6 +4,7 @@ import com.basefinder.modules.AutoMendingModule;
 import com.basefinder.modules.AutoTravelModule;
 import com.basefinder.modules.BaseFinderModule;
 import com.basefinder.modules.ElytraBotModule;
+import com.basefinder.modules.PortalHunterModule;
 import com.basefinder.hud.BaseFinderHud;
 import com.basefinder.command.BaseFinderCommand;
 import org.rusherhack.client.api.RusherHackAPI;
@@ -55,6 +56,15 @@ public class BaseFinderPlugin extends Plugin {
             this.getLogger().info("Module AutoMending enregistré (catégorie External)");
         } catch (Exception e) {
             this.getLogger().error("Échec enregistrement module AutoMending : {}", e.getMessage());
+            e.printStackTrace();
+        }
+
+        try {
+            PortalHunterModule portalHunterModule = new PortalHunterModule();
+            RusherHackAPI.getModuleManager().registerFeature(portalHunterModule);
+            this.getLogger().info("Module PortalHunter enregistré (catégorie External)");
+        } catch (Exception e) {
+            this.getLogger().error("Échec enregistrement module PortalHunter : {}", e.getMessage());
             e.printStackTrace();
         }
 
