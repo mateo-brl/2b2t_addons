@@ -25,7 +25,16 @@ public class AutoEat {
     private static final int EAT_DURATION = 35; // 32 ticks + buffer
 
     public void tick() {
-        if (mc.player == null) return;
+        if (mc.player == null) {
+            // Player disconnected while eating — force release key
+            if (isEating) {
+                mc.options.keyUse.setDown(false);
+                isEating = false;
+                previousSlot = -1;
+                eatTimer = 0;
+            }
+            return;
+        }
 
         // Handle eating in progress
         if (isEating) {
