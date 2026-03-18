@@ -7,6 +7,7 @@ import com.basefinder.modules.ElytraBotModule;
 import com.basefinder.modules.PortalHunterModule;
 import com.basefinder.hud.BaseFinderHud;
 import com.basefinder.command.BaseFinderCommand;
+import com.basefinder.command.PortalHunterCommand;
 import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.plugin.Plugin;
 
@@ -83,6 +84,15 @@ public class BaseFinderPlugin extends Plugin {
             this.getLogger().info("Commande BaseFinder enregistrée");
         } catch (Exception e) {
             this.getLogger().error("Échec enregistrement commande : {}", e.getMessage());
+            e.printStackTrace();
+        }
+
+        try {
+            PortalHunterCommand phCommand = new PortalHunterCommand();
+            RusherHackAPI.getCommandManager().registerFeature(phCommand);
+            this.getLogger().info("Commande PortalHunter enregistrée");
+        } catch (Exception e) {
+            this.getLogger().error("Échec enregistrement commande PortalHunter : {}", e.getMessage());
             e.printStackTrace();
         }
 
