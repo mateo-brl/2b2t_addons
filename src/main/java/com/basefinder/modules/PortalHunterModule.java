@@ -1,5 +1,6 @@
 package com.basefinder.modules;
 
+import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.scanner.ChunkScanner;
 import com.basefinder.survival.SurvivalManager;
@@ -52,6 +53,7 @@ public class PortalHunterModule extends ToggleableModule {
 
     // === COMPONENTS ===
     private final BaritoneController baritone = new BaritoneController();
+    private final ElytraBot elytraBot = new ElytraBot();
     private final ChunkScanner chunkScanner = new ChunkScanner();
     private final BaseLogger baseLogger = new BaseLogger();
     private final SurvivalManager survivalManager = new SurvivalManager();
@@ -81,6 +83,8 @@ public class PortalHunterModule extends ToggleableModule {
 
     // Navigation
     private final BooleanSetting useElytra = new BooleanSetting("Elytra Nether", "Utiliser Baritone elytra dans le Nether", true);
+    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Altitude croisière", 200.0, 50.0, 350.0);
+    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Intervalle fusées", 40, 10, 100).incremental(5);
     private final NullSetting navGroup = new NullSetting("Navigation");
 
     // Survival
@@ -159,7 +163,7 @@ public class PortalHunterModule extends ToggleableModule {
         zoneGroup.addSubSettings(zoneMinX, zoneMaxX, zoneMinZ, zoneMaxZ, zoneSpacing);
         sweepGroup.addSubSettings(sweepRadius, sweepPoints);
         detectionGroup.addSubSettings(minScore, detectConstruction, detectStorage, detectStash, detectFarm);
-        navGroup.addSubSettings(useElytra);
+        navGroup.addSubSettings(useElytra, cruiseAltitude, fireworkInterval);
         survivalGroup.addSubSettings(autoTotem, autoEat, playerDetect);
 
         this.registerSettings(
@@ -225,6 +229,16 @@ public class PortalHunterModule extends ToggleableModule {
         baseLogger.setLogToChat(logToChat.getValue());
         baseLogger.setLogToFile(true);
 
+        // Configure ElytraBot for overworld sweep
+        elytraBot.setCruiseAltitude(cruiseAltitude.getValue());
+        elytraBot.setFireworkInterval(fireworkInterval.getValue());
+        elytraBot.setUseFlightNoise(true);
+        elytraBot.setUseObstacleAvoidance(true);
+        elytraBot.setEnableCircling(false);
+        elytraBot.setBaritoneController(baritone);
+        elytraBot.setUseBaritoneLanding(baritone.isAvailable());
+        elytraBot.setMinElytraDurability(10);
+
         // Configure survival
         survivalManager.setEnableAutoTotem(autoTotem.getValue());
         survivalManager.setEnableAutoEat(autoEat.getValue());
@@ -275,6 +289,7 @@ public class PortalHunterModule extends ToggleableModule {
 
     @Override
     public void onDisable() {
+        elytraBot.stop();
         baritone.cancelElytra();
         baritone.cancelAll();
         survivalManager.stop();
@@ -598,13 +613,24 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
+        // Tick ElytraBot if flying
+        if (elytraBot.isFlying()) {
+            elytraBot.tick();
+        }
+
         BlockPos waypoint = sweepWaypoints.get(currentSweepWaypoint);
         double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
                 waypoint.getX(), waypoint.getZ());
 
-        // Waypoint reached
-        boolean baritoneFinished = !baritone.isPathing() && !baritone.isElytraFlying() && stuckTimer == 0 && dist < 50;
-        if (dist < 20 || baritoneFinished) {
+        // ElytraBot close to waypoint: stop flight, advance
+        if (elytraBot.isFlying() && dist < 100) {
+            elytraBot.stop();
+            debug("ElytraBot landing near sweep wp (dist=" + (int)dist + ")");
+        }
+
+        // Waypoint reached (on ground, close enough)
+        boolean navIdle = !baritone.isPathing() && !elytraBot.isFlying();
+        if (dist < 30 || (navIdle && stuckTimer == 0 && dist < 100)) {
             currentSweepWaypoint++;
             resetStuck();
 
@@ -620,10 +646,11 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
-        // Stuck detection
-        if (checkStuck()) {
+        // Stuck detection (only when not flying)
+        if (!elytraBot.isFlying() && checkStuck()) {
             printChat(Lang.t("Stuck during sweep, skipping waypoint.",
                     "Bloqué pendant le sweep, passage au waypoint suivant."));
+            elytraBot.stop();
             baritone.cancelAll();
             currentSweepWaypoint++;
             resetStuck();
@@ -633,9 +660,9 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
-        // Re-issue walking if stopped (no elytra in overworld)
-        if (!baritone.isPathing() && tickCounter % 60 == 0) {
-            baritone.goToXZ(waypoint.getX(), waypoint.getZ());
+        // Re-issue if nothing is happening
+        if (!baritone.isPathing() && !elytraBot.isFlying() && tickCounter % 60 == 0) {
+            navigateToSweepWaypoint(waypoint);
         }
     }
 
@@ -645,6 +672,7 @@ public class PortalHunterModule extends ToggleableModule {
 
     private void beginReturnToPortal() {
         chunkScanner.reset();
+        elytraBot.stop();
         baritone.cancelAll();
         state = HunterState.RETURNING_TO_PORTAL;
         resetStuck();
@@ -761,6 +789,7 @@ public class PortalHunterModule extends ToggleableModule {
         printChat(String.format(Lang.t("Dimension: %s -> %s", "Dimension : %s -> %s"), from, to));
 
         releaseMovementKeys();
+        elytraBot.stop();
         baritone.cancelElytra();
         baritone.cancelAll();
         debug("Dimension change: " + from + " -> " + to + " (state=" + state + ")");
@@ -858,13 +887,17 @@ public class PortalHunterModule extends ToggleableModule {
     }
 
     /**
-     * Navigate to a sweep waypoint. Always walk in the overworld
-     * (Baritone elytra uses nether-pathfinder which only works in the Nether).
+     * Navigate to a sweep waypoint using ElytraBot (works in all dimensions).
      */
     private void navigateToSweepWaypoint(BlockPos wp) {
         double dist = horizontalDist(mc.player.getX(), mc.player.getZ(), wp.getX(), wp.getZ());
-        baritone.goToXZ(wp.getX(), wp.getZ());
-        debug("Walk -> sweep wp (" + (int)dist + " blocs)");
+        if (hasElytra() && dist > 50) {
+            elytraBot.startFlight(wp);
+            debug("ElytraBot -> sweep wp (" + (int)dist + " blocs)");
+        } else {
+            baritone.goToXZ(wp.getX(), wp.getZ());
+            debug("Walk -> sweep wp (" + (int)dist + " blocs)");
+        }
     }
 
     // =========================================================================
