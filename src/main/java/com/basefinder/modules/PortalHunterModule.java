@@ -220,7 +220,8 @@ public class PortalHunterModule extends ToggleableModule {
         chunkScanner.setDetectFarm(detectFarm.getValue());
         chunkScanner.setDetectPortal(true);
         chunkScanner.setDetectMapArt(true);
-        chunkScanner.setDetectTrails(true);
+        chunkScanner.setDetectTrails(false); // trails not useful for portal hunting
+        chunkScanner.setDetectCaveMining(false); // too many false positives on 2b2t
         chunkScanner.setUseEntityScanning(true);
         chunkScanner.setUseClusterScoring(true);
 
@@ -693,9 +694,15 @@ public class PortalHunterModule extends ToggleableModule {
         }
 
         if (currentPortalOverworld != null) {
-            baritone.goToXZ(currentPortalOverworld.getX(), currentPortalOverworld.getZ());
             double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
                     currentPortalOverworld.getX(), currentPortalOverworld.getZ());
+            // Use ElytraBot for long return, walk for short
+            if (hasElytra() && dist > 50) {
+                elytraBot.startFlight(currentPortalOverworld);
+                debug("ElytraBot -> retour portail (" + (int)dist + " blocs)");
+            } else {
+                baritone.goToXZ(currentPortalOverworld.getX(), currentPortalOverworld.getZ());
+            }
             printChat(String.format(Lang.t(
                     "Returning to portal at %d, %d (%.0f blocks)",
                     "Retour au portail à %d, %d (%.0f blocs)"),
@@ -711,10 +718,22 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
+        // Tick ElytraBot if flying
+        if (elytraBot.isFlying()) {
+            elytraBot.tick();
+        }
+
         double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
                 currentPortalOverworld.getX(), currentPortalOverworld.getZ());
 
+        // ElytraBot close — land
+        if (elytraBot.isFlying() && dist < 100) {
+            elytraBot.stop();
+            debug("ElytraBot landing retour portail (dist=" + (int)dist + ")");
+        }
+
         if (dist < 5) {
+            elytraBot.stop();
             baritone.cancelAll();
             // Find actual portal block
             BlockPos actualPortal = scanForNearestPortalBlock(32);
@@ -725,8 +744,8 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
-        // Stuck detection
-        if (checkStuck()) {
+        // Stuck detection (only when not flying)
+        if (!elytraBot.isFlying() && checkStuck()) {
             printChat(Lang.t("Stuck returning, looking for nearby portal.",
                     "Bloqué en retournant, recherche de portail proche."));
             baritone.cancelAll();
@@ -741,8 +760,8 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
-        // Re-issue nav
-        if (!baritone.isPathing() && tickCounter % 60 == 0) {
+        // Re-issue nav if stopped
+        if (!baritone.isPathing() && !elytraBot.isFlying() && tickCounter % 60 == 0) {
             baritone.goToXZ(currentPortalOverworld.getX(), currentPortalOverworld.getZ());
         }
     }
@@ -771,9 +790,17 @@ public class PortalHunterModule extends ToggleableModule {
             if (inPortal) {
                 releaseMovementKeys();
             } else {
-                if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
-                    BlockPos floorPos = currentPortalOverworld.below();
-                    baritone.goToNear(floorPos, 2);
+                double distXZ = horizontalDist(mc.player.getX(), mc.player.getZ(),
+                        currentPortalOverworld.getX() + 0.5, currentPortalOverworld.getZ() + 0.5);
+                int yDiff = Math.abs(mc.player.blockPosition().getY() - currentPortalOverworld.getY());
+
+                if (distXZ > 3 || yDiff > 2) {
+                    if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
+                        baritone.goToNear(currentPortalOverworld, 1);
+                    }
+                } else {
+                    if (baritone.isPathing()) baritone.cancelAll();
+                    walkTowards(currentPortalOverworld);
                 }
             }
         }
