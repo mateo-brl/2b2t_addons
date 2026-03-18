@@ -31,6 +31,10 @@ public class NavigationHelper {
     private int highwayDistance = 100000; // How far along highways to search
     private int highwayCheckInterval = 1000; // Check every N blocks
 
+    // Waypoint count limits (configurable for large-scale searches)
+    private int maxSpiralWaypoints = 500;
+    private int maxRandomWaypoints = 300;
+
     // Random search parameters
     private int searchMinDistance = 5000;
     private int searchMaxDistance = 100000;
@@ -97,7 +101,7 @@ public class NavigationHelper {
         double angle = 0;
         double radius = spiralStep;
 
-        for (int i = 0; i < 200; i++) { // 200 waypoints
+        for (int i = 0; i < maxSpiralWaypoints; i++) {
             int x = center.getX() + (int) (Math.cos(angle) * radius);
             int z = center.getZ() + (int) (Math.sin(angle) * radius);
             waypoints.add(new BlockPos(x, 200, z));
@@ -124,7 +128,7 @@ public class NavigationHelper {
     }
 
     private void generateRandomWaypoints(BlockPos center) {
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < maxRandomWaypoints; i++) {
             double angle = random.nextDouble() * Math.PI * 2;
             double dist = searchMinDistance + random.nextDouble() * (searchMaxDistance - searchMinDistance);
             int x = center.getX() + (int) (Math.cos(angle) * dist);
@@ -457,6 +461,8 @@ public class NavigationHelper {
         this.zoneMaxZ = maxZ;
     }
     public void setZoneSpacing(int spacing) { this.zoneSpacing = spacing; }
+    public void setMaxSpiralWaypoints(int max) { this.maxSpiralWaypoints = max; }
+    public void setMaxRandomWaypoints(int max) { this.maxRandomWaypoints = max; }
 
     /**
      * Get progress percentage based on current waypoint index / total.

@@ -10,6 +10,9 @@ import org.rusherhack.client.api.utils.ChatUtils;
 import net.minecraft.world.level.ChunkPos;
 
 import java.io.*;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
@@ -136,7 +139,7 @@ public class StateManager {
                         base.getPosition().getX(), base.getPosition().getY(), base.getPosition().getZ(),
                         base.getType().name(), base.getScore(),
                         base.getPlayerBlockCount(), base.getStorageCount(), base.getShulkerCount(),
-                        base.getNotes() != null ? base.getNotes() : ""));
+                        base.getNotes() != null ? URLEncoder.encode(base.getNotes(), StandardCharsets.UTF_8) : ""));
             }
             props.setProperty("bases", basesStr.toString());
 
@@ -194,7 +197,7 @@ public class StateManager {
                             int shulkers = Integer.parseInt(parts[7]);
                             BaseRecord record = new BaseRecord(pos, type, score, blocks, storage, shulkers);
                             if (parts.length > 8 && !parts[8].isEmpty()) {
-                                record.setNotes(parts[8]);
+                                record.setNotes(URLDecoder.decode(parts[8], StandardCharsets.UTF_8));
                             }
                             data.bases.add(record);
                         }
