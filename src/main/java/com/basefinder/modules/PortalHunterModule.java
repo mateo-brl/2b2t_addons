@@ -633,13 +633,9 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
-        // Re-issue navigation if stopped
-        if (!baritone.isPathing() && !baritone.isElytraFlying() && tickCounter % 60 == 0) {
-            if (dist <= 150) {
-                baritone.goToXZ(waypoint.getX(), waypoint.getZ());
-            } else {
-                navigateToSweepWaypoint(waypoint);
-            }
+        // Re-issue walking if stopped (no elytra in overworld)
+        if (!baritone.isPathing() && tickCounter % 60 == 0) {
+            baritone.goToXZ(waypoint.getX(), waypoint.getZ());
         }
     }
 
@@ -862,17 +858,13 @@ public class PortalHunterModule extends ToggleableModule {
     }
 
     /**
-     * Navigate to a sweep waypoint using elytra if available, otherwise walk.
+     * Navigate to a sweep waypoint. Always walk in the overworld
+     * (Baritone elytra uses nether-pathfinder which only works in the Nether).
      */
     private void navigateToSweepWaypoint(BlockPos wp) {
         double dist = horizontalDist(mc.player.getX(), mc.player.getZ(), wp.getX(), wp.getZ());
-        if (useElytra.getValue() && hasElytra() && dist > 50 && baritone.isElytraAvailable()) {
-            startElytraFlight(wp.getX(), wp.getZ());
-            debug("Elytra -> sweep wp (" + (int)dist + " blocs)");
-        } else {
-            baritone.goToXZ(wp.getX(), wp.getZ());
-            debug("Walk -> sweep wp (" + (int)dist + " blocs)");
-        }
+        baritone.goToXZ(wp.getX(), wp.getZ());
+        debug("Walk -> sweep wp (" + (int)dist + " blocs)");
     }
 
     // =========================================================================
