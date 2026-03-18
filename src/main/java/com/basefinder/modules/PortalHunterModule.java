@@ -536,10 +536,11 @@ public class PortalHunterModule extends ToggleableModule {
                     debug("DANS portail block, attente TP...");
                 }
             } else {
-                // Not in portal yet — use Baritone to navigate precisely (handles Y level)
+                // Not in portal yet — walk to portal XZ (goToXZ ignores Y, avoids
+                // trying to pathfind INTO the portal block which is non-solid at Y=78)
                 if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
-                    baritone.goToNear(currentPortalNether, 0);
-                    debug("Baritone -> portail 3D " + currentPortalNether.toShortString());
+                    baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
+                    debug("Baritone -> portail XZ " + currentPortalNether.getX() + "," + currentPortalNether.getZ());
                 }
             }
         }
@@ -736,7 +737,7 @@ public class PortalHunterModule extends ToggleableModule {
                 releaseMovementKeys();
             } else {
                 if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
-                    baritone.goToNear(currentPortalOverworld, 0);
+                    baritone.goToXZ(currentPortalOverworld.getX(), currentPortalOverworld.getZ());
                 }
             }
         }
@@ -1183,8 +1184,8 @@ public class PortalHunterModule extends ToggleableModule {
     private boolean startElytraFlight(int x, int z) {
         if (mc.player == null) return false;
 
-        // Already flying — just pathTo
-        if (mc.player.isFallFlying()) {
+        // Already flying AND in the air — just pathTo
+        if (mc.player.isFallFlying() && !mc.player.onGround()) {
             return baritone.elytraTo(x, z);
         }
 
@@ -1207,8 +1208,8 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
-        // If already flying (e.g. fell off edge), skip straight to pathTo
-        if (mc.player.isFallFlying()) {
+        // If already flying AND not on ground, skip straight to pathTo
+        if (mc.player.isFallFlying() && !mc.player.onGround()) {
             baritone.elytraTo(pendingElytraX, pendingElytraZ);
             takeoffInProgress = false;
             releaseMovementKeys();
