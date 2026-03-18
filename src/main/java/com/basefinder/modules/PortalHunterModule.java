@@ -13,7 +13,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -142,10 +141,9 @@ public class PortalHunterModule extends ToggleableModule {
     private Vec3 lastPos = null;
     private static final int STUCK_THRESHOLD = 200; // 10 seconds
 
-    // Auto-takeoff for elytra
-    private boolean takeoffInProgress = false;
-    private int takeoffTick = 0;
-    private int pendingElytraX, pendingElytraZ;
+    // Nether elytra: ElytraBot takeoff → Baritone elytra handoff
+    private boolean netherTakeoffInProgress = false;
+    private int netherTargetX, netherTargetZ;
 
     // Persistence
     private final List<VisitedPortal> visitedPortals = new ArrayList<>();
@@ -289,6 +287,7 @@ public class PortalHunterModule extends ToggleableModule {
 
     @Override
     public void onDisable() {
+        netherTakeoffInProgress = false;
         elytraBot.stop();
         baritone.cancelElytra();
         baritone.cancelAll();
@@ -315,9 +314,9 @@ public class PortalHunterModule extends ToggleableModule {
         tickCounter++;
         if (messageThrottle > 0) messageThrottle--;
 
-        // Handle elytra auto-takeoff (must run every tick)
-        if (takeoffInProgress) {
-            handleTakeoff();
+        // Handle Nether elytra takeoff (ElytraBot → Baritone handoff)
+        if (netherTakeoffInProgress) {
+            handleNetherTakeoff();
             return; // Don't process state machine during takeoff
         }
 
@@ -464,10 +463,8 @@ public class PortalHunterModule extends ToggleableModule {
 
         // Elytra for any meaningful distance in the Nether (> 50)
         if (useElytra.getValue() && hasElytra() && dist > 50 && baritone.isElytraAvailable()) {
-            if (startElytraFlight(wp.getX(), wp.getZ())) {
-                debug("Elytra -> zone wp " + currentZoneWaypoint + " (" + (int)dist + " blocs)");
-                return;
-            }
+            startNetherElytraFlight(wp.getX(), wp.getZ());
+            return;
         }
         // Walking only for short distances (post-elytra landing or no elytra)
         baritone.goToXZ(wp.getX(), wp.getZ());
@@ -515,7 +512,7 @@ public class PortalHunterModule extends ToggleableModule {
         // Re-issue navigation if Baritone stopped and elytra not flying
         if (!baritone.isPathing() && !baritone.isElytraFlying() && tickCounter % 60 == 0) {
             if (dist > 150 && useElytra.getValue() && hasElytra() && baritone.isElytraAvailable()) {
-                startElytraFlight(currentPortalNether.getX(), currentPortalNether.getZ());
+                startNetherElytraFlight(currentPortalNether.getX(), currentPortalNether.getZ());
                 debug("Elytra -> portail (" + (int)dist + " blocs)");
             } else {
                 baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
@@ -789,6 +786,7 @@ public class PortalHunterModule extends ToggleableModule {
         printChat(String.format(Lang.t("Dimension: %s -> %s", "Dimension : %s -> %s"), from, to));
 
         releaseMovementKeys();
+        netherTakeoffInProgress = false;
         elytraBot.stop();
         baritone.cancelElytra();
         baritone.cancelAll();
@@ -1090,7 +1088,7 @@ public class PortalHunterModule extends ToggleableModule {
 
         // Elytra for any meaningful distance (> 50), walk for short
         if (useElytra.getValue() && hasElytra() && dist > 50 && baritone.isElytraAvailable()) {
-            startElytraFlight(currentPortalNether.getX(), currentPortalNether.getZ());
+            startNetherElytraFlight(currentPortalNether.getX(), currentPortalNether.getZ());
             debug("Elytra -> portail (" + (int)dist + " blocs)");
         } else {
             baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
@@ -1200,87 +1198,50 @@ public class PortalHunterModule extends ToggleableModule {
     }
 
     // =========================================================================
-    // ELYTRA AUTO-TAKEOFF
+    // NETHER ELYTRA: ElytraBot takeoff → Baritone elytra handoff
     // =========================================================================
 
     /**
-     * Start elytra flight to coordinates. Handles auto-takeoff if on ground.
+     * Start Nether elytra flight: ElytraBot handles takeoff, then Baritone elytra takes over.
      */
-    private boolean startElytraFlight(int x, int z) {
-        if (mc.player == null) return false;
-
-        // Already flying AND in the air — just pathTo
-        if (mc.player.isFallFlying() && !mc.player.onGround()) {
-            return baritone.elytraTo(x, z);
+    private void startNetherElytraFlight(int x, int z) {
+        // Already airborne — go straight to Baritone elytra
+        if (mc.player != null && mc.player.isFallFlying() && !mc.player.onGround()
+                && mc.player.getDeltaMovement().horizontalDistance() > 0.3) {
+            baritone.elytraTo(x, z);
+            debug("Déjà en vol, Baritone elytra direct");
+            return;
         }
 
-        // On ground — need takeoff sequence first
-        takeoffInProgress = true;
-        takeoffTick = 0;
-        pendingElytraX = x;
-        pendingElytraZ = z;
-        debug("Auto-takeoff démarré -> " + x + ", " + z);
-        return true;
+        // Use ElytraBot for reliable takeoff
+        netherTakeoffInProgress = true;
+        netherTargetX = x;
+        netherTargetZ = z;
+        elytraBot.startFlight(new BlockPos(x, 64, z));
+        debug("ElytraBot takeoff -> " + x + ", " + z);
     }
 
     /**
-     * Tick-based takeoff sequence: jump → wait for falling → deploy elytra → call elytraTo.
-     * Handles the case where Baritone elytra doesn't auto-takeoff from ground.
+     * Tick ElytraBot during takeoff, hand off to Baritone elytra once airborne.
      */
-    private void handleTakeoff() {
+    private void handleNetherTakeoff() {
         if (mc.player == null) {
-            takeoffInProgress = false;
+            netherTakeoffInProgress = false;
+            elytraBot.stop();
             return;
         }
 
-        // If already flying AND not on ground, skip straight to pathTo
-        if (mc.player.isFallFlying() && !mc.player.onGround()) {
-            baritone.elytraTo(pendingElytraX, pendingElytraZ);
-            takeoffInProgress = false;
-            releaseMovementKeys();
-            debug("Déjà en vol, pathTo direct");
-            return;
+        // Tick ElytraBot (handles jump, deploy, firework)
+        elytraBot.tick();
+
+        // Once airborne with speed → hand off to Baritone elytra
+        if (mc.player.isFallFlying() && !mc.player.onGround()
+                && mc.player.getDeltaMovement().horizontalDistance() > 0.5) {
+            elytraBot.stop();
+            baritone.elytraTo(netherTargetX, netherTargetZ);
+            netherTakeoffInProgress = false;
+            debug("Handoff Baritone elytra OK -> " + netherTargetX + ", " + netherTargetZ);
         }
-
-        takeoffTick++;
-
-        // Phase 1: Jump (ticks 1-7, hold jump longer for reliability)
-        if (takeoffTick <= 7) {
-            mc.options.keyJump.setDown(true);
-            return;
-        }
-
-        // Phase 2: Release jump, wait for air
-        if (takeoffTick == 8) {
-            mc.options.keyJump.setDown(false);
-            return;
-        }
-
-        // Phase 3: Try to deploy elytra every tick while in air (ticks 9-30)
-        if (takeoffTick <= 30) {
-            if (!mc.player.onGround()) {
-                // In air — try deploying elytra
-                if (mc.getConnection() != null) {
-                    mc.getConnection().send(new ServerboundPlayerCommandPacket(
-                            mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
-                    ));
-                }
-
-                // Check if it worked
-                if (mc.player.isFallFlying()) {
-                    baritone.elytraTo(pendingElytraX, pendingElytraZ);
-                    takeoffInProgress = false;
-                    releaseMovementKeys();
-                    debug("Takeoff OK (tick " + takeoffTick + ")");
-                    return;
-                }
-            }
-            return;
-        }
-
-        // Phase 4: Timeout — retry from scratch
-        debug("Takeoff timeout, retry...");
-        takeoffTick = 0;
     }
 
     // =========================================================================
