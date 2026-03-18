@@ -79,7 +79,7 @@ public class PortalHunterModule extends ToggleableModule {
     private final NullSetting detectionGroup = new NullSetting("Détection");
 
     // Navigation
-    private final BooleanSetting useBaritoneElytra = new BooleanSetting("Baritone Elytra", "Utiliser l'elytra Baritone dans le Nether", true);
+    private final BooleanSetting useElytra = new BooleanSetting("Elytra Nether", "Utiliser Baritone elytra dans le Nether", true);
     private final NullSetting navGroup = new NullSetting("Navigation");
 
     // Survival
@@ -90,6 +90,7 @@ public class PortalHunterModule extends ToggleableModule {
 
     // Interface
     private final BooleanSetting logToChat = new BooleanSetting("Alertes chat", "Afficher les événements dans le chat", true);
+    private final BooleanSetting debugMode = new BooleanSetting("Debug", "Logs détaillés dans le chat", false);
     private final BooleanSetting langFr = new BooleanSetting("Français", "Interface en français (off = English)", true);
 
     // === STATE MACHINE ===
@@ -152,12 +153,12 @@ public class PortalHunterModule extends ToggleableModule {
         zoneGroup.addSubSettings(zoneMinX, zoneMaxX, zoneMinZ, zoneMaxZ, zoneSpacing);
         sweepGroup.addSubSettings(sweepRadius, sweepPoints);
         detectionGroup.addSubSettings(minScore, detectConstruction, detectStorage, detectStash, detectFarm);
-        navGroup.addSubSettings(useBaritoneElytra);
+        navGroup.addSubSettings(useElytra);
         survivalGroup.addSubSettings(autoTotem, autoEat, playerDetect);
 
         this.registerSettings(
                 zoneGroup, sweepGroup, detectionGroup, navGroup, survivalGroup,
-                logToChat, langFr
+                logToChat, debugMode, langFr
         );
     }
 
@@ -243,18 +244,32 @@ public class PortalHunterModule extends ToggleableModule {
 
         state = HunterState.ZONE_TRAVERSAL;
 
+        String elytraStatus = baritone.isElytraAvailable()
+                ? Lang.t("Elytra: YES", "Elytra: OUI")
+                : Lang.t("Elytra: NO (walking only)", "Elytra: NON (marche seule)");
+
         printChat(String.format(Lang.t(
-                "Started! Zone: [%d,%d] to [%d,%d] | %d waypoints | Sweep radius: %d",
-                "Démarré ! Zone : [%d,%d] à [%d,%d] | %d waypoints | Rayon sweep : %d"),
+                "Started! Zone: [%d,%d] to [%d,%d] | %d waypoints | Sweep: %d | %s",
+                "Démarré ! Zone : [%d,%d] à [%d,%d] | %d waypoints | Sweep : %d | %s"),
                 zoneMinX.getValue(), zoneMinZ.getValue(),
                 zoneMaxX.getValue(), zoneMaxZ.getValue(),
-                zoneWaypoints.size(), sweepRadius.getValue()));
+                zoneWaypoints.size(), sweepRadius.getValue(), elytraStatus));
+
+        // Warn if player is far from zone
+        double distToZone = distanceToZone(mc.player.getX(), mc.player.getZ());
+        if (distToZone > 1000) {
+            printChat(String.format(Lang.t(
+                    "WARNING: You are %.0f blocks from the zone! Consider adjusting zone bounds.",
+                    "ATTENTION : Vous êtes à %.0f blocs de la zone ! Ajustez les limites."),
+                    distToZone));
+        }
 
         navigateToCurrentZoneWaypoint();
     }
 
     @Override
     public void onDisable() {
+        baritone.cancelElytra();
         baritone.cancelAll();
         survivalManager.stop();
         releaseMovementKeys();
@@ -401,8 +416,9 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
-        // Re-issue Baritone command if not pathing (may have finished a segment)
-        if (!baritone.isPathing() && tickCounter % 100 == 0) {
+        // Re-issue navigation if not actively moving
+        if (!baritone.isPathing() && !baritone.isElytraFlying() && tickCounter % 100 == 0) {
+            debug("Re-issue nav -> zone wp " + currentZoneWaypoint);
             navigateToCurrentZoneWaypoint();
         }
     }
@@ -413,11 +429,16 @@ public class PortalHunterModule extends ToggleableModule {
         BlockPos wp = zoneWaypoints.get(currentZoneWaypoint);
         double dist = horizontalDist(mc.player.getX(), mc.player.getZ(), wp.getX(), wp.getZ());
 
-        if (useBaritoneElytra.getValue() && hasElytra() && dist > 100) {
-            baritone.executeCommand("elytra goto " + wp.getX() + " " + wp.getZ());
-        } else {
-            baritone.goToXZ(wp.getX(), wp.getZ());
+        // Try Baritone elytra for long distances in the Nether
+        if (useElytra.getValue() && hasElytra() && dist > 50 && baritone.isElytraAvailable()) {
+            if (baritone.elytraTo(wp.getX(), wp.getZ())) {
+                debug("Elytra -> zone wp " + currentZoneWaypoint + " (" + (int)dist + " blocs)");
+                return;
+            }
         }
+        // Fallback: Baritone walking
+        baritone.goToXZ(wp.getX(), wp.getZ());
+        debug("Walk -> zone wp " + currentZoneWaypoint + " (" + (int)dist + " blocs)");
     }
 
     // =========================================================================
@@ -435,8 +456,18 @@ public class PortalHunterModule extends ToggleableModule {
 
         // Close enough — enter portal
         if (dist < 5) {
+            baritone.cancelElytra();
             baritone.cancelAll();
+            debug("Arrivé au portail (dist=" + String.format("%.1f", dist) + "), entrée...");
             beginEnteringPortal();
+            return;
+        }
+
+        // Elytra flying: check if close enough to land and walk
+        if (baritone.isElytraFlying() && dist < 30) {
+            baritone.cancelElytra();
+            baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
+            debug("Elytra -> walk transition (dist=" + (int)dist + ")");
             return;
         }
 
@@ -448,12 +479,14 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
-        // Re-issue navigation if Baritone stopped
-        if (!baritone.isPathing() && tickCounter % 60 == 0) {
-            if (dist > 50 && useBaritoneElytra.getValue() && hasElytra()) {
-                baritone.executeCommand("elytra goto " + currentPortalNether.getX() + " " + currentPortalNether.getZ());
+        // Re-issue navigation if Baritone stopped and elytra not flying
+        if (!baritone.isPathing() && !baritone.isElytraFlying() && tickCounter % 60 == 0) {
+            if (dist > 50 && useElytra.getValue() && hasElytra() && baritone.isElytraAvailable()) {
+                baritone.elytraTo(currentPortalNether.getX(), currentPortalNether.getZ());
+                debug("Re-issue elytra -> portail (" + (int)dist + " blocs)");
             } else {
                 baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
+                debug("Re-issue walk -> portail (" + (int)dist + " blocs)");
             }
         }
     }
@@ -472,9 +505,17 @@ public class PortalHunterModule extends ToggleableModule {
     private void handleEnteringPortal() {
         portalWaitTimer++;
 
-        // Walk into portal block
+        // Use Baritone to walk into the portal block
         if (currentPortalNether != null) {
-            walkTowards(currentPortalNether);
+            // Start Baritone toward portal if not active
+            if (!baritone.isPathing() && portalWaitTimer % 40 == 1) {
+                baritone.goToNear(currentPortalNether, 1);
+                debug("Baritone -> portail block " + currentPortalNether.toShortString());
+            }
+            // Also try manual walk as backup
+            if (portalWaitTimer > 100) {
+                walkTowards(currentPortalNether);
+            }
         }
 
         // Dimension change handled by onDimensionChanged()
@@ -483,6 +524,7 @@ public class PortalHunterModule extends ToggleableModule {
             printChat(Lang.t("Portal entry timeout, skipping.",
                     "Timeout entrée portail, passage au suivant."));
             releaseMovementKeys();
+            debug("Portal timeout at " + (currentPortalNether != null ? currentPortalNether.toShortString() : "null"));
             skipCurrentPortal();
         }
     }
@@ -684,7 +726,9 @@ public class PortalHunterModule extends ToggleableModule {
         printChat(String.format(Lang.t("Dimension: %s -> %s", "Dimension : %s -> %s"), from, to));
 
         releaseMovementKeys();
+        baritone.cancelElytra();
         baritone.cancelAll();
+        debug("Dimension change: " + from + " -> " + to + " (state=" + state + ")");
 
         if (state == HunterState.ENTERING_PORTAL && isOverworld(to)) {
             // Successfully entered Overworld
@@ -967,10 +1011,12 @@ public class PortalHunterModule extends ToggleableModule {
         state = HunterState.TRAVELING_TO_PORTAL;
 
         // Navigate: elytra for long distances, walk for short
-        if (useBaritoneElytra.getValue() && hasElytra() && dist > 50) {
-            baritone.executeCommand("elytra goto " + currentPortalNether.getX() + " " + currentPortalNether.getZ());
+        if (useElytra.getValue() && hasElytra() && dist > 50 && baritone.isElytraAvailable()) {
+            baritone.elytraTo(currentPortalNether.getX(), currentPortalNether.getZ());
+            debug("Elytra -> portail (" + (int)dist + " blocs)");
         } else {
             baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
+            debug("Walk -> portail (" + (int)dist + " blocs)");
         }
     }
 
@@ -1178,6 +1224,16 @@ public class PortalHunterModule extends ToggleableModule {
         return Math.sqrt((x2 - x1) * (x2 - x1) + (z2 - z1) * (z2 - z1));
     }
 
+    private double distanceToZone(double px, double pz) {
+        int minX = Math.min(zoneMinX.getValue(), zoneMaxX.getValue());
+        int maxX = Math.max(zoneMinX.getValue(), zoneMaxX.getValue());
+        int minZ = Math.min(zoneMinZ.getValue(), zoneMaxZ.getValue());
+        int maxZ = Math.max(zoneMinZ.getValue(), zoneMaxZ.getValue());
+        double dx = Math.max(0, Math.max(minX - px, px - maxX));
+        double dz = Math.max(0, Math.max(minZ - pz, pz - maxZ));
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
     private double horizontalDistSq(double x1, double z1, double x2, double z2) {
         return (x2 - x1) * (x2 - x1) + (z2 - z1) * (z2 - z1);
     }
@@ -1192,8 +1248,16 @@ public class PortalHunterModule extends ToggleableModule {
     private void printChat(String msg) {
         if (logToChat.getValue()) {
             ChatUtils.print("[PortalHunter] " + msg);
+        } else {
+            LOGGER.info("[PortalHunter] {}", msg);
         }
-        LOGGER.info("[PortalHunter] {}", msg);
+    }
+
+    private void debug(String msg) {
+        LOGGER.info("[PortalHunter-DBG] {}", msg);
+        if (debugMode.getValue()) {
+            ChatUtils.print("\u00A77[PH-Debug] " + msg);
+        }
     }
 
     private void logProgress() {

@@ -20,6 +20,7 @@ public class BaritoneController {
     private final Minecraft mc = Minecraft.getInstance();
 
     private boolean available = false;
+    private boolean elytraAvailable = false;
     private boolean landingActive = false;
     private BlockPos landingTarget = null;
     private int acceptDamage = 3; // half-hearts
@@ -46,6 +47,16 @@ public class BaritoneController {
             if (baritoneInstance != null) {
                 available = true;
                 LOGGER.info("[BaritoneController] Baritone API found and connected");
+
+                // Check for Elytra process (nether-pathfinder)
+                try {
+                    baritoneInstance.getClass().getMethod("getElytraProcess");
+                    elytraAvailable = true;
+                    LOGGER.info("[BaritoneController] Baritone Elytra process available");
+                } catch (NoSuchMethodException ignored) {
+                    elytraAvailable = false;
+                    LOGGER.info("[BaritoneController] Baritone Elytra process not available");
+                }
             }
         } catch (ClassNotFoundException e) {
             LOGGER.warn("[BaritoneController] Baritone API not found - landing delegation disabled");
@@ -297,6 +308,81 @@ public class BaritoneController {
             LOGGER.info("[BaritoneController] GoalNear set: {} range {}", pos.toShortString(), range);
         } catch (Exception e) {
             LOGGER.error("[BaritoneController] GoalNear failed: {}", e.getMessage());
+        }
+    }
+
+    // =========================================================================
+    // ELYTRA PROCESS (nether-pathfinder)
+    // =========================================================================
+
+    public boolean isElytraAvailable() {
+        return elytraAvailable && available && baritoneInstance != null;
+    }
+
+    /**
+     * Fly to X/Z coordinates using Baritone's elytra process.
+     * Returns false if elytra not available or call failed.
+     */
+    public boolean elytraTo(int x, int z) {
+        if (!elytraAvailable || baritoneInstance == null) return false;
+        try {
+            java.lang.reflect.Method getElytraProcess = baritoneInstance.getClass().getMethod("getElytraProcess");
+            Object elytraProcess = getElytraProcess.invoke(baritoneInstance);
+            if (elytraProcess == null) return false;
+
+            Class<?> goalXZClass = Class.forName("baritone.api.pathing.goals.GoalXZ");
+            Object goal = goalXZClass.getConstructor(int.class, int.class).newInstance(x, z);
+
+            // Try pathTo(GoalXZ) first, then pathTo(Goal) as fallback
+            java.lang.reflect.Method pathTo = null;
+            try {
+                pathTo = elytraProcess.getClass().getMethod("pathTo", goalXZClass);
+            } catch (NoSuchMethodException e) {
+                Class<?> goalInterface = Class.forName("baritone.api.pathing.goals.Goal");
+                pathTo = elytraProcess.getClass().getMethod("pathTo", goalInterface);
+            }
+            pathTo.invoke(elytraProcess, goal);
+
+            LOGGER.info("[BaritoneController] Elytra pathTo: {}, {}", x, z);
+            return true;
+        } catch (Exception e) {
+            LOGGER.error("[BaritoneController] elytraTo failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Check if Baritone's elytra process is currently active.
+     */
+    public boolean isElytraFlying() {
+        if (!elytraAvailable || baritoneInstance == null) return false;
+        try {
+            java.lang.reflect.Method getElytraProcess = baritoneInstance.getClass().getMethod("getElytraProcess");
+            Object elytraProcess = getElytraProcess.invoke(baritoneInstance);
+            if (elytraProcess == null) return false;
+
+            java.lang.reflect.Method isActive = elytraProcess.getClass().getMethod("isActive");
+            return (boolean) isActive.invoke(elytraProcess);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Cancel Baritone's elytra process.
+     */
+    public void cancelElytra() {
+        if (!elytraAvailable || baritoneInstance == null) return;
+        try {
+            java.lang.reflect.Method getElytraProcess = baritoneInstance.getClass().getMethod("getElytraProcess");
+            Object elytraProcess = getElytraProcess.invoke(baritoneInstance);
+            if (elytraProcess == null) return;
+
+            java.lang.reflect.Method cancel = elytraProcess.getClass().getMethod("cancel");
+            cancel.invoke(elytraProcess);
+            LOGGER.info("[BaritoneController] Elytra cancelled");
+        } catch (Exception e) {
+            LOGGER.warn("[BaritoneController] cancelElytra failed: {}", e.getMessage());
         }
     }
 
