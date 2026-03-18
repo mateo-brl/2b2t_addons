@@ -532,16 +532,15 @@ public class PortalHunterModule extends ToggleableModule {
             if (inPortal) {
                 // Confirmed inside portal — stop and wait for teleportation
                 releaseMovementKeys();
+                baritone.cancelAll();
                 if (portalWaitTimer % 60 == 0) {
                     debug("DANS portail block, attente TP...");
                 }
             } else {
-                // Not in portal yet — keep walking toward it
-                walkTowards(currentPortalNether);
-                if (portalWaitTimer % 40 == 0) {
-                    double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
-                            currentPortalNether.getX() + 0.5, currentPortalNether.getZ() + 0.5);
-                    debug("Marche vers portail (dist=" + String.format("%.1f", dist) + ", pas encore dans le block)");
+                // Not in portal yet — use Baritone to navigate precisely (handles Y level)
+                if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
+                    baritone.goToNear(currentPortalNether, 0);
+                    debug("Baritone -> portail 3D " + currentPortalNether.toShortString());
                 }
             }
         }
@@ -552,6 +551,7 @@ public class PortalHunterModule extends ToggleableModule {
             printChat(Lang.t("Portal entry timeout, skipping.",
                     "Timeout entrée portail, passage au suivant."));
             releaseMovementKeys();
+            baritone.cancelAll();
             debug("Portal timeout at " + (currentPortalNether != null ? currentPortalNether.toShortString() : "null"));
             skipCurrentPortal();
         }
@@ -734,8 +734,11 @@ public class PortalHunterModule extends ToggleableModule {
 
             if (inPortal) {
                 releaseMovementKeys();
+                baritone.cancelAll();
             } else {
-                walkTowards(currentPortalOverworld);
+                if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
+                    baritone.goToNear(currentPortalOverworld, 0);
+                }
             }
         }
 
@@ -1183,6 +1186,7 @@ public class PortalHunterModule extends ToggleableModule {
 
     /**
      * Tick-based takeoff sequence: jump → wait for falling → deploy elytra → call elytraTo.
+     * Handles the case where Baritone elytra doesn't auto-takeoff from ground.
      */
     private void handleTakeoff() {
         if (mc.player == null) {
@@ -1190,48 +1194,54 @@ public class PortalHunterModule extends ToggleableModule {
             return;
         }
 
+        // If already flying (e.g. fell off edge), skip straight to pathTo
+        if (mc.player.isFallFlying()) {
+            baritone.elytraTo(pendingElytraX, pendingElytraZ);
+            takeoffInProgress = false;
+            releaseMovementKeys();
+            debug("Déjà en vol, pathTo direct");
+            return;
+        }
+
         takeoffTick++;
 
-        if (takeoffTick <= 5) {
-            // Phase 1: Hold jump for 5 ticks to get good height
+        // Phase 1: Jump (ticks 1-7, hold jump longer for reliability)
+        if (takeoffTick <= 7) {
             mc.options.keyJump.setDown(true);
-        } else if (takeoffTick == 6) {
-            // Release jump
-            mc.options.keyJump.setDown(false);
-        } else if (takeoffTick >= 7 && takeoffTick <= 15) {
-            // Phase 2: Wait until player is in air AND falling (velocity.y < 0)
-            // This ensures we're past the apex and have enough air time
-            if (!mc.player.onGround() && mc.player.getDeltaMovement().y < -0.1) {
-                // Falling — deploy elytra now
-                if (mc.getConnection() != null) {
-                    mc.getConnection().send(new ServerboundPlayerCommandPacket(
-                            mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
-                    ));
-                    debug("Elytra déployée (tick " + takeoffTick + ", vy=" +
-                            String.format("%.2f", mc.player.getDeltaMovement().y) + ")");
-                }
-                takeoffTick = 16; // Skip to verification phase
-            }
-        } else if (takeoffTick >= 16 && takeoffTick <= 25) {
-            // Phase 3: Verify elytra deployed and call pathTo
-            if (mc.player.isFallFlying()) {
-                baritone.elytraTo(pendingElytraX, pendingElytraZ);
-                takeoffInProgress = false;
-                debug("Takeoff OK, vol vers " + pendingElytraX + ", " + pendingElytraZ);
-            }
-            // Keep trying to deploy if not flying yet
-            if (takeoffTick % 3 == 0 && !mc.player.isFallFlying() && !mc.player.onGround()) {
-                if (mc.getConnection() != null) {
-                    mc.getConnection().send(new ServerboundPlayerCommandPacket(
-                            mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
-                    ));
-                }
-            }
-        } else if (takeoffTick > 25) {
-            // Timeout — retry
-            debug("Takeoff timeout, retry...");
-            takeoffTick = 0;
+            return;
         }
+
+        // Phase 2: Release jump, wait for air
+        if (takeoffTick == 8) {
+            mc.options.keyJump.setDown(false);
+            return;
+        }
+
+        // Phase 3: Try to deploy elytra every tick while in air (ticks 9-30)
+        if (takeoffTick <= 30) {
+            if (!mc.player.onGround()) {
+                // In air — try deploying elytra
+                if (mc.getConnection() != null) {
+                    mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                            mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
+                    ));
+                }
+
+                // Check if it worked
+                if (mc.player.isFallFlying()) {
+                    baritone.elytraTo(pendingElytraX, pendingElytraZ);
+                    takeoffInProgress = false;
+                    releaseMovementKeys();
+                    debug("Takeoff OK (tick " + takeoffTick + ")");
+                    return;
+                }
+            }
+            return;
+        }
+
+        // Phase 4: Timeout — retry from scratch
+        debug("Takeoff timeout, retry...");
+        takeoffTick = 0;
     }
 
     // =========================================================================
