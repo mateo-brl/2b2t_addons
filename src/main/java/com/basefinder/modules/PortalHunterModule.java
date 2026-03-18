@@ -548,11 +548,12 @@ public class PortalHunterModule extends ToggleableModule {
                     debug("DANS portail block, attente TP...");
                 }
             } else {
-                // Not in portal yet — walk to portal XZ (goToXZ ignores Y, avoids
-                // trying to pathfind INTO the portal block which is non-solid at Y=78)
+                // Not in portal yet — navigate to portal in 3D (range 2 for tolerance)
+                // Target Y-1 (obsidian frame below portal block) so Baritone walks ON it
                 if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
-                    baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
-                    debug("Baritone -> portail XZ " + currentPortalNether.getX() + "," + currentPortalNether.getZ());
+                    BlockPos floorPos = currentPortalNether.below(); // obsidian frame
+                    baritone.goToNear(floorPos, 2);
+                    debug("Baritone -> portail 3D " + floorPos.toShortString() + " (range 2)");
                 }
             }
         }
@@ -758,7 +759,8 @@ public class PortalHunterModule extends ToggleableModule {
                 releaseMovementKeys();
             } else {
                 if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
-                    baritone.goToXZ(currentPortalOverworld.getX(), currentPortalOverworld.getZ());
+                    BlockPos floorPos = currentPortalOverworld.below();
+                    baritone.goToNear(floorPos, 2);
                 }
             }
         }
