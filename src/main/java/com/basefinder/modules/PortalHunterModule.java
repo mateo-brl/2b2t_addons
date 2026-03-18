@@ -418,12 +418,12 @@ public class PortalHunterModule extends ToggleableModule {
 
         // Re-issue navigation if not actively moving
         if (!baritone.isPathing() && !baritone.isElytraFlying() && tickCounter % 60 == 0) {
-            // After elytra landing, always walk to close remaining distance
-            if (dist <= 200) {
+            // After elytra landing (< 150 blocks), always walk to avoid re-launch loop
+            if (dist <= 150) {
                 baritone.goToXZ(waypoint.getX(), waypoint.getZ());
-                debug("Walk (post-elytra) -> zone wp " + currentZoneWaypoint + " (" + (int)dist + " blocs)");
+                debug("Walk (post-landing) -> zone wp " + currentZoneWaypoint + " (" + (int)dist + " blocs)");
             } else {
-                debug("Re-issue nav -> zone wp " + currentZoneWaypoint + " (" + (int)dist + " blocs)");
+                // Far away: re-launch elytra
                 navigateToCurrentZoneWaypoint();
             }
         }
@@ -435,14 +435,14 @@ public class PortalHunterModule extends ToggleableModule {
         BlockPos wp = zoneWaypoints.get(currentZoneWaypoint);
         double dist = horizontalDist(mc.player.getX(), mc.player.getZ(), wp.getX(), wp.getZ());
 
-        // Elytra for long distances (> 200), walking for shorter
-        if (useElytra.getValue() && hasElytra() && dist > 200 && baritone.isElytraAvailable()) {
+        // Elytra for any meaningful distance in the Nether (> 50)
+        if (useElytra.getValue() && hasElytra() && dist > 50 && baritone.isElytraAvailable()) {
             if (baritone.elytraTo(wp.getX(), wp.getZ())) {
                 debug("Elytra -> zone wp " + currentZoneWaypoint + " (" + (int)dist + " blocs)");
                 return;
             }
         }
-        // Walking for short/medium distances
+        // Walking only for short distances (post-elytra landing or no elytra)
         baritone.goToXZ(wp.getX(), wp.getZ());
         debug("Walk -> zone wp " + currentZoneWaypoint + " (" + (int)dist + " blocs)");
     }
@@ -487,12 +487,12 @@ public class PortalHunterModule extends ToggleableModule {
 
         // Re-issue navigation if Baritone stopped and elytra not flying
         if (!baritone.isPathing() && !baritone.isElytraFlying() && tickCounter % 60 == 0) {
-            if (dist > 200 && useElytra.getValue() && hasElytra() && baritone.isElytraAvailable()) {
+            if (dist > 150 && useElytra.getValue() && hasElytra() && baritone.isElytraAvailable()) {
                 baritone.elytraTo(currentPortalNether.getX(), currentPortalNether.getZ());
-                debug("Re-issue elytra -> portail (" + (int)dist + " blocs)");
+                debug("Elytra -> portail (" + (int)dist + " blocs)");
             } else {
                 baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
-                debug("Walk -> portail (" + (int)dist + " blocs)");
+                debug("Walk (post-landing) -> portail (" + (int)dist + " blocs)");
             }
         }
     }
@@ -1016,8 +1016,8 @@ public class PortalHunterModule extends ToggleableModule {
 
         state = HunterState.TRAVELING_TO_PORTAL;
 
-        // Elytra for long distances (> 200), walk for short
-        if (useElytra.getValue() && hasElytra() && dist > 200 && baritone.isElytraAvailable()) {
+        // Elytra for any meaningful distance (> 50), walk for short
+        if (useElytra.getValue() && hasElytra() && dist > 50 && baritone.isElytraAvailable()) {
             baritone.elytraTo(currentPortalNether.getX(), currentPortalNether.getZ());
             debug("Elytra -> portail (" + (int)dist + " blocs)");
         } else {
