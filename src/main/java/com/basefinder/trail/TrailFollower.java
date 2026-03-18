@@ -1,7 +1,6 @@
 package com.basefinder.trail;
 
 import com.basefinder.scanner.ChunkAgeAnalyzer;
-import com.basefinder.scanner.NewChunkDetector;
 import com.basefinder.util.BlockAnalyzer;
 import com.basefinder.util.ChunkAnalysis;
 import com.basefinder.util.Vec2d;
@@ -17,14 +16,10 @@ import java.util.*;
 /**
  * Detects and follows trails that may lead to bases.
  *
- * Uses THREE detection methods:
+ * Uses TWO detection methods:
  *
  * 1. BLOCK TRAIL: Physical trail blocks (ice roads, rails, torches, cobblestone paths)
- * 2. CHUNK TRAIL: Lines of OLD chunks surrounded by NEW chunks.
- *    When a player travels through ungenerated terrain, they create a narrow
- *    corridor of loaded (old) chunks. This trail is invisible in-game but
- *    detectable via NewChunkDetector.
- * 3. VERSION BORDER: Boundaries between chunks generated in different MC versions.
+ * 2. VERSION BORDER: Boundaries between chunks generated in different MC versions.
  *    On 2b2t, old chunks (pre-1.18) next to new chunks indicate someone explored
  *    in that direction during an older version.
  */
@@ -33,7 +28,6 @@ public class TrailFollower {
     private final Minecraft mc = Minecraft.getInstance();
 
     // Detection sources
-    private NewChunkDetector newChunkDetector;
     private ChunkAgeAnalyzer chunkAgeAnalyzer;
 
     // State
@@ -48,17 +42,12 @@ public class TrailFollower {
 
     // Chunk trail tracking
     private final List<ChunkPos> chunkTrailPath = new ArrayList<>();
-    private int chunkTrailScanRadius = 5; // chunks around player to scan for trails
+    private int chunkTrailScanRadius = 5; // chunks around player to scan for version borders
 
     public enum TrailType {
         NONE,
         BLOCK_TRAIL,     // Physical blocks (ice, rails, torches)
-        CHUNK_TRAIL,     // Old chunks surrounded by new chunks
         VERSION_BORDER   // Border between pre-1.18 and post-1.18 chunks
-    }
-
-    public void setNewChunkDetector(NewChunkDetector detector) {
-        this.newChunkDetector = detector;
     }
 
     public void setChunkAgeAnalyzer(ChunkAgeAnalyzer analyzer) {
@@ -72,20 +61,7 @@ public class TrailFollower {
     public boolean detectTrail(List<ChunkAnalysis> trailChunks) {
         if (mc.player == null || mc.level == null) return false;
 
-        // Method 1: Try chunk trail detection (old chunks surrounded by new chunks)
-        if (newChunkDetector != null && newChunkDetector.isEnabled()) {
-            Vec2d chunkDir = detectChunkTrail();
-            if (chunkDir != null) {
-                trailDirection = chunkDir;
-                isFollowingTrail = true;
-                ticksSinceLastTrailBlock = 0;
-                currentTrailType = TrailType.CHUNK_TRAIL;
-                trailHistory.clear();
-                return true;
-            }
-        }
-
-        // Method 2: Try version border detection
+        // Method 1: Try version border detection
         if (chunkAgeAnalyzer != null) {
             Vec2d versionDir = detectVersionBorder();
             if (versionDir != null) {
@@ -98,69 +74,8 @@ public class TrailFollower {
             }
         }
 
-        // Method 3: Fall back to physical block trail detection
+        // Method 2: Fall back to physical block trail detection
         return detectBlockTrail(trailChunks);
-    }
-
-    /**
-     * CHUNK TRAIL DETECTION
-     *
-     * Scans nearby chunks for a pattern of old chunks forming a line
-     * through new chunks. This indicates someone traveled through here before.
-     *
-     * Algorithm:
-     * 1. Collect all old and new chunks in scan radius
-     * 2. For each old chunk, check if it has new chunk neighbors
-     * 3. If we find a line of old chunks (3+) with new chunks on both sides -> trail
-     * 4. Calculate trail direction from the line of old chunks
-     */
-    private Vec2d detectChunkTrail() {
-        if (mc.player == null || newChunkDetector == null) return null;
-
-        ChunkPos playerChunk = new ChunkPos(mc.player.blockPosition());
-        List<ChunkPos> oldChunksNearby = new ArrayList<>();
-        Set<ChunkPos> newChunksNearby = new HashSet<>();
-
-        // Gather old and new chunks in scan radius
-        for (int dx = -chunkTrailScanRadius; dx <= chunkTrailScanRadius; dx++) {
-            for (int dz = -chunkTrailScanRadius; dz <= chunkTrailScanRadius; dz++) {
-                ChunkPos check = new ChunkPos(playerChunk.x + dx, playerChunk.z + dz);
-                if (newChunkDetector.isOldChunk(check)) {
-                    oldChunksNearby.add(check);
-                } else if (newChunkDetector.isNewChunk(check)) {
-                    newChunksNearby.add(check);
-                }
-            }
-        }
-
-        // Need at least 3 old chunks and some new chunks to detect a trail
-        if (oldChunksNearby.size() < 3 || newChunksNearby.size() < 3) return null;
-
-        // Find old chunks that are bordered by new chunks (trail candidates)
-        List<ChunkPos> trailCandidates = new ArrayList<>();
-        for (ChunkPos oldChunk : oldChunksNearby) {
-            int newNeighbors = 0;
-            ChunkPos[] neighbors = {
-                    new ChunkPos(oldChunk.x + 1, oldChunk.z),
-                    new ChunkPos(oldChunk.x - 1, oldChunk.z),
-                    new ChunkPos(oldChunk.x, oldChunk.z + 1),
-                    new ChunkPos(oldChunk.x, oldChunk.z - 1)
-            };
-            for (ChunkPos neighbor : neighbors) {
-                if (newChunksNearby.contains(neighbor)) {
-                    newNeighbors++;
-                }
-            }
-            // A trail chunk has new chunks on at least 2 sides
-            if (newNeighbors >= 2) {
-                trailCandidates.add(oldChunk);
-            }
-        }
-
-        if (trailCandidates.size() < 5) return null;
-
-        // Calculate direction from the trail candidates using PCA-like approach
-        return calculateChunkTrailDirection(trailCandidates);
     }
 
     /**
@@ -246,78 +161,6 @@ public class TrailFollower {
         if (len < 1) return null;
 
         return snapToAxis(new Vec2d(dx / len, dz / len));
-    }
-
-    /**
-     * Calculate trail direction from a set of chunk positions using variance analysis.
-     */
-    private Vec2d calculateChunkTrailDirection(List<ChunkPos> chunks) {
-        if (chunks.size() < 3) return null;
-
-        double avgX = 0, avgZ = 0;
-        for (ChunkPos pos : chunks) {
-            avgX += pos.x;
-            avgZ += pos.z;
-        }
-        avgX /= chunks.size();
-        avgZ /= chunks.size();
-
-        // Covariance matrix for PCA
-        double covXX = 0, covXZ = 0, covZZ = 0;
-        for (ChunkPos pos : chunks) {
-            double dx = pos.x - avgX;
-            double dz = pos.z - avgZ;
-            covXX += dx * dx;
-            covXZ += dx * dz;
-            covZZ += dz * dz;
-        }
-
-        // Principal component (eigenvector of larger eigenvalue)
-        // For 2x2 matrix, use analytical solution
-        double trace = covXX + covZZ;
-        double det = covXX * covZZ - covXZ * covXZ;
-        double eigenvalue1 = trace / 2 + Math.sqrt(trace * trace / 4 - det);
-
-        double vx, vz;
-        if (Math.abs(covXZ) > 0.001) {
-            vx = eigenvalue1 - covZZ;
-            vz = covXZ;
-        } else if (covXX > covZZ) {
-            vx = 1;
-            vz = 0;
-        } else {
-            vx = 0;
-            vz = 1;
-        }
-
-        double len = Math.sqrt(vx * vx + vz * vz);
-        if (len < 0.001) return null;
-
-        Vec2d dir = new Vec2d(vx / len, vz / len);
-
-        // Orient direction away from player (towards unexplored end of trail)
-        if (mc.player != null) {
-            ChunkPos playerChunk = new ChunkPos(mc.player.blockPosition());
-            // Find the farthest trail chunk from player
-            double maxDist = 0;
-            ChunkPos farthest = chunks.get(0);
-            for (ChunkPos pos : chunks) {
-                double d = Math.pow(pos.x - playerChunk.x, 2) + Math.pow(pos.z - playerChunk.z, 2);
-                if (d > maxDist) {
-                    maxDist = d;
-                    farthest = pos;
-                }
-            }
-
-            double toDirX = farthest.x - playerChunk.x;
-            double toDirZ = farthest.z - playerChunk.z;
-            double dot = dir.x() * toDirX + dir.z() * toDirZ;
-            if (dot < 0) {
-                dir = new Vec2d(-dir.x(), -dir.z());
-            }
-        }
-
-        return snapToAxis(dir);
     }
 
     /**
@@ -422,26 +265,6 @@ public class TrailFollower {
 
         BlockPos playerPos = mc.player.blockPosition();
         ticksSinceLastTrailBlock++;
-
-        // For chunk trails, verify we're still on the trail
-        if (currentTrailType == TrailType.CHUNK_TRAIL && newChunkDetector != null) {
-            ChunkPos currentChunk = new ChunkPos(playerPos);
-            if (newChunkDetector.isOldChunk(currentChunk)) {
-                ticksSinceLastTrailBlock = 0;
-                chunkTrailPath.add(currentChunk);
-            }
-            // If we enter a new chunk and the trail continues ahead, keep going
-            if (newChunkDetector.isNewChunk(currentChunk)) {
-                // Check if there are old chunks ahead in our direction
-                ChunkPos ahead = new ChunkPos(
-                        currentChunk.x + (int) Math.signum(trailDirection.x()),
-                        currentChunk.z + (int) Math.signum(trailDirection.z())
-                );
-                if (newChunkDetector.isOldChunk(ahead)) {
-                    ticksSinceLastTrailBlock = 0;
-                }
-            }
-        }
 
         // For block trails, look ahead for more trail blocks
         if (currentTrailType == TrailType.BLOCK_TRAIL) {
