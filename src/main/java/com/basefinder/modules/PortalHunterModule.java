@@ -523,9 +523,20 @@ public class PortalHunterModule extends ToggleableModule {
     private void handleEnteringPortal() {
         portalWaitTimer++;
 
-        // Walk directly INTO the portal block (not near it)
-        if (currentPortalNether != null) {
-            walkTowards(currentPortalNether);
+        if (currentPortalNether != null && mc.player != null) {
+            double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
+                    currentPortalNether.getX() + 0.5, currentPortalNether.getZ() + 0.5);
+
+            if (dist > 1.5) {
+                // Walk toward portal block
+                walkTowards(currentPortalNether);
+            } else {
+                // Inside portal — STOP and wait for teleportation
+                releaseMovementKeys();
+                if (portalWaitTimer % 60 == 0) {
+                    debug("Dans le portail, attente téléportation... (dist=" + String.format("%.1f", dist) + ")");
+                }
+            }
         }
 
         // Dimension change handled by onDimensionChanged()
@@ -709,8 +720,16 @@ public class PortalHunterModule extends ToggleableModule {
     private void handleEnteringNether() {
         portalWaitTimer++;
 
-        if (currentPortalOverworld != null) {
-            walkTowards(currentPortalOverworld);
+        if (currentPortalOverworld != null && mc.player != null) {
+            double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
+                    currentPortalOverworld.getX() + 0.5, currentPortalOverworld.getZ() + 0.5);
+
+            if (dist > 1.5) {
+                walkTowards(currentPortalOverworld);
+            } else {
+                // Inside portal — stop and wait
+                releaseMovementKeys();
+            }
         }
 
         // Dimension change handled by onDimensionChanged()
