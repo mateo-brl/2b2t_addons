@@ -15,6 +15,8 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.entity.SignText;
 
+import com.basefinder.scanner.CaveAirAnalyzer;
+
 import java.util.*;
 
 /**
@@ -566,8 +568,15 @@ public class BlockAnalyzer {
             analysis.setBaseType(BaseType.NONE);
         }
 
+        // === Cave Air Analysis ===
+        double caveAirScore = CaveAirAnalyzer.analyzeChunkCaveAir(chunk, level);
+        if (caveAirScore >= CaveAirAnalyzer.getMinReportScore() && analysis.getBaseType() == BaseType.NONE) {
+            analysis.setBaseType(BaseType.CAVE_MINING);
+        }
+
         // Score calculation
-        double score = shulkerCount * 25.0
+        double score = caveAirScore
+                + shulkerCount * 25.0
                 + strongBlockCount * 5.0
                 + mediumBlockCount * 2.0
                 + significantObsidian * 2.0

@@ -316,6 +316,8 @@ public class ChunkScanner {
     private boolean detectFarm = true;
     private boolean detectPortal = true;
 
+    private boolean detectCaveMining = true;
+
     private boolean shouldDetect(BaseType type) {
         return switch (type) {
             case MAP_ART -> detectMapArt;
@@ -325,6 +327,7 @@ public class ChunkScanner {
             case STASH -> detectStash;
             case FARM -> detectFarm;
             case PORTAL -> detectPortal;
+            case CAVE_MINING -> detectCaveMining;
             case NONE -> false;
         };
     }
@@ -409,6 +412,7 @@ public class ChunkScanner {
     public void setDetectStash(boolean v) { this.detectStash = v; }
     public void setDetectFarm(boolean v) { this.detectFarm = v; }
     public void setDetectPortal(boolean v) { this.detectPortal = v; }
+    public void setDetectCaveMining(boolean v) { this.detectCaveMining = v; }
     public void setFreshnessEstimator(FreshnessEstimator estimator) { this.freshnessEstimator = estimator; }
     public void setLagDetector(LagDetector detector) { this.lagDetector = detector; }
 }
