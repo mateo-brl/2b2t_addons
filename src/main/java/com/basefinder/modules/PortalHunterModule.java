@@ -1,6 +1,5 @@
 package com.basefinder.modules;
 
-import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.scanner.ChunkScanner;
 import com.basefinder.survival.SurvivalManager;
@@ -12,7 +11,6 @@ import com.basefinder.util.Lang;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Items;
@@ -28,93 +26,115 @@ import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.BooleanSetting;
+import org.rusherhack.core.setting.NullSetting;
 import org.rusherhack.core.setting.NumberSetting;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
 /**
- * PortalHunter — Automated nether portal base scanning.
+ * PortalHunter v2 — Zone-based nether portal base hunting.
  *
- * State machine:
- * IDLE → SCANNING_NETHER → TRAVELING_TO_PORTAL → ENTERING_PORTAL
- *      → OVERWORLD_SWEEP → RETURNING_TO_PORTAL → EXITING_PORTAL → (next portal)
+ * Flow:
+ * 1. Traverse a user-defined Nether zone (zigzag pattern)
+ * 2. Scan loaded chunks for nether portals as we move
+ * 3. For each portal: enter → overworld circular sweep → return → mark visited
+ * 4. Resume zone traversal until fully covered
  *
- * Scans loaded nether chunks for portal blocks, flies to each one,
- * enters the overworld, sweeps a circle around the exit point scanning
- * for bases, then returns through the portal and repeats.
+ * Navigation: Baritone only (elytra + walking). No custom ElytraBot.
  */
 public class PortalHunterModule extends ToggleableModule {
 
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("PortalHunter");
 
     // === COMPONENTS ===
-    private final ElytraBot elytraBot = new ElytraBot();
-    private final BaritoneController baritoneController = new BaritoneController();
+    private final BaritoneController baritone = new BaritoneController();
     private final ChunkScanner chunkScanner = new ChunkScanner();
     private final BaseLogger baseLogger = new BaseLogger();
     private final SurvivalManager survivalManager = new SurvivalManager();
 
     // === SETTINGS ===
-    private final NumberSetting<Integer> scanRadius = new NumberSetting<>("Rayon scan Nether", 500, 100, 5000).incremental(100);
-    private final NumberSetting<Integer> sweepRadius = new NumberSetting<>("Rayon sweep Overworld", 500, 100, 2000).incremental(100);
-    private final NumberSetting<Integer> sweepDuration = new NumberSetting<>("Durée sweep (s)", 300, 60, 1800).incremental(30);
-    private final NumberSetting<Double> minScore = new NumberSetting<>("Score min détection", 30.0, 5.0, 200.0);
-    private final BooleanSetting revisitPortals = new BooleanSetting("Revisiter portails", "Revisiter les portails déjà explorés", false);
-    private final BooleanSetting useElytra = new BooleanSetting("Utiliser Elytra", "Vol elytra dans le Nether", true);
+
+    // Zone Nether
+    private final NumberSetting<Integer> zoneMinX = new NumberSetting<>("Zone Min X", 0, -3750000, 3750000).incremental(100);
+    private final NumberSetting<Integer> zoneMaxX = new NumberSetting<>("Zone Max X", 10000, -3750000, 3750000).incremental(100);
+    private final NumberSetting<Integer> zoneMinZ = new NumberSetting<>("Zone Min Z", 0, -3750000, 3750000).incremental(100);
+    private final NumberSetting<Integer> zoneMaxZ = new NumberSetting<>("Zone Max Z", 10000, -3750000, 3750000).incremental(100);
+    private final NumberSetting<Integer> zoneSpacing = new NumberSetting<>("Espacement", 200, 50, 1000).incremental(50);
+    private final NullSetting zoneGroup = new NullSetting("Zone Nether");
+
+    // Sweep Overworld
+    private final NumberSetting<Integer> sweepRadius = new NumberSetting<>("Rayon sweep", 500, 100, 3000).incremental(100);
+    private final NumberSetting<Integer> sweepPoints = new NumberSetting<>("Points cercle", 8, 4, 24).incremental(1);
+    private final NullSetting sweepGroup = new NullSetting("Sweep Overworld");
+
+    // Detection
+    private final NumberSetting<Double> minScore = new NumberSetting<>("Score minimum", 30.0, 5.0, 200.0);
+    private final BooleanSetting detectConstruction = new BooleanSetting("Construction", "Détecter les constructions", true);
+    private final BooleanSetting detectStorage = new BooleanSetting("Stockage", "Détecter le stockage", true);
+    private final BooleanSetting detectStash = new BooleanSetting("Stash", "Détecter les stashs isolés", true);
+    private final BooleanSetting detectFarm = new BooleanSetting("Farm", "Détecter les farms", true);
+    private final NullSetting detectionGroup = new NullSetting("Détection");
+
+    // Navigation
+    private final BooleanSetting useBaritoneElytra = new BooleanSetting("Baritone Elytra", "Utiliser l'elytra Baritone dans le Nether", true);
+    private final NullSetting navGroup = new NullSetting("Navigation");
+
+    // Survival
+    private final BooleanSetting autoTotem = new BooleanSetting("Auto Totem", "Totem automatique en offhand", true);
+    private final BooleanSetting autoEat = new BooleanSetting("Auto Eat", "Manger automatiquement", true);
+    private final BooleanSetting playerDetect = new BooleanSetting("Détection joueurs", "Déconnecter si joueur détecté", true);
+    private final NullSetting survivalGroup = new NullSetting("Survie");
+
+    // Interface
     private final BooleanSetting logToChat = new BooleanSetting("Alertes chat", "Afficher les événements dans le chat", true);
-    private final NumberSetting<Double> cruiseAltitude = new NumberSetting<>("Altitude croisière", 200.0, 50.0, 350.0);
-    private final NumberSetting<Integer> fireworkInterval = new NumberSetting<>("Intervalle fusées (ticks)", 40, 10, 100);
     private final BooleanSetting langFr = new BooleanSetting("Français", "Interface en français (off = English)", true);
 
     // === STATE MACHINE ===
-    private enum HunterState {
+    public enum HunterState {
         IDLE,
-        SCANNING_NETHER,
+        ZONE_TRAVERSAL,
         TRAVELING_TO_PORTAL,
         ENTERING_PORTAL,
         OVERWORLD_SWEEP,
         RETURNING_TO_PORTAL,
-        EXITING_PORTAL
+        ENTERING_NETHER
     }
 
     private HunterState state = HunterState.IDLE;
     private int tickCounter = 0;
 
-    // Portal queue
+    // Zone traversal
+    private final List<BlockPos> zoneWaypoints = new ArrayList<>();
+    private int currentZoneWaypoint = 0;
+    private int savedZoneWaypoint = 0; // saved index when interrupted by portal processing
+
+    // Portal queue (discovered portals awaiting processing)
     private final LinkedList<BlockPos> portalQueue = new LinkedList<>();
-    private BlockPos currentPortalNether = null;     // Nether-side coords of current portal
-    private BlockPos currentPortalOverworld = null;   // Expected overworld-side coords
-    private BlockPos overworldArrivalPos = null;       // Actual overworld position after teleport
+    private final Set<Long> knownPortalKeys = new HashSet<>(); // avoid re-queueing same portal
+
+    // Current portal being processed
+    private BlockPos currentPortalNether = null;
+    private BlockPos currentPortalOverworld = null;
+    private BlockPos overworldArrivalPos = null;
 
     // Dimension tracking
     private String lastDimension = "";
 
-    // Portal entry
+    // Portal entry timer
     private int portalWaitTimer = 0;
-    private static final int PORTAL_TIMEOUT_TICKS = 300;
+    private static final int PORTAL_TIMEOUT = 300; // 15 seconds
 
     // Sweep state
     private final List<BlockPos> sweepWaypoints = new ArrayList<>();
     private int currentSweepWaypoint = 0;
-    private int sweepStartTick = 0;
-    private boolean sweepBaritoneActive = false;
-    private int sweepStuckTimer = 0;
-    private Vec3 lastSweepPos = null;
-    private static final int SWEEP_NUM_WAYPOINTS = 8;
-    private static final int SWEEP_STUCK_THRESHOLD = 200;
 
-    // Elytra landing for portal approach
-    private boolean landingPhase = false;
-    private int landingTimer = 0;
-    private static final int LANDING_TIMEOUT = 400;
-
-    // Walking towards portal
-    private int walkStuckTimer = 0;
-    private Vec3 lastWalkPos = null;
+    // Stuck detection
+    private int stuckTimer = 0;
+    private Vec3 lastPos = null;
+    private static final int STUCK_THRESHOLD = 200; // 10 seconds
 
     // Persistence
     private final List<VisitedPortal> visitedPortals = new ArrayList<>();
@@ -124,23 +144,26 @@ public class PortalHunterModule extends ToggleableModule {
     // Stats
     private int portalsVisited = 0;
     private int basesFound = 0;
-
-    // Message throttle
     private int messageThrottle = 0;
 
     public PortalHunterModule() {
         super("PortalHunter", "Scan automatique de bases via portails du Nether", ModuleCategory.EXTERNAL);
 
+        zoneGroup.addSubSettings(zoneMinX, zoneMaxX, zoneMinZ, zoneMaxZ, zoneSpacing);
+        sweepGroup.addSubSettings(sweepRadius, sweepPoints);
+        detectionGroup.addSubSettings(minScore, detectConstruction, detectStorage, detectStash, detectFarm);
+        navGroup.addSubSettings(useBaritoneElytra);
+        survivalGroup.addSubSettings(autoTotem, autoEat, playerDetect);
+
         this.registerSettings(
-                scanRadius, sweepRadius, sweepDuration, minScore,
-                revisitPortals, useElytra, logToChat,
-                cruiseAltitude, fireworkInterval, langFr
+                zoneGroup, sweepGroup, detectionGroup, navGroup, survivalGroup,
+                logToChat, langFr
         );
     }
 
-    // =================================================================
+    // =========================================================================
     // LIFECYCLE
-    // =================================================================
+    // =========================================================================
 
     @Override
     public void onEnable() {
@@ -153,20 +176,24 @@ public class PortalHunterModule extends ToggleableModule {
         }
 
         if (!isNether(getCurrentDimension())) {
-            printChat(Lang.t("ERROR: You must be in the Nether to start!", "ERREUR : Vous devez être dans le Nether pour commencer !"));
+            printChat(Lang.t("ERROR: You must be in the Nether!", "ERREUR : Vous devez être dans le Nether !"));
             this.toggle();
             return;
         }
 
-        if (isElytraBotInUse()) {
-            printChat(Lang.t(
-                    "ERROR: Another module using ElytraBot is already active!",
-                    "ERREUR : Un autre module utilisant ElytraBot est déjà actif !"));
+        if (isConflictingModuleActive()) {
+            printChat(Lang.t("ERROR: Another navigation module is active!", "ERREUR : Un autre module de navigation est actif !"));
             this.toggle();
             return;
         }
 
-        // Initialize persistence
+        if (!baritone.isAvailable()) {
+            printChat(Lang.t("ERROR: Baritone not available!", "ERREUR : Baritone non disponible !"));
+            this.toggle();
+            return;
+        }
+
+        // Init persistence
         try {
             Path pluginDir = mc.gameDirectory.toPath().resolve("rusherhack").resolve("basefinder");
             Files.createDirectories(pluginDir);
@@ -176,13 +203,12 @@ public class PortalHunterModule extends ToggleableModule {
             LOGGER.error("[PortalHunter] Failed to init persistence: {}", e.getMessage());
         }
 
-        // Configure components
-        configureElytraBot();
+        // Configure chunk scanner
         chunkScanner.setMinScore(minScore.getValue());
-        chunkScanner.setDetectConstruction(true);
-        chunkScanner.setDetectStorage(true);
-        chunkScanner.setDetectStash(true);
-        chunkScanner.setDetectFarm(true);
+        chunkScanner.setDetectConstruction(detectConstruction.getValue());
+        chunkScanner.setDetectStorage(detectStorage.getValue());
+        chunkScanner.setDetectStash(detectStash.getValue());
+        chunkScanner.setDetectFarm(detectFarm.getValue());
         chunkScanner.setDetectPortal(true);
         chunkScanner.setDetectMapArt(true);
         chunkScanner.setDetectTrails(true);
@@ -192,52 +218,59 @@ public class PortalHunterModule extends ToggleableModule {
         baseLogger.setLogToChat(logToChat.getValue());
         baseLogger.setLogToFile(true);
 
-        survivalManager.setEnableAutoTotem(true);
-        survivalManager.setEnableAutoEat(true);
-        survivalManager.setEnablePlayerDetection(true);
+        // Configure survival
+        survivalManager.setEnableAutoTotem(autoTotem.getValue());
+        survivalManager.setEnableAutoEat(autoEat.getValue());
+        survivalManager.setEnablePlayerDetection(playerDetect.getValue());
         survivalManager.onEnable();
+
+        // Generate zone waypoints
+        generateZoneWaypoints();
 
         // Reset state
         portalQueue.clear();
+        knownPortalKeys.clear();
         currentPortalNether = null;
         currentPortalOverworld = null;
         overworldArrivalPos = null;
-        sweepWaypoints.clear();
-        currentSweepWaypoint = 0;
-        sweepBaritoneActive = false;
-        landingPhase = false;
         portalsVisited = 0;
         basesFound = 0;
         tickCounter = 0;
         messageThrottle = 0;
+        stuckTimer = 0;
+        lastPos = null;
         lastDimension = getCurrentDimension();
 
-        state = HunterState.SCANNING_NETHER;
+        state = HunterState.ZONE_TRAVERSAL;
 
-        printChat(Lang.t(
-                "Started! Scanning nether for portals (radius: " + scanRadius.getValue() + ")",
-                "Démarré ! Scan du Nether pour portails (rayon : " + scanRadius.getValue() + ")"));
+        printChat(String.format(Lang.t(
+                "Started! Zone: [%d,%d] to [%d,%d] | %d waypoints | Sweep radius: %d",
+                "Démarré ! Zone : [%d,%d] à [%d,%d] | %d waypoints | Rayon sweep : %d"),
+                zoneMinX.getValue(), zoneMinZ.getValue(),
+                zoneMaxX.getValue(), zoneMaxZ.getValue(),
+                zoneWaypoints.size(), sweepRadius.getValue()));
+
+        navigateToCurrentZoneWaypoint();
     }
 
     @Override
     public void onDisable() {
-        elytraBot.stop();
-        baritoneController.cancelAll();
+        baritone.cancelAll();
         survivalManager.stop();
         releaseMovementKeys();
         state = HunterState.IDLE;
 
         if (mc.level != null) {
             printChat(String.format(Lang.t(
-                    "Stopped. Portals visited: %d | Bases found: %d",
-                    "Arrêté. Portails visités : %d | Bases trouvées : %d"),
-                    portalsVisited, basesFound));
+                    "Stopped. Portals: %d | Bases: %d | Progress: %d/%d waypoints",
+                    "Arrêté. Portails : %d | Bases : %d | Progression : %d/%d waypoints"),
+                    portalsVisited, basesFound, currentZoneWaypoint, zoneWaypoints.size()));
         }
     }
 
-    // =================================================================
+    // =========================================================================
     // MAIN TICK
-    // =================================================================
+    // =========================================================================
 
     @Subscribe
     private void onUpdate(EventUpdate event) {
@@ -246,11 +279,9 @@ public class PortalHunterModule extends ToggleableModule {
         tickCounter++;
         if (messageThrottle > 0) messageThrottle--;
 
-        // Survival systems (highest priority)
-        boolean disconnected = survivalManager.tick();
-        if (disconnected) {
-            elytraBot.stop();
-            baritoneController.cancelAll();
+        // Survival (highest priority)
+        if (survivalManager.tick()) {
+            baritone.cancelAll();
             state = HunterState.IDLE;
             return;
         }
@@ -262,20 +293,20 @@ public class PortalHunterModule extends ToggleableModule {
             lastDimension = currentDim;
         }
 
-        // Progress log every 15 seconds
-        if (tickCounter % 300 == 0 && state != HunterState.IDLE) {
+        // Progress log every 30 seconds
+        if (tickCounter % 600 == 0 && state != HunterState.IDLE) {
             logProgress();
         }
 
         try {
             switch (state) {
                 case IDLE -> {}
-                case SCANNING_NETHER -> handleScanningNether();
+                case ZONE_TRAVERSAL -> handleZoneTraversal();
                 case TRAVELING_TO_PORTAL -> handleTravelingToPortal();
                 case ENTERING_PORTAL -> handleEnteringPortal();
                 case OVERWORLD_SWEEP -> handleOverworldSweep();
                 case RETURNING_TO_PORTAL -> handleReturningToPortal();
-                case EXITING_PORTAL -> handleExitingPortal();
+                case ENTERING_NETHER -> handleEnteringNether();
             }
         } catch (Exception e) {
             LOGGER.error("[PortalHunter] Error in state {}: {}", state, e.getMessage());
@@ -283,167 +314,159 @@ public class PortalHunterModule extends ToggleableModule {
         }
     }
 
-    // =================================================================
-    // STATE: SCANNING_NETHER
-    // =================================================================
+    // =========================================================================
+    // STATE: ZONE_TRAVERSAL
+    // =========================================================================
 
-    private void handleScanningNether() {
-        // Scan periodically (every 2 seconds)
-        if (tickCounter % 40 != 0) return;
-
-        List<BlockPos> portals = scanForPortals(scanRadius.getValue());
-
-        if (portals.isEmpty()) {
-            if (messageThrottle == 0) {
-                printChat(Lang.t(
-                        "No portals found in loaded chunks. Move around or increase scan radius.",
-                        "Aucun portail trouvé dans les chunks chargés. Déplacez-vous ou augmentez le rayon."));
-                messageThrottle = 400;
-            }
+    private void handleZoneTraversal() {
+        if (zoneWaypoints.isEmpty() || currentZoneWaypoint >= zoneWaypoints.size()) {
+            printChat(Lang.t(
+                    "Zone fully covered! Portals visited: " + portalsVisited + " | Bases found: " + basesFound,
+                    "Zone entièrement couverte ! Portails visités : " + portalsVisited + " | Bases trouvées : " + basesFound));
+            state = HunterState.IDLE;
+            this.toggle();
             return;
         }
 
-        // Filter already-visited portals
-        int totalFound = portals.size();
-        if (!revisitPortals.getValue()) {
-            portals.removeIf(this::isPortalVisited);
-        }
+        // Scan for portals every 2 seconds
+        if (tickCounter % 40 == 0) {
+            List<BlockPos> newPortals = scanForNetherPortals();
+            int added = 0;
+            for (BlockPos portal : newPortals) {
+                long key = portalKey(portal);
+                if (!isPortalVisited(portal) && !knownPortalKeys.contains(key)) {
+                    portalQueue.add(portal);
+                    knownPortalKeys.add(key);
+                    added++;
+                }
+            }
 
-        if (portals.isEmpty()) {
-            if (messageThrottle == 0) {
+            if (added > 0) {
+                // Sort queue by distance to player
+                portalQueue.sort(Comparator.comparingDouble(p ->
+                        horizontalDistSq(mc.player.getX(), mc.player.getZ(), p.getX(), p.getZ())));
+
                 printChat(String.format(Lang.t(
-                        "Found %d portal(s) but all already visited. Enable 'Revisit' or move to new area.",
-                        "Trouvé %d portail(s) mais tous déjà visités. Activez 'Revisiter' ou bougez."),
-                        totalFound));
-                messageThrottle = 400;
+                        "Found %d new portal(s)! Going to nearest. (%d in queue)",
+                        "Trouvé %d nouveau(x) portail(s) ! Direction le plus proche. (%d en file)"),
+                        added, portalQueue.size()));
+
+                // Save zone progress and switch to portal processing
+                savedZoneWaypoint = currentZoneWaypoint;
+                baritone.cancelAll();
+                stuckTimer = 0;
+                lastPos = null;
+                startNextPortal();
+                return;
+            }
+        }
+
+        // Check if current zone waypoint reached
+        BlockPos waypoint = zoneWaypoints.get(currentZoneWaypoint);
+        double dist = horizontalDist(mc.player.getX(), mc.player.getZ(), waypoint.getX(), waypoint.getZ());
+
+        if (dist < 20) {
+            currentZoneWaypoint++;
+            stuckTimer = 0;
+            lastPos = null;
+
+            if (currentZoneWaypoint >= zoneWaypoints.size()) {
+                handleZoneTraversal(); // will trigger the "fully covered" message
+                return;
+            }
+
+            if (messageThrottle == 0 && currentZoneWaypoint % 5 == 0) {
+                printChat(String.format(Lang.t(
+                        "Zone progress: %d/%d waypoints (%.1f%%)",
+                        "Progression zone : %d/%d waypoints (%.1f%%)"),
+                        currentZoneWaypoint, zoneWaypoints.size(),
+                        (100.0 * currentZoneWaypoint) / zoneWaypoints.size()));
+                messageThrottle = 200;
+            }
+
+            navigateToCurrentZoneWaypoint();
+            return;
+        }
+
+        // Stuck detection
+        if (checkStuck()) {
+            printChat(Lang.t("Stuck during zone traversal, skipping waypoint.",
+                    "Bloqué pendant le parcours, passage au waypoint suivant."));
+            baritone.cancelAll();
+            currentZoneWaypoint++;
+            resetStuck();
+            if (currentZoneWaypoint < zoneWaypoints.size()) {
+                navigateToCurrentZoneWaypoint();
             }
             return;
         }
 
-        // Queue portals sorted by distance
-        portalQueue.clear();
-        portals.sort(Comparator.comparingDouble(p -> mc.player.blockPosition().distSqr(p)));
-        portalQueue.addAll(portals);
-
-        printChat(String.format(Lang.t(
-                "Found %d new portal(s)! Starting with nearest at %d, %d, %d",
-                "Trouvé %d nouveau(x) portail(s) ! Début avec le plus proche à %d, %d, %d"),
-                portalQueue.size(),
-                portalQueue.peek().getX(), portalQueue.peek().getY(), portalQueue.peek().getZ()));
-
-        advanceToNextPortal();
+        // Re-issue Baritone command if not pathing (may have finished a segment)
+        if (!baritone.isPathing() && tickCounter % 100 == 0) {
+            navigateToCurrentZoneWaypoint();
+        }
     }
 
-    // =================================================================
+    private void navigateToCurrentZoneWaypoint() {
+        if (currentZoneWaypoint >= zoneWaypoints.size()) return;
+
+        BlockPos wp = zoneWaypoints.get(currentZoneWaypoint);
+        double dist = horizontalDist(mc.player.getX(), mc.player.getZ(), wp.getX(), wp.getZ());
+
+        if (useBaritoneElytra.getValue() && hasElytra() && dist > 100) {
+            baritone.executeCommand("elytra goto " + wp.getX() + " " + wp.getZ());
+        } else {
+            baritone.goToXZ(wp.getX(), wp.getZ());
+        }
+    }
+
+    // =========================================================================
     // STATE: TRAVELING_TO_PORTAL
-    // =================================================================
+    // =========================================================================
 
     private void handleTravelingToPortal() {
         if (currentPortalNether == null) {
-            state = HunterState.SCANNING_NETHER;
+            startNextPortal();
             return;
         }
 
         double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
                 currentPortalNether.getX(), currentPortalNether.getZ());
 
-        // === LANDING PHASE: ElytraBot finished, Baritone walks to portal ===
-        if (landingPhase) {
-            landingTimer++;
-
-            if (baritoneController.isAvailable() && baritoneController.isLandingComplete()) {
-                landingPhase = false;
-                printChat(Lang.t("Reached portal area. Entering...", "Zone du portail atteinte. Entrée..."));
-                baritoneController.cancelAll();
-                beginEnteringPortal();
-                return;
-            }
-
-            // Also check raw distance
-            if (dist < 4) {
-                landingPhase = false;
-                baritoneController.cancelAll();
-                beginEnteringPortal();
-                return;
-            }
-
-            if (landingTimer > LANDING_TIMEOUT) {
-                printChat(Lang.t("Landing timeout, trying to enter anyway.", "Timeout atterrissage, tentative d'entrée."));
-                landingPhase = false;
-                baritoneController.cancelAll();
-                beginEnteringPortal();
-            }
+        // Close enough — enter portal
+        if (dist < 5) {
+            baritone.cancelAll();
+            beginEnteringPortal();
             return;
         }
 
-        // === FLIGHT PHASE: ElytraBot flies toward portal ===
-        if (useElytra.getValue() && elytraBot.isFlying()) {
-            elytraBot.tick();
-
-            // When close enough, initiate landing sequence
-            if (dist < 100) {
-                elytraBot.stop();
-                // Let player land, then Baritone walks
-                if (baritoneController.isAvailable()) {
-                    baritoneController.configureForFastLanding();
-                    baritoneGoalXZ(currentPortalNether.getX(), currentPortalNether.getZ());
-                    landingPhase = true;
-                    landingTimer = 0;
-                    printChat(Lang.t("Near portal, landing...", "Proche du portail, atterrissage..."));
-                } else {
-                    beginEnteringPortal();
-                }
-                return;
-            }
+        // Stuck detection
+        if (checkStuck()) {
+            printChat(Lang.t("Stuck going to portal, skipping.",
+                    "Bloqué en allant au portail, passage au suivant."));
+            skipCurrentPortal();
             return;
         }
 
-        // === GROUND WALK via Baritone ===
-        if (baritoneController.isAvailable()) {
-            // Start Baritone if not already pathing
-            if (!baritoneController.isPathing()) {
-                baritoneGoalXZ(currentPortalNether.getX(), currentPortalNether.getZ());
-            }
-
-            if (dist < 4) {
-                baritoneController.cancelAll();
-                beginEnteringPortal();
-                return;
-            }
-
-            // Stuck detection
-            if (lastWalkPos != null && mc.player.position().distanceTo(lastWalkPos) < 0.05) {
-                walkStuckTimer++;
-                if (walkStuckTimer > SWEEP_STUCK_THRESHOLD) {
-                    printChat(Lang.t("Stuck while walking to portal, skipping.", "Bloqué en marchant vers le portail, passage au suivant."));
-                    walkStuckTimer = 0;
-                    baritoneController.cancelAll();
-                    skipCurrentPortal();
-                    return;
-                }
+        // Re-issue navigation if Baritone stopped
+        if (!baritone.isPathing() && tickCounter % 60 == 0) {
+            if (dist > 50 && useBaritoneElytra.getValue() && hasElytra()) {
+                baritone.executeCommand("elytra goto " + currentPortalNether.getX() + " " + currentPortalNether.getZ());
             } else {
-                walkStuckTimer = 0;
-            }
-            lastWalkPos = mc.player.position();
-        } else {
-            // Fallback: manual walk
-            walkTowards(currentPortalNether);
-            if (dist < 4) {
-                releaseMovementKeys();
-                beginEnteringPortal();
+                baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
             }
         }
     }
 
-    // =================================================================
+    // =========================================================================
     // STATE: ENTERING_PORTAL
-    // =================================================================
+    // =========================================================================
 
     private void beginEnteringPortal() {
         state = HunterState.ENTERING_PORTAL;
         portalWaitTimer = 0;
         releaseMovementKeys();
-        baritoneController.cancelAll();
+        baritone.cancelAll();
     }
 
     private void handleEnteringPortal() {
@@ -456,34 +479,20 @@ public class PortalHunterModule extends ToggleableModule {
 
         // Dimension change handled by onDimensionChanged()
 
-        if (portalWaitTimer > PORTAL_TIMEOUT_TICKS) {
-            printChat(Lang.t(
-                    "Portal entry timeout. Skipping this portal.",
-                    "Timeout entrée portail. Passage au suivant."));
+        if (portalWaitTimer > PORTAL_TIMEOUT) {
+            printChat(Lang.t("Portal entry timeout, skipping.",
+                    "Timeout entrée portail, passage au suivant."));
             releaseMovementKeys();
             skipCurrentPortal();
         }
     }
 
-    // =================================================================
+    // =========================================================================
     // STATE: OVERWORLD_SWEEP
-    // =================================================================
+    // =========================================================================
 
     private void handleOverworldSweep() {
         if (!isOverworld(getCurrentDimension())) return;
-
-        int sweepDurationTicks = sweepDuration.getValue() * 20;
-        int elapsed = tickCounter - sweepStartTick;
-
-        // Timeout check
-        if (elapsed > sweepDurationTicks) {
-            printChat(String.format(Lang.t(
-                    "Sweep complete (%ds). Bases found this sweep: %d. Returning to portal.",
-                    "Sweep terminé (%ds). Bases trouvées : %d. Retour au portail."),
-                    sweepDuration.getValue(), basesFound));
-            beginReturnToPortal();
-            return;
-        }
 
         // Scan chunks every second
         if (tickCounter % 20 == 0) {
@@ -501,8 +510,8 @@ public class PortalHunterModule extends ToggleableModule {
                     baseLogger.logBase(record);
                     basesFound++;
                     printChat(String.format(Lang.t(
-                            "BASE DETECTED! %s score=%.0f at %d, %d",
-                            "BASE DÉTECTÉE ! %s score=%.0f à %d, %d"),
+                            "BASE FOUND! %s score=%.0f at %d, %d",
+                            "BASE TROUVÉE ! %s score=%.0f à %d, %d"),
                             analysis.getBaseType().getDisplayName(),
                             analysis.getScore(),
                             analysis.getCenterBlockPos().getX(),
@@ -511,107 +520,87 @@ public class PortalHunterModule extends ToggleableModule {
             }
         }
 
-        // Navigate sweep waypoints via Baritone
-        if (sweepWaypoints.isEmpty()) return;
-
-        if (currentSweepWaypoint >= sweepWaypoints.size()) {
-            // All waypoints visited, sweep done
-            printChat(Lang.t(
-                    "All sweep waypoints visited. Returning to portal.",
-                    "Tous les waypoints de sweep visités. Retour au portail."));
+        // All sweep waypoints visited
+        if (sweepWaypoints.isEmpty() || currentSweepWaypoint >= sweepWaypoints.size()) {
+            printChat(Lang.t("Sweep complete. Returning to portal.",
+                    "Sweep terminé. Retour au portail."));
             beginReturnToPortal();
             return;
         }
 
         BlockPos waypoint = sweepWaypoints.get(currentSweepWaypoint);
-
-        // Start Baritone toward current waypoint if not active
-        if (!sweepBaritoneActive || !baritoneController.isPathing()) {
-            if (!sweepBaritoneActive) {
-                baritoneGoalNear(waypoint, 5);
-                sweepBaritoneActive = true;
-                sweepStuckTimer = 0;
-                lastSweepPos = mc.player.position();
-            }
-        }
-
-        // Check if waypoint reached
-        double distToWaypoint = horizontalDist(mc.player.getX(), mc.player.getZ(),
+        double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
                 waypoint.getX(), waypoint.getZ());
 
-        boolean baritoneFinished = baritoneController.isAvailable()
-                && !baritoneController.isPathing()
-                && sweepBaritoneActive;
-
-        if (distToWaypoint < 8 || baritoneFinished) {
+        // Waypoint reached
+        boolean baritoneFinished = !baritone.isPathing() && stuckTimer == 0 && dist < 50;
+        if (dist < 10 || baritoneFinished) {
             currentSweepWaypoint++;
-            sweepBaritoneActive = false;
-            baritoneController.cancelAll();
+            resetStuck();
 
             if (currentSweepWaypoint < sweepWaypoints.size()) {
+                BlockPos next = sweepWaypoints.get(currentSweepWaypoint);
+                baritone.goToXZ(next.getX(), next.getZ());
                 int remaining = sweepWaypoints.size() - currentSweepWaypoint;
-                int elapsed_s = elapsed / 20;
-                if (tickCounter % 100 < 20) { // Don't spam
+                if (remaining % 2 == 0) {
                     printChat(String.format(Lang.t(
-                            "Sweep waypoint %d/%d reached. %d remaining. Time: %ds/%ds",
-                            "Waypoint sweep %d/%d atteint. %d restants. Temps : %ds/%ds"),
-                            currentSweepWaypoint, sweepWaypoints.size(),
-                            remaining, elapsed_s, sweepDuration.getValue()));
+                            "Sweep: %d/%d waypoints. %d remaining.",
+                            "Sweep : %d/%d waypoints. %d restants."),
+                            currentSweepWaypoint, sweepWaypoints.size(), remaining));
                 }
             }
             return;
         }
 
-        // Stuck detection during sweep
-        if (lastSweepPos != null && mc.player.position().distanceTo(lastSweepPos) < 0.05) {
-            sweepStuckTimer++;
-            if (sweepStuckTimer > SWEEP_STUCK_THRESHOLD) {
-                printChat(Lang.t(
-                        "Stuck during sweep, skipping to next waypoint.",
-                        "Bloqué pendant le sweep, passage au waypoint suivant."));
-                sweepStuckTimer = 0;
-                sweepBaritoneActive = false;
-                baritoneController.cancelAll();
-                currentSweepWaypoint++;
+        // Stuck detection
+        if (checkStuck()) {
+            printChat(Lang.t("Stuck during sweep, skipping waypoint.",
+                    "Bloqué pendant le sweep, passage au waypoint suivant."));
+            baritone.cancelAll();
+            currentSweepWaypoint++;
+            resetStuck();
+            if (currentSweepWaypoint < sweepWaypoints.size()) {
+                BlockPos next = sweepWaypoints.get(currentSweepWaypoint);
+                baritone.goToXZ(next.getX(), next.getZ());
             }
-        } else {
-            sweepStuckTimer = 0;
+            return;
         }
-        lastSweepPos = mc.player.position();
+
+        // Re-issue Baritone if stopped
+        if (!baritone.isPathing() && tickCounter % 80 == 0) {
+            baritone.goToXZ(waypoint.getX(), waypoint.getZ());
+        }
     }
 
-    // =================================================================
+    // =========================================================================
     // STATE: RETURNING_TO_PORTAL
-    // =================================================================
+    // =========================================================================
 
     private void beginReturnToPortal() {
         chunkScanner.reset();
-        sweepBaritoneActive = false;
-        baritoneController.cancelAll();
+        baritone.cancelAll();
         state = HunterState.RETURNING_TO_PORTAL;
-        landingPhase = false;
-        walkStuckTimer = 0;
-        lastWalkPos = null;
+        resetStuck();
 
         if (currentPortalOverworld == null && overworldArrivalPos != null) {
             currentPortalOverworld = overworldArrivalPos;
         }
 
         if (currentPortalOverworld != null) {
+            baritone.goToXZ(currentPortalOverworld.getX(), currentPortalOverworld.getZ());
             double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
                     currentPortalOverworld.getX(), currentPortalOverworld.getZ());
             printChat(String.format(Lang.t(
-                    "Returning to overworld portal at %d, %d (%.0f blocks)",
-                    "Retour au portail overworld à %d, %d (%.0f blocs)"),
+                    "Returning to portal at %d, %d (%.0f blocks)",
+                    "Retour au portail à %d, %d (%.0f blocs)"),
                     currentPortalOverworld.getX(), currentPortalOverworld.getZ(), dist));
         }
     }
 
     private void handleReturningToPortal() {
         if (currentPortalOverworld == null) {
-            printChat(Lang.t(
-                    "Lost portal position. Skipping to next.",
-                    "Position du portail perdue. Passage au suivant."));
+            printChat(Lang.t("Lost portal position, skipping.",
+                    "Position du portail perdue, passage au suivant."));
             skipCurrentPortal();
             return;
         }
@@ -619,62 +608,53 @@ public class PortalHunterModule extends ToggleableModule {
         double dist = horizontalDist(mc.player.getX(), mc.player.getZ(),
                 currentPortalOverworld.getX(), currentPortalOverworld.getZ());
 
-        // Use Baritone to walk back (we're already on the ground from sweep)
-        if (baritoneController.isAvailable()) {
-            if (!baritoneController.isPathing()) {
-                baritoneGoalXZ(currentPortalOverworld.getX(), currentPortalOverworld.getZ());
+        if (dist < 5) {
+            baritone.cancelAll();
+            // Find actual portal block
+            BlockPos actualPortal = scanForNearestPortalBlock(32);
+            if (actualPortal != null) {
+                currentPortalOverworld = actualPortal;
             }
+            beginEnteringNether();
+            return;
+        }
 
-            if (dist < 5) {
-                baritoneController.cancelAll();
-                // Scan for the actual portal block nearby
-                BlockPos portalBlock = scanForNearestPortal(32);
-                if (portalBlock != null) {
-                    currentPortalOverworld = portalBlock;
-                }
-                beginExitingPortal();
-                return;
-            }
-
-            // Stuck detection
-            if (lastWalkPos != null && mc.player.position().distanceTo(lastWalkPos) < 0.05) {
-                walkStuckTimer++;
-                if (walkStuckTimer > SWEEP_STUCK_THRESHOLD) {
-                    printChat(Lang.t(
-                            "Stuck returning to portal. Trying to force next portal.",
-                            "Bloqué en retournant au portail. Tentative du portail suivant."));
-                    walkStuckTimer = 0;
-                    baritoneController.cancelAll();
-                    skipCurrentPortal();
-                    return;
-                }
+        // Stuck detection
+        if (checkStuck()) {
+            printChat(Lang.t("Stuck returning, looking for nearby portal.",
+                    "Bloqué en retournant, recherche de portail proche."));
+            baritone.cancelAll();
+            BlockPos nearbyPortal = scanForNearestPortalBlock(64);
+            if (nearbyPortal != null) {
+                currentPortalOverworld = nearbyPortal;
+                baritone.goToXZ(nearbyPortal.getX(), nearbyPortal.getZ());
+                resetStuck();
             } else {
-                walkStuckTimer = 0;
+                skipCurrentPortal();
             }
-            lastWalkPos = mc.player.position();
-        } else {
-            // Fallback walk
-            walkTowards(currentPortalOverworld);
-            if (dist < 4) {
-                releaseMovementKeys();
-                beginExitingPortal();
-            }
+            return;
+        }
+
+        // Re-issue nav
+        if (!baritone.isPathing() && tickCounter % 60 == 0) {
+            baritone.goToXZ(currentPortalOverworld.getX(), currentPortalOverworld.getZ());
         }
     }
 
-    // =================================================================
-    // STATE: EXITING_PORTAL
-    // =================================================================
+    // =========================================================================
+    // STATE: ENTERING_NETHER
+    // =========================================================================
 
-    private void beginExitingPortal() {
-        state = HunterState.EXITING_PORTAL;
+    private void beginEnteringNether() {
+        state = HunterState.ENTERING_NETHER;
         portalWaitTimer = 0;
         releaseMovementKeys();
-        baritoneController.cancelAll();
-        printChat(Lang.t("Entering portal to return to Nether...", "Entrée dans le portail pour retourner au Nether..."));
+        baritone.cancelAll();
+        printChat(Lang.t("Entering portal to return to Nether...",
+                "Entrée dans le portail pour retourner au Nether..."));
     }
 
-    private void handleExitingPortal() {
+    private void handleEnteringNether() {
         portalWaitTimer++;
 
         if (currentPortalOverworld != null) {
@@ -683,40 +663,32 @@ public class PortalHunterModule extends ToggleableModule {
 
         // Dimension change handled by onDimensionChanged()
 
-        if (portalWaitTimer > PORTAL_TIMEOUT_TICKS) {
-            printChat(Lang.t(
-                    "Portal exit timeout. Trying next portal.",
-                    "Timeout sortie portail. Tentative du portail suivant."));
+        if (portalWaitTimer > PORTAL_TIMEOUT) {
+            printChat(Lang.t("Portal exit timeout.", "Timeout sortie portail."));
             releaseMovementKeys();
-            // If we're stuck in the overworld, try finding a portal nearby
-            BlockPos nearbyPortal = scanForNearestPortal(64);
+            BlockPos nearbyPortal = scanForNearestPortalBlock(64);
             if (nearbyPortal != null) {
                 currentPortalOverworld = nearbyPortal;
                 portalWaitTimer = 0;
-                printChat(Lang.t(
-                        "Found nearby portal, retrying...",
-                        "Portail proche trouvé, nouvelle tentative..."));
             } else {
                 skipCurrentPortal();
             }
         }
     }
 
-    // =================================================================
+    // =========================================================================
     // DIMENSION CHANGE HANDLER
-    // =================================================================
+    // =========================================================================
 
     private void onDimensionChanged(String from, String to) {
-        printChat(String.format(Lang.t("Dimension: %s → %s", "Dimension : %s → %s"), from, to));
+        printChat(String.format(Lang.t("Dimension: %s -> %s", "Dimension : %s -> %s"), from, to));
 
         releaseMovementKeys();
-        elytraBot.stop();
-        baritoneController.cancelAll();
+        baritone.cancelAll();
 
         if (state == HunterState.ENTERING_PORTAL && isOverworld(to)) {
-            // Successfully entered overworld
+            // Successfully entered Overworld
             overworldArrivalPos = mc.player.blockPosition().immutable();
-            // Compute expected overworld coords from nether portal
             if (currentPortalNether != null) {
                 currentPortalOverworld = new BlockPos(
                         currentPortalNether.getX() * 8,
@@ -726,87 +698,187 @@ public class PortalHunterModule extends ToggleableModule {
                 currentPortalOverworld = overworldArrivalPos;
             }
 
-            // Mark portal visited
-            markPortalVisited(currentPortalNether);
             portalsVisited++;
 
             printChat(String.format(Lang.t(
-                    "Arrived in Overworld at %d, %d! Starting sweep (radius: %d, duration: %ds)",
-                    "Arrivé dans l'Overworld à %d, %d ! Début du sweep (rayon : %d, durée : %ds)"),
+                    "Overworld at %d, %d! Starting sweep (radius: %d, %d points)",
+                    "Overworld à %d, %d ! Début du sweep (rayon : %d, %d points)"),
                     overworldArrivalPos.getX(), overworldArrivalPos.getZ(),
-                    sweepRadius.getValue(), sweepDuration.getValue()));
+                    sweepRadius.getValue(), sweepPoints.getValue()));
 
             beginOverworldSweep();
 
-        } else if (state == HunterState.EXITING_PORTAL && isNether(to)) {
-            // Successfully returned to nether
+        } else if (state == HunterState.ENTERING_NETHER && isNether(to)) {
+            // Successfully returned to Nether
+            markPortalVisited(currentPortalNether);
             printChat(Lang.t(
-                    "Back in the Nether! Moving to next portal.",
-                    "Retour dans le Nether ! Passage au portail suivant."));
+                    "Back in Nether! Portal marked as visited.",
+                    "Retour au Nether ! Portail marqué comme visité."));
 
-            advanceToNextPortal();
+            resetStuck();
+
+            // Check if more portals in queue
+            if (!portalQueue.isEmpty()) {
+                startNextPortal();
+            } else {
+                // Resume zone traversal
+                currentZoneWaypoint = savedZoneWaypoint;
+                state = HunterState.ZONE_TRAVERSAL;
+                navigateToCurrentZoneWaypoint();
+                printChat(Lang.t("Resuming zone traversal.",
+                        "Reprise du parcours de zone."));
+            }
 
         } else {
-            // Unexpected transition
-            printChat(Lang.t(
-                    "Unexpected dimension change. Resetting to scan.",
-                    "Changement de dimension inattendu. Reprise du scan."));
-            state = HunterState.SCANNING_NETHER;
+            printChat(Lang.t("Unexpected dimension change, resetting.",
+                    "Changement de dimension inattendu, reset."));
+            if (isNether(to)) {
+                state = HunterState.ZONE_TRAVERSAL;
+                resetStuck();
+                navigateToCurrentZoneWaypoint();
+            } else {
+                // Stuck in wrong dimension
+                state = HunterState.IDLE;
+                this.toggle();
+            }
         }
     }
 
-    // =================================================================
+    // =========================================================================
     // OVERWORLD SWEEP SETUP
-    // =================================================================
+    // =========================================================================
 
     private void beginOverworldSweep() {
         state = HunterState.OVERWORLD_SWEEP;
-        sweepStartTick = tickCounter;
         currentSweepWaypoint = 0;
-        sweepBaritoneActive = false;
-        sweepStuckTimer = 0;
-        lastSweepPos = null;
+        resetStuck();
         chunkScanner.reset();
 
         // Generate circular waypoints around arrival point
         sweepWaypoints.clear();
         int radius = sweepRadius.getValue();
+        int points = sweepPoints.getValue();
         double cx = overworldArrivalPos.getX();
         double cz = overworldArrivalPos.getZ();
 
-        for (int i = 0; i < SWEEP_NUM_WAYPOINTS; i++) {
-            double angle = (2.0 * Math.PI * i) / SWEEP_NUM_WAYPOINTS;
+        for (int i = 0; i < points; i++) {
+            double angle = (2.0 * Math.PI * i) / points;
             int wx = (int) (cx + Math.cos(angle) * radius);
             int wz = (int) (cz + Math.sin(angle) * radius);
             sweepWaypoints.add(new BlockPos(wx, 64, wz));
         }
 
         printChat(String.format(Lang.t(
-                "Generated %d sweep waypoints in a %d-block radius circle.",
-                "Généré %d waypoints de sweep en cercle de rayon %d blocs."),
+                "Generated %d sweep waypoints in %d-block radius.",
+                "Généré %d waypoints de sweep en rayon de %d blocs."),
                 sweepWaypoints.size(), radius));
+
+        if (!sweepWaypoints.isEmpty()) {
+            baritone.goToXZ(sweepWaypoints.get(0).getX(), sweepWaypoints.get(0).getZ());
+        }
     }
 
-    // =================================================================
+    // =========================================================================
+    // ZONE WAYPOINT GENERATION
+    // =========================================================================
+
+    private void generateZoneWaypoints() {
+        zoneWaypoints.clear();
+        currentZoneWaypoint = 0;
+
+        int minX = Math.min(zoneMinX.getValue(), zoneMaxX.getValue());
+        int maxX = Math.max(zoneMinX.getValue(), zoneMaxX.getValue());
+        int minZ = Math.min(zoneMinZ.getValue(), zoneMaxZ.getValue());
+        int maxZ = Math.max(zoneMinZ.getValue(), zoneMaxZ.getValue());
+        int spacing = zoneSpacing.getValue();
+
+        // Boustrophedon (zigzag) pattern for efficient coverage
+        boolean leftToRight = true;
+        for (int z = minZ; z <= maxZ; z += spacing) {
+            if (leftToRight) {
+                for (int x = minX; x <= maxX; x += spacing) {
+                    zoneWaypoints.add(new BlockPos(x, 64, z));
+                }
+            } else {
+                for (int x = maxX; x >= minX; x -= spacing) {
+                    zoneWaypoints.add(new BlockPos(x, 64, z));
+                }
+            }
+            leftToRight = !leftToRight;
+        }
+
+        // Skip to nearest waypoint from player position
+        if (!zoneWaypoints.isEmpty() && mc.player != null) {
+            int nearestIdx = 0;
+            double nearestDist = Double.MAX_VALUE;
+            for (int i = 0; i < zoneWaypoints.size(); i++) {
+                BlockPos wp = zoneWaypoints.get(i);
+                double d = horizontalDistSq(mc.player.getX(), mc.player.getZ(), wp.getX(), wp.getZ());
+                if (d < nearestDist) {
+                    nearestDist = d;
+                    nearestIdx = i;
+                }
+            }
+            currentZoneWaypoint = nearestIdx;
+        }
+    }
+
+    // =========================================================================
     // PORTAL SCANNING
-    // =================================================================
+    // =========================================================================
 
     /**
-     * Scan loaded chunks for nether portal blocks. Returns a deduplicated
-     * list of portal positions (one per portal structure, not per block).
+     * Scan all loaded Nether chunks for portal blocks.
+     * Returns deduplicated portal positions.
      */
-    private List<BlockPos> scanForPortals(int radius) {
+    private List<BlockPos> scanForNetherPortals() {
         if (mc.player == null || mc.level == null) return Collections.emptyList();
 
-        BlockPos playerPos = mc.player.blockPosition();
         List<BlockPos> rawPortals = new ArrayList<>();
+        var chunkSource = mc.level.getChunkSource();
+        int renderDist = mc.options.renderDistance().get();
+        int playerCX = mc.player.chunkPosition().x;
+        int playerCZ = mc.player.chunkPosition().z;
 
+        for (int cx = playerCX - renderDist; cx <= playerCX + renderDist; cx++) {
+            for (int cz = playerCZ - renderDist; cz <= playerCZ + renderDist; cz++) {
+                LevelChunk chunk = chunkSource.getChunk(cx, cz, false);
+                if (chunk == null) continue;
+
+                int baseX = cx << 4;
+                int baseZ = cz << 4;
+
+                for (int x = 0; x < 16; x++) {
+                    for (int z = 0; z < 16; z++) {
+                        for (int y = 20; y < 128; y++) {
+                            BlockPos pos = new BlockPos(baseX + x, y, baseZ + z);
+                            if (chunk.getBlockState(pos).getBlock() == Blocks.NETHER_PORTAL) {
+                                rawPortals.add(pos);
+                                break; // skip rest of Y in this column
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return deduplicatePortals(rawPortals, 8);
+    }
+
+    /**
+     * Find nearest portal block within radius (used in overworld to find return portal).
+     */
+    private BlockPos scanForNearestPortalBlock(int radius) {
+        if (mc.player == null || mc.level == null) return null;
+
+        List<BlockPos> found = new ArrayList<>();
+        var chunkSource = mc.level.getChunkSource();
+        BlockPos playerPos = mc.player.blockPosition();
         int minCX = (playerPos.getX() - radius) >> 4;
         int maxCX = (playerPos.getX() + radius) >> 4;
         int minCZ = (playerPos.getZ() - radius) >> 4;
         int maxCZ = (playerPos.getZ() + radius) >> 4;
 
-        var chunkSource = mc.level.getChunkSource();
         boolean inNether = isNether(getCurrentDimension());
         int minY = inNether ? 20 : 40;
         int maxY = inNether ? 128 : 140;
@@ -824,8 +896,8 @@ public class PortalHunterModule extends ToggleableModule {
                         for (int y = minY; y < maxY; y++) {
                             BlockPos pos = new BlockPos(baseX + x, y, baseZ + z);
                             if (chunk.getBlockState(pos).getBlock() == Blocks.NETHER_PORTAL) {
-                                rawPortals.add(pos);
-                                break; // Skip rest of Y in this column
+                                found.add(pos);
+                                break;
                             }
                         }
                     }
@@ -833,23 +905,13 @@ public class PortalHunterModule extends ToggleableModule {
             }
         }
 
-        // Deduplicate: merge portal blocks within 8 blocks of each other
-        return deduplicatePortals(rawPortals, 8);
+        if (found.isEmpty()) return null;
+        found.sort(Comparator.comparingDouble(p -> playerPos.distSqr(p)));
+        return found.get(0);
     }
 
     /**
-     * Scan nearby chunks for the closest single portal block.
-     */
-    private BlockPos scanForNearestPortal(int radius) {
-        List<BlockPos> portals = scanForPortals(radius);
-        if (portals.isEmpty()) return null;
-        portals.sort(Comparator.comparingDouble(p -> mc.player.blockPosition().distSqr(p)));
-        return portals.get(0);
-    }
-
-    /**
-     * Merge raw portal block positions into unique portal structures.
-     * Two portal blocks within `mergeRadius` are considered the same portal.
+     * Merge portal blocks within mergeRadius into unique portal positions.
      */
     private List<BlockPos> deduplicatePortals(List<BlockPos> raw, int mergeRadius) {
         List<BlockPos> unique = new ArrayList<>();
@@ -872,21 +934,20 @@ public class PortalHunterModule extends ToggleableModule {
         return unique;
     }
 
-    // =================================================================
+    // =========================================================================
     // PORTAL QUEUE MANAGEMENT
-    // =================================================================
+    // =========================================================================
 
-    private void advanceToNextPortal() {
-        releaseMovementKeys();
-        landingPhase = false;
-        walkStuckTimer = 0;
-        lastWalkPos = null;
+    private void startNextPortal() {
+        resetStuck();
 
         if (portalQueue.isEmpty()) {
-            printChat(Lang.t(
-                    "No more portals in queue. Rescanning...",
-                    "Plus de portails en file. Rescan..."));
-            state = HunterState.SCANNING_NETHER;
+            // Resume zone traversal
+            currentZoneWaypoint = savedZoneWaypoint;
+            state = HunterState.ZONE_TRAVERSAL;
+            navigateToCurrentZoneWaypoint();
+            printChat(Lang.t("No more portals in queue, resuming zone scan.",
+                    "Plus de portails en file, reprise du scan de zone."));
             return;
         }
 
@@ -898,69 +959,63 @@ public class PortalHunterModule extends ToggleableModule {
                 currentPortalNether.getX(), currentPortalNether.getZ());
 
         printChat(String.format(Lang.t(
-                "Next portal: %d, %d, %d (%.0f blocks away). %d remaining in queue.",
-                "Portail suivant : %d, %d, %d (%.0f blocs). %d restants en file."),
+                "Next portal: %d, %d, %d (%.0f blocks). %d in queue.",
+                "Portail suivant : %d, %d, %d (%.0f blocs). %d en file."),
                 currentPortalNether.getX(), currentPortalNether.getY(), currentPortalNether.getZ(),
                 dist, portalQueue.size()));
 
         state = HunterState.TRAVELING_TO_PORTAL;
 
-        // Start navigation
-        if (useElytra.getValue() && hasElytra() && dist > 50) {
-            configureElytraBot();
-            // Nether: low cruise altitude to stay under bedrock ceiling
-            elytraBot.setCruiseAltitude(Math.min(cruiseAltitude.getValue(), 90.0));
-            elytraBot.startFlight(currentPortalNether);
-            printChat(Lang.t("Flying to portal via Elytra.", "Vol vers le portail en Elytra."));
-        } else if (baritoneController.isAvailable()) {
-            baritoneGoalXZ(currentPortalNether.getX(), currentPortalNether.getZ());
-            printChat(Lang.t("Walking to portal via Baritone.", "Marche vers le portail via Baritone."));
+        // Navigate: elytra for long distances, walk for short
+        if (useBaritoneElytra.getValue() && hasElytra() && dist > 50) {
+            baritone.executeCommand("elytra goto " + currentPortalNether.getX() + " " + currentPortalNether.getZ());
+        } else {
+            baritone.goToXZ(currentPortalNether.getX(), currentPortalNether.getZ());
         }
     }
 
     private void skipCurrentPortal() {
         releaseMovementKeys();
-        elytraBot.stop();
-        baritoneController.cancelAll();
+        baritone.cancelAll();
 
         if (currentPortalNether != null) {
             markPortalVisited(currentPortalNether);
         }
 
-        // If we're in the overworld, we need to get back to nether first
+        // If in overworld, try to find portal back to nether
         if (isOverworld(getCurrentDimension())) {
-            BlockPos nearbyPortal = scanForNearestPortal(64);
+            BlockPos nearbyPortal = scanForNearestPortalBlock(64);
             if (nearbyPortal != null) {
                 currentPortalOverworld = nearbyPortal;
-                beginExitingPortal();
+                beginEnteringNether();
                 return;
             }
-            // Can't find a portal to go back — stuck in overworld
-            printChat(Lang.t(
-                    "Stuck in Overworld, no portal found nearby. Disabling.",
+            printChat(Lang.t("Stuck in Overworld, no portal nearby. Disabling.",
                     "Bloqué dans l'Overworld, aucun portail proche. Désactivation."));
             this.toggle();
             return;
         }
 
-        advanceToNextPortal();
+        startNextPortal();
     }
 
-    // =================================================================
+    // =========================================================================
     // PERSISTENCE — visited_portals.json
-    // =================================================================
+    // =========================================================================
 
     private static class VisitedPortal {
         int x;
         int z;
         long timestamp;
+        boolean baseFound;
 
         VisitedPortal() {}
 
-        VisitedPortal(int x, int z, long timestamp) {
+        VisitedPortal(int x, int z, long timestamp, boolean baseFound) {
             this.x = x;
             this.z = z;
             this.timestamp = timestamp;
+            this.baseFound = baseFound;
         }
     }
 
@@ -975,22 +1030,21 @@ public class PortalHunterModule extends ToggleableModule {
             if (loaded != null) {
                 visitedPortals.addAll(loaded);
                 printChat(String.format(Lang.t(
-                        "Loaded %d visited portals from file.",
-                        "Chargé %d portails visités depuis le fichier."),
+                        "Loaded %d visited portals.",
+                        "Chargé %d portails visités."),
                         visitedPortals.size()));
             }
         } catch (Exception e) {
-            LOGGER.error("[PortalHunter] Failed to load visited portals: {}", e.getMessage());
+            LOGGER.error("[PortalHunter] Failed to load portals: {}", e.getMessage());
         }
     }
 
     private void saveVisitedPortals() {
         if (visitedPortalsFile == null) return;
         try {
-            String json = GSON.toJson(visitedPortals);
-            Files.writeString(visitedPortalsFile, json);
+            Files.writeString(visitedPortalsFile, GSON.toJson(visitedPortals));
         } catch (IOException e) {
-            LOGGER.error("[PortalHunter] Failed to save visited portals: {}", e.getMessage());
+            LOGGER.error("[PortalHunter] Failed to save portals: {}", e.getMessage());
         }
     }
 
@@ -998,128 +1052,54 @@ public class PortalHunterModule extends ToggleableModule {
         for (VisitedPortal vp : visitedPortals) {
             double dx = pos.getX() - vp.x;
             double dz = pos.getZ() - vp.z;
-            if (dx * dx + dz * dz < 64) { // Within 8 blocks
-                return true;
-            }
+            if (dx * dx + dz * dz < 64) return true; // within 8 blocks
         }
         return false;
     }
 
     private void markPortalVisited(BlockPos pos) {
-        if (pos == null) return;
-        if (isPortalVisited(pos)) return;
-        visitedPortals.add(new VisitedPortal(pos.getX(), pos.getZ(), System.currentTimeMillis()));
+        if (pos == null || isPortalVisited(pos)) return;
+        visitedPortals.add(new VisitedPortal(pos.getX(), pos.getZ(),
+                System.currentTimeMillis(), basesFound > 0));
         saveVisitedPortals();
-    }
-
-    // =================================================================
-    // BARITONE HELPERS (reflection)
-    // =================================================================
-
-    /**
-     * Navigate to X/Z coordinates via Baritone GoalXZ (Y-agnostic).
-     */
-    private void baritoneGoalXZ(int x, int z) {
-        if (!baritoneController.isAvailable()) return;
-
-        try {
-            // Get Baritone instance
-            Class<?> apiClass = Class.forName("baritone.api.BaritoneAPI");
-            Method getProvider = apiClass.getMethod("getProvider");
-            Object provider = getProvider.invoke(null);
-            Method getPrimary = provider.getClass().getMethod("getPrimaryBaritone");
-            Object baritone = getPrimary.invoke(null);
-
-            // Get CustomGoalProcess
-            Method getCustomGoal = baritone.getClass().getMethod("getCustomGoalProcess");
-            Object goalProcess = getCustomGoal.invoke(baritone);
-
-            // Create GoalXZ(x, z)
-            Class<?> goalXZClass = Class.forName("baritone.api.pathing.goals.GoalXZ");
-            Object goal = goalXZClass.getConstructor(int.class, int.class).newInstance(x, z);
-
-            // setGoalAndPath
-            Class<?> goalInterface = Class.forName("baritone.api.pathing.goals.Goal");
-            Method setGoalAndPath = goalProcess.getClass().getMethod("setGoalAndPath", goalInterface);
-            setGoalAndPath.invoke(goalProcess, goal);
-
-            LOGGER.info("[PortalHunter] Baritone GoalXZ set: {}, {}", x, z);
-        } catch (Exception e) {
-            LOGGER.error("[PortalHunter] Baritone GoalXZ failed: {}", e.getMessage());
-            // Fallback: use BaritoneController.landAt which uses GoalNear
-            baritoneController.landAt(new BlockPos(x, 64, z));
-        }
+        LOGGER.info("[PortalHunter] Portal at {}, {} marked as visited (total: {})",
+                pos.getX(), pos.getZ(), visitedPortals.size());
     }
 
     /**
-     * Navigate near a position via Baritone GoalNear with given tolerance.
+     * Generate a unique key for a portal position, rounded to 8-block grid.
      */
-    private void baritoneGoalNear(BlockPos pos, int range) {
-        if (!baritoneController.isAvailable()) return;
-
-        try {
-            Class<?> apiClass = Class.forName("baritone.api.BaritoneAPI");
-            Method getProvider = apiClass.getMethod("getProvider");
-            Object provider = getProvider.invoke(null);
-            Method getPrimary = provider.getClass().getMethod("getPrimaryBaritone");
-            Object baritone = getPrimary.invoke(null);
-
-            Method getCustomGoal = baritone.getClass().getMethod("getCustomGoalProcess");
-            Object goalProcess = getCustomGoal.invoke(baritone);
-
-            Class<?> goalNearClass = Class.forName("baritone.api.pathing.goals.GoalNear");
-            Object goal = goalNearClass.getConstructor(BlockPos.class, int.class).newInstance(pos, range);
-
-            Class<?> goalInterface = Class.forName("baritone.api.pathing.goals.Goal");
-            Method setGoalAndPath = goalProcess.getClass().getMethod("setGoalAndPath", goalInterface);
-            setGoalAndPath.invoke(goalProcess, goal);
-
-            LOGGER.info("[PortalHunter] Baritone GoalNear set: {} range {}", pos.toShortString(), range);
-        } catch (Exception e) {
-            LOGGER.error("[PortalHunter] Baritone GoalNear failed: {}", e.getMessage());
-            baritoneController.landAt(pos);
-        }
+    private long portalKey(BlockPos pos) {
+        int gx = pos.getX() >> 3; // divide by 8
+        int gz = pos.getZ() >> 3;
+        return ((long) gx) << 32 | (gz & 0xFFFFFFFFL);
     }
 
-    // =================================================================
-    // ELYTRA CONFIGURATION
-    // =================================================================
+    // =========================================================================
+    // STUCK DETECTION
+    // =========================================================================
 
-    private void configureElytraBot() {
-        elytraBot.setCruiseAltitude(cruiseAltitude.getValue());
-        elytraBot.setFireworkInterval(fireworkInterval.getValue());
-        elytraBot.setUseFlightNoise(true);
-        elytraBot.setUseObstacleAvoidance(true);
-        elytraBot.setEnableCircling(true);
-        elytraBot.setBaritoneController(baritoneController);
-        elytraBot.setUseBaritoneLanding(baritoneController.isAvailable());
-        elytraBot.setMinElytraDurability(10);
-    }
-
-    private boolean hasElytra() {
+    private boolean checkStuck() {
         if (mc.player == null) return false;
-        return mc.player.getItemBySlot(EquipmentSlot.CHEST).is(Items.ELYTRA);
-    }
 
-    // =================================================================
-    // ELYTRABOT CONFLICT CHECK
-    // =================================================================
-
-    private boolean isElytraBotInUse() {
-        for (String name : new String[]{"ElytraBot", "BaseFinder", "AutoTravel"}) {
-            try {
-                IModule other = RusherHackAPI.getModuleManager().getFeature(name).orElse(null);
-                if (other instanceof ToggleableModule tm && tm != this && tm.isToggled()) {
-                    return true;
-                }
-            } catch (Exception ignored) {}
+        Vec3 currentPos = mc.player.position();
+        if (lastPos != null && currentPos.distanceTo(lastPos) < 0.1) {
+            stuckTimer++;
+            return stuckTimer > STUCK_THRESHOLD;
         }
+        stuckTimer = 0;
+        lastPos = currentPos;
         return false;
     }
 
-    // =================================================================
+    private void resetStuck() {
+        stuckTimer = 0;
+        lastPos = null;
+    }
+
+    // =========================================================================
     // MOVEMENT HELPERS
-    // =================================================================
+    // =========================================================================
 
     private void walkTowards(BlockPos target) {
         if (mc.player == null) return;
@@ -1140,14 +1120,12 @@ public class PortalHunterModule extends ToggleableModule {
             mc.options.keySprint.setDown(true);
         }
 
-        // Jump when blocked
         if (mc.player.horizontalCollision && mc.player.onGround()) {
             mc.options.keyJump.setDown(true);
         } else {
             mc.options.keyJump.setDown(false);
         }
 
-        // Swim
         if (mc.player.isInWater() || mc.player.isInLava()) {
             mc.options.keyJump.setDown(true);
         }
@@ -1161,9 +1139,9 @@ public class PortalHunterModule extends ToggleableModule {
         }
     }
 
-    // =================================================================
+    // =========================================================================
     // DIMENSION HELPERS
-    // =================================================================
+    // =========================================================================
 
     private String getCurrentDimension() {
         if (mc.level == null) return "unknown";
@@ -1176,12 +1154,32 @@ public class PortalHunterModule extends ToggleableModule {
     private boolean isOverworld(String dim) { return "overworld".equals(dim); }
     private boolean isNether(String dim) { return "nether".equals(dim); }
 
-    // =================================================================
+    // =========================================================================
     // UTILITY
-    // =================================================================
+    // =========================================================================
+
+    private boolean hasElytra() {
+        return mc.player != null && mc.player.getItemBySlot(EquipmentSlot.CHEST).is(Items.ELYTRA);
+    }
+
+    private boolean isConflictingModuleActive() {
+        for (String name : new String[]{"ElytraBot", "BaseFinder", "AutoTravel"}) {
+            try {
+                IModule other = RusherHackAPI.getModuleManager().getFeature(name).orElse(null);
+                if (other instanceof ToggleableModule tm && tm != this && tm.isToggled()) {
+                    return true;
+                }
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
 
     private double horizontalDist(double x1, double z1, double x2, double z2) {
         return Math.sqrt((x2 - x1) * (x2 - x1) + (z2 - z1) * (z2 - z1));
+    }
+
+    private double horizontalDistSq(double x1, double z1, double x2, double z2) {
+        return (x2 - x1) * (x2 - x1) + (z2 - z1) * (z2 - z1);
     }
 
     private float wrapDegrees(float degrees) {
@@ -1199,12 +1197,11 @@ public class PortalHunterModule extends ToggleableModule {
     }
 
     private void logProgress() {
-        String dim = getCurrentDimension();
-        int queueSize = portalQueue.size();
         printChat(String.format(Lang.t(
-                "State: %s | Dim: %s | Portals visited: %d | Queue: %d | Bases: %d",
-                "État : %s | Dim : %s | Portails visités : %d | File : %d | Bases : %d"),
-                state.name(), dim, portalsVisited, queueSize, basesFound));
+                "State: %s | Portals: %d | Bases: %d | Zone: %d/%d | Queue: %d",
+                "État : %s | Portails : %d | Bases : %d | Zone : %d/%d | File : %d"),
+                state.name(), portalsVisited, basesFound,
+                currentZoneWaypoint, zoneWaypoints.size(), portalQueue.size()));
     }
 
     // === PUBLIC GETTERS (for HUD integration) ===
@@ -1212,7 +1209,8 @@ public class PortalHunterModule extends ToggleableModule {
     public int getPortalsVisited() { return portalsVisited; }
     public int getBasesFound() { return basesFound; }
     public int getQueueSize() { return portalQueue.size(); }
-    public ElytraBot getElytraBot() { return elytraBot; }
     public ChunkScanner getChunkScanner() { return chunkScanner; }
     public BaseLogger getBaseLogger() { return baseLogger; }
+    public int getZoneProgress() { return currentZoneWaypoint; }
+    public int getZoneTotal() { return zoneWaypoints.size(); }
 }

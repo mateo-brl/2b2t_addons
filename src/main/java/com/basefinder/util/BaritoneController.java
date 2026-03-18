@@ -257,6 +257,50 @@ public class BaritoneController {
     }
 
     /**
+     * Navigate to X/Z coordinates via GoalXZ (Y-agnostic).
+     */
+    public void goToXZ(int x, int z) {
+        if (!available || baritoneInstance == null) return;
+        try {
+            java.lang.reflect.Method getCustomGoal = baritoneInstance.getClass().getMethod("getCustomGoalProcess");
+            Object goalProcess = getCustomGoal.invoke(baritoneInstance);
+
+            Class<?> goalXZClass = Class.forName("baritone.api.pathing.goals.GoalXZ");
+            Object goal = goalXZClass.getConstructor(int.class, int.class).newInstance(x, z);
+
+            Class<?> goalInterface = Class.forName("baritone.api.pathing.goals.Goal");
+            java.lang.reflect.Method setGoalAndPath = goalProcess.getClass().getMethod("setGoalAndPath", goalInterface);
+            setGoalAndPath.invoke(goalProcess, goal);
+
+            LOGGER.info("[BaritoneController] GoalXZ set: {}, {}", x, z);
+        } catch (Exception e) {
+            LOGGER.error("[BaritoneController] GoalXZ failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Navigate near a position via GoalNear with given tolerance.
+     */
+    public void goToNear(BlockPos pos, int range) {
+        if (!available || baritoneInstance == null) return;
+        try {
+            java.lang.reflect.Method getCustomGoal = baritoneInstance.getClass().getMethod("getCustomGoalProcess");
+            Object goalProcess = getCustomGoal.invoke(baritoneInstance);
+
+            Class<?> goalNearClass = Class.forName("baritone.api.pathing.goals.GoalNear");
+            Object goal = goalNearClass.getConstructor(BlockPos.class, int.class).newInstance(pos, range);
+
+            Class<?> goalInterface = Class.forName("baritone.api.pathing.goals.Goal");
+            java.lang.reflect.Method setGoalAndPath = goalProcess.getClass().getMethod("setGoalAndPath", goalInterface);
+            setGoalAndPath.invoke(goalProcess, goal);
+
+            LOGGER.info("[BaritoneController] GoalNear set: {} range {}", pos.toShortString(), range);
+        } catch (Exception e) {
+            LOGGER.error("[BaritoneController] GoalNear failed: {}", e.getMessage());
+        }
+    }
+
+    /**
      * Cancel all active Baritone processes.
      */
     public void cancelAll() {
