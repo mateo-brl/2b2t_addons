@@ -532,7 +532,6 @@ public class PortalHunterModule extends ToggleableModule {
             if (inPortal) {
                 // Confirmed inside portal — stop and wait for teleportation
                 releaseMovementKeys();
-                baritone.cancelAll();
                 if (portalWaitTimer % 60 == 0) {
                     debug("DANS portail block, attente TP...");
                 }
@@ -603,21 +602,19 @@ public class PortalHunterModule extends ToggleableModule {
                 waypoint.getX(), waypoint.getZ());
 
         // Waypoint reached
-        boolean baritoneFinished = !baritone.isPathing() && stuckTimer == 0 && dist < 50;
-        if (dist < 10 || baritoneFinished) {
+        boolean baritoneFinished = !baritone.isPathing() && !baritone.isElytraFlying() && stuckTimer == 0 && dist < 50;
+        if (dist < 20 || baritoneFinished) {
             currentSweepWaypoint++;
             resetStuck();
 
             if (currentSweepWaypoint < sweepWaypoints.size()) {
                 BlockPos next = sweepWaypoints.get(currentSweepWaypoint);
-                baritone.goToXZ(next.getX(), next.getZ());
+                navigateToSweepWaypoint(next);
                 int remaining = sweepWaypoints.size() - currentSweepWaypoint;
-                if (remaining % 2 == 0) {
-                    printChat(String.format(Lang.t(
-                            "Sweep: %d/%d waypoints. %d remaining.",
-                            "Sweep : %d/%d waypoints. %d restants."),
-                            currentSweepWaypoint, sweepWaypoints.size(), remaining));
-                }
+                printChat(String.format(Lang.t(
+                        "Sweep: %d/%d waypoints. %d remaining.",
+                        "Sweep : %d/%d waypoints. %d restants."),
+                        currentSweepWaypoint, sweepWaypoints.size(), remaining));
             }
             return;
         }
@@ -630,15 +627,18 @@ public class PortalHunterModule extends ToggleableModule {
             currentSweepWaypoint++;
             resetStuck();
             if (currentSweepWaypoint < sweepWaypoints.size()) {
-                BlockPos next = sweepWaypoints.get(currentSweepWaypoint);
-                baritone.goToXZ(next.getX(), next.getZ());
+                navigateToSweepWaypoint(sweepWaypoints.get(currentSweepWaypoint));
             }
             return;
         }
 
-        // Re-issue Baritone if stopped
-        if (!baritone.isPathing() && tickCounter % 80 == 0) {
-            baritone.goToXZ(waypoint.getX(), waypoint.getZ());
+        // Re-issue navigation if stopped
+        if (!baritone.isPathing() && !baritone.isElytraFlying() && tickCounter % 60 == 0) {
+            if (dist <= 150) {
+                baritone.goToXZ(waypoint.getX(), waypoint.getZ());
+            } else {
+                navigateToSweepWaypoint(waypoint);
+            }
         }
     }
 
@@ -734,7 +734,6 @@ public class PortalHunterModule extends ToggleableModule {
 
             if (inPortal) {
                 releaseMovementKeys();
-                baritone.cancelAll();
             } else {
                 if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
                     baritone.goToNear(currentPortalOverworld, 0);
@@ -857,7 +856,21 @@ public class PortalHunterModule extends ToggleableModule {
                 sweepWaypoints.size(), radius));
 
         if (!sweepWaypoints.isEmpty()) {
-            baritone.goToXZ(sweepWaypoints.get(0).getX(), sweepWaypoints.get(0).getZ());
+            navigateToSweepWaypoint(sweepWaypoints.get(0));
+        }
+    }
+
+    /**
+     * Navigate to a sweep waypoint using elytra if available, otherwise walk.
+     */
+    private void navigateToSweepWaypoint(BlockPos wp) {
+        double dist = horizontalDist(mc.player.getX(), mc.player.getZ(), wp.getX(), wp.getZ());
+        if (useElytra.getValue() && hasElytra() && dist > 50 && baritone.isElytraAvailable()) {
+            startElytraFlight(wp.getX(), wp.getZ());
+            debug("Elytra -> sweep wp (" + (int)dist + " blocs)");
+        } else {
+            baritone.goToXZ(wp.getX(), wp.getZ());
+            debug("Walk -> sweep wp (" + (int)dist + " blocs)");
         }
     }
 
