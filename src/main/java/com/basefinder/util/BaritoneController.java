@@ -370,6 +370,7 @@ public class BaritoneController {
 
     /**
      * Cancel Baritone's elytra process.
+     * Falls back to cancelAll() if the obfuscated build doesn't expose cancel().
      */
     public void cancelElytra() {
         if (!elytraAvailable || baritoneInstance == null) return;
@@ -378,11 +379,20 @@ public class BaritoneController {
             Object elytraProcess = getElytraProcess.invoke(baritoneInstance);
             if (elytraProcess == null) return;
 
-            java.lang.reflect.Method cancel = elytraProcess.getClass().getMethod("cancel");
-            cancel.invoke(elytraProcess);
-            LOGGER.info("[BaritoneController] Elytra cancelled");
+            // Try cancel() — may fail on obfuscated builds
+            try {
+                java.lang.reflect.Method cancel = elytraProcess.getClass().getMethod("cancel");
+                cancel.invoke(elytraProcess);
+                LOGGER.info("[BaritoneController] Elytra cancelled via cancel()");
+                return;
+            } catch (Exception ignored) {}
+
+            // Fallback: use cancelAll which stops everything
+            cancelAll();
+            LOGGER.info("[BaritoneController] Elytra cancelled via cancelAll fallback");
         } catch (Exception e) {
-            LOGGER.warn("[BaritoneController] cancelElytra failed: {}", e.getMessage());
+            LOGGER.warn("[BaritoneController] cancelElytra failed, using cancelAll: {}", e.getMessage());
+            cancelAll();
         }
     }
 
