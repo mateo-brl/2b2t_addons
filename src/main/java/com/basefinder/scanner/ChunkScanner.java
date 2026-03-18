@@ -26,7 +26,7 @@ public class ChunkScanner {
     private final Minecraft mc = Minecraft.getInstance();
     private final Set<ChunkPos> scannedChunks = ConcurrentHashMap.newKeySet();
     private final List<ChunkAnalysis> interestingChunks = Collections.synchronizedList(new ArrayList<>());
-    private final List<BaseRecord> foundBases = Collections.synchronizedList(new ArrayList<>());
+    private int foundBasesCount = 0;
     private final List<ChunkAnalysis> trailChunks = Collections.synchronizedList(new ArrayList<>());
 
     // All scanned analyses (for cluster scoring)
@@ -216,7 +216,7 @@ public class ChunkScanner {
                                 if (!notes.isEmpty()) {
                                     record.setNotes(notes.toString());
                                 }
-                                foundBases.add(record);
+                                foundBasesCount++;
                             }
                         }
 
@@ -304,7 +304,7 @@ public class ChunkScanner {
                                     analysis.getShulkerCount()
                             );
                             record.setNotes("cluster:" + neighborCount);
-                            foundBases.add(record);
+                            foundBasesCount++;
                         }
                     }
                 }
@@ -371,7 +371,7 @@ public class ChunkScanner {
     public void reset() {
         scannedChunks.clear();
         interestingChunks.clear();
-        foundBases.clear();
+        foundBasesCount = 0;
         trailChunks.clear();
         allAnalyses.clear();
         deferredChunks.clear();
@@ -395,7 +395,7 @@ public class ChunkScanner {
     public int getDeferredCount() { return deferredChunks.size(); }
     public int getSkippedCount() { return skippedCount; }
     public List<ChunkAnalysis> getInterestingChunks() { return Collections.unmodifiableList(interestingChunks); }
-    public List<BaseRecord> getFoundBases() { return Collections.unmodifiableList(foundBases); }
+    public int getFoundBasesCount() { return foundBasesCount; }
     public List<ChunkAnalysis> getTrailChunks() { return Collections.unmodifiableList(trailChunks); }
 
     // Settings

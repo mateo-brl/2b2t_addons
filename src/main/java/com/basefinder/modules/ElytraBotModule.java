@@ -4,7 +4,9 @@ import com.basefinder.elytra.ElytraBot;
 import com.basefinder.util.BaritoneController;
 import com.basefinder.util.Lang;
 import net.minecraft.core.BlockPos;
+import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.events.client.EventUpdate;
+import org.rusherhack.client.api.feature.module.IModule;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
@@ -47,9 +49,32 @@ public class ElytraBotModule extends ToggleableModule {
         );
     }
 
+    /**
+     * Check if another module using ElytraBot is already active.
+     */
+    private boolean isElytraBotInUse() {
+        for (String name : new String[]{"AutoTravel", "BaseFinder"}) {
+            try {
+                IModule other = RusherHackAPI.getModuleManager().getFeature(name).orElse(null);
+                if (other instanceof ToggleableModule tm && tm != this && tm.isToggled()) {
+                    return true;
+                }
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
     @Override
     public void onEnable() {
         Lang.setFrench(langFr.getValue());
+
+        if (isElytraBotInUse()) {
+            ChatUtils.print("[ElytraBot] " + Lang.t(
+                    "ERROR: Another module using ElytraBot is already active! Disable it first.",
+                    "ERREUR : Un autre module utilisant ElytraBot est déjà actif ! Désactivez-le d'abord."));
+            this.toggle();
+            return;
+        }
 
         if (mc.player == null || mc.level == null) {
             ChatUtils.print("[ElytraBot] " + Lang.t("Must be in a world!", "Vous devez être dans un monde !"));
@@ -121,7 +146,6 @@ public class ElytraBotModule extends ToggleableModule {
     private void onUpdate(EventUpdate event) {
         if (mc.player == null || mc.level == null) return;
 
-        Lang.setFrench(langFr.getValue());
         elytraBot.tick();
 
         double dist = elytraBot.getDistanceToDestination();
