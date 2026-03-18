@@ -555,21 +555,10 @@ public class PortalHunterModule extends ToggleableModule {
                         currentPortalNether.getX() + 0.5, currentPortalNether.getZ() + 0.5);
                 int yDiff = Math.abs(mc.player.blockPosition().getY() - currentPortalNether.getY());
 
-                // Once in walkTowards phase, stay there (no oscillation)
-                if (!portalWalkPhase && (distXZ > 3 || yDiff > 4)) {
-                    // Far or wrong Y — Baritone 3D navigation
-                    if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
-                        baritone.goToNear(currentPortalNether, 1);
-                        debug("Baritone -> portail 3D (distXZ=" + String.format("%.0f", distXZ) + " yDiff=" + yDiff + ")");
-                    }
-                } else {
-                    // Close enough — walk into the portal (and stay in this phase)
-                    if (!portalWalkPhase) {
-                        portalWalkPhase = true;
-                        baritone.cancelAll();
-                        debug("Phase walkTowards activée");
-                    }
-                    walkTowards(currentPortalNether);
+                // Use Baritone #goto x y z for precise 3D navigation
+                if (!baritone.isPathing() && portalWaitTimer % 40 == 1) {
+                    baritone.executeCommand("goto " + currentPortalNether.getX() + " " + currentPortalNether.getY() + " " + currentPortalNether.getZ());
+                    debug("Baritone goto " + currentPortalNether.toShortString() + " (distXZ=" + String.format("%.0f", distXZ) + " yDiff=" + yDiff + ")");
                 }
             }
         }
@@ -797,16 +786,8 @@ public class PortalHunterModule extends ToggleableModule {
                         currentPortalOverworld.getX() + 0.5, currentPortalOverworld.getZ() + 0.5);
                 int yDiff = Math.abs(mc.player.blockPosition().getY() - currentPortalOverworld.getY());
 
-                if (!portalWalkPhase && (distXZ > 3 || yDiff > 4)) {
-                    if (!baritone.isPathing() && portalWaitTimer % 20 == 1) {
-                        baritone.goToNear(currentPortalOverworld, 1);
-                    }
-                } else {
-                    if (!portalWalkPhase) {
-                        portalWalkPhase = true;
-                        baritone.cancelAll();
-                    }
-                    walkTowards(currentPortalOverworld);
+                if (!baritone.isPathing() && portalWaitTimer % 40 == 1) {
+                    baritone.executeCommand("goto " + currentPortalOverworld.getX() + " " + currentPortalOverworld.getY() + " " + currentPortalOverworld.getZ());
                 }
             }
         }
