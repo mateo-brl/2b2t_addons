@@ -12,7 +12,9 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.Vec3;
+import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.events.client.EventUpdate;
+import org.rusherhack.client.api.feature.module.IModule;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.client.api.utils.ChatUtils;
@@ -98,9 +100,32 @@ public class AutoTravelModule extends ToggleableModule {
         );
     }
 
+    /**
+     * Check if another module using ElytraBot is already active.
+     */
+    private boolean isElytraBotInUse() {
+        for (String name : new String[]{"ElytraBot", "BaseFinder"}) {
+            try {
+                IModule other = RusherHackAPI.getModuleManager().getFeature(name).orElse(null);
+                if (other instanceof ToggleableModule tm && tm != this && tm.isToggled()) {
+                    return true;
+                }
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
     @Override
     public void onEnable() {
         Lang.setFrench(langFr.getValue());
+
+        if (isElytraBotInUse()) {
+            ChatUtils.print("[AutoTravel] " + Lang.t(
+                    "ERROR: Another module using ElytraBot is already active! Disable it first.",
+                    "ERREUR : Un autre module utilisant ElytraBot est déjà actif ! Désactivez-le d'abord."));
+            this.toggle();
+            return;
+        }
 
         if (mc.player == null || mc.level == null) {
             ChatUtils.print("[AutoTravel] " + Lang.t("Must be in a world!", "Vous devez être dans un monde !"));
@@ -154,7 +179,6 @@ public class AutoTravelModule extends ToggleableModule {
     private void onUpdate(EventUpdate event) {
         if (mc.player == null || mc.level == null) return;
 
-        Lang.setFrench(langFr.getValue());
         tickCounter++;
 
         // Detect dimension change

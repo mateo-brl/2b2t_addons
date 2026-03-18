@@ -247,10 +247,35 @@ public class BaseFinderModule extends ToggleableModule {
         );
     }
 
+    /**
+     * Check if another module using ElytraBot is already active.
+     */
+    private boolean isElytraBotInUse() {
+        for (String name : new String[]{"AutoTravel", "ElytraBot"}) {
+            try {
+                IModule other = RusherHackAPI.getModuleManager().getFeature(name).orElse(null);
+                if (other instanceof ToggleableModule tm && tm != this && tm.isToggled()) {
+                    return true;
+                }
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
     @Override
     public void onEnable() {
+        Lang.setFrench(langFr.getValue());
+
         if (mc.player == null || mc.level == null) {
             ChatUtils.print("[BaseHunter] " + Lang.t("Must be in a world!", "Vous devez être dans un monde !"));
+            this.toggle();
+            return;
+        }
+
+        if (isElytraBotInUse()) {
+            ChatUtils.print("[BaseHunter] " + Lang.t(
+                    "ERROR: Another module using ElytraBot is already active! Disable it first.",
+                    "ERREUR : Un autre module utilisant ElytraBot est déjà actif ! Désactivez-le d'abord."));
             this.toggle();
             return;
         }
@@ -586,9 +611,6 @@ public class BaseFinderModule extends ToggleableModule {
     @Subscribe
     private void onUpdate(EventUpdate event) {
         if (mc.player == null || mc.level == null) return;
-
-        // Sync language setting
-        Lang.setFrench(langFr.getValue());
 
         tickCounter++;
         navigation.updateTracking();

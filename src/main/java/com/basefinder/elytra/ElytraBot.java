@@ -556,8 +556,9 @@ public class ElytraBot {
 
         if (!safe) {
             // Fallback: climb to avoid danger
+            float originalPitch = desiredPitch;
             desiredPitch = Math.min(desiredPitch, -20.0f);
-            LOGGER.warn("[ElytraBot] Pitch {} rejected by safety check, using {}", desiredPitch, -20.0f);
+            LOGGER.warn("[ElytraBot] Pitch {} rejected by safety check, using {}", originalPitch, desiredPitch);
         }
 
         applySmoothRotation(desiredPitch, targetYaw);

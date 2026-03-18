@@ -5,10 +5,12 @@ import com.basefinder.util.Lang;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -279,9 +281,8 @@ public class FireworkResupply {
     }
 
     /**
-     * Find a shulker box in inventory that might contain firework rockets.
-     * We can't easily check contents of unplaced shulkers in 1.21.4,
-     * so we just find any shulker box (user said they keep fireworks in them).
+     * Find a shulker box in inventory that contains firework rockets.
+     * Uses DataComponents.CONTAINER to read shulker contents without placing (1.21.4+).
      */
     private int findShulkerWithFireworks() {
         if (mc.player == null) return -1;
@@ -289,7 +290,12 @@ public class FireworkResupply {
             ItemStack stack = mc.player.inventoryMenu.getSlot(i).getItem();
             if (stack.getItem() instanceof net.minecraft.world.item.BlockItem blockItem) {
                 if (blockItem.getBlock() instanceof ShulkerBoxBlock) {
-                    return i;
+                    ItemContainerContents contents = stack.getOrDefault(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
+                    for (ItemStack contained : contents.nonEmptyItems()) {
+                        if (contained.is(Items.FIREWORK_ROCKET)) {
+                            return i;
+                        }
+                    }
                 }
             }
         }

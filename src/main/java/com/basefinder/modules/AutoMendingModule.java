@@ -177,7 +177,6 @@ public class AutoMendingModule extends ToggleableModule {
     private void onUpdate(EventUpdate event) {
         if (mc.player == null || mc.level == null) return;
 
-        Lang.setFrench(langFr.getValue());
         tickCounter++;
 
         // Process swap steps (1 step per tick for server sync)
