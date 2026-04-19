@@ -240,8 +240,7 @@ public class ChunkScanner {
             }
 
         } catch (Exception e) {
-            LOGGER.error("[ChunkScanner] Fatal error in scanLoadedChunks: {}", e.getMessage());
-            e.printStackTrace();
+            LOGGER.error("[ChunkScanner] Fatal error in scanLoadedChunks: {}", e.getMessage(), e);
         }
 
         return newFinds;

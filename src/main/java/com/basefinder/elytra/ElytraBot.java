@@ -269,6 +269,15 @@ public class ElytraBot {
         pendingFireworkSlot = -1;
         if (baritoneController != null) baritoneController.cancelLanding();
         baritoneLandingTimer = 0;
+        // Fix BUG-020: reset residual state that survived a previous stop() call
+        // and made the next start() pick up stale values (e.g. stuckTimer
+        // immediately triggering stuck recovery after re-enable).
+        pendingInventorySwap = false;
+        previousSlotBeforeFirework = -1;
+        lastPosition = null;
+        stuckTimer = 0;
+        tickCounter = 0;
+        fireworkCooldown = 0;
     }
 
     /** Start controlled descent for base approach photography. */

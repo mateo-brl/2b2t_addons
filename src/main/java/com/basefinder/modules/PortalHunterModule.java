@@ -300,6 +300,9 @@ public class PortalHunterModule extends ToggleableModule {
         baritone.cancelAll();
         survivalManager.stop();
         releaseMovementKeys();
+        // Fix BUG-001: shutdown Discord notifier executor to avoid thread leak on toggle.
+        // Matches the fix already applied in BaseFinderModule.onDisable (commit ed34bd0).
+        baseLogger.getDiscordNotifier().shutdown();
         debug("State: " + state + " -> IDLE (disabled)");
         state = HunterState.IDLE;
 
@@ -379,8 +382,7 @@ public class PortalHunterModule extends ToggleableModule {
                 case ENTERING_NETHER -> handleEnteringNether();
             }
         } catch (Exception e) {
-            LOGGER.error("[PortalHunter] Error in state {}: {}", state, e.getMessage());
-            e.printStackTrace();
+            LOGGER.error("[PortalHunter] Error in state {}: {}", state, e.getMessage(), e);
         }
     }
 
