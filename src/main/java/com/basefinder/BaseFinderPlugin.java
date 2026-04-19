@@ -29,8 +29,7 @@ public class BaseFinderPlugin extends Plugin {
             RusherHackAPI.getModuleManager().registerFeature(baseFinderModule);
             this.getLogger().info("Module BaseHunter enregistré (catégorie External)");
         } catch (Exception e) {
-            this.getLogger().error("Échec enregistrement module BaseFinder : {}", e.getMessage());
-            e.printStackTrace();
+            this.getLogger().error("Échec enregistrement module BaseFinder : {}", e.getMessage(), e);
         }
 
         try {
@@ -38,8 +37,7 @@ public class BaseFinderPlugin extends Plugin {
             RusherHackAPI.getModuleManager().registerFeature(elytraBotModule);
             this.getLogger().info("Module ElytraBot enregistré (catégorie External)");
         } catch (Exception e) {
-            this.getLogger().error("Échec enregistrement module ElytraBot : {}", e.getMessage());
-            e.printStackTrace();
+            this.getLogger().error("Échec enregistrement module ElytraBot : {}", e.getMessage(), e);
         }
 
         try {
@@ -47,8 +45,7 @@ public class BaseFinderPlugin extends Plugin {
             RusherHackAPI.getModuleManager().registerFeature(autoTravelModule);
             this.getLogger().info("Module AutoTravel enregistré (catégorie External)");
         } catch (Exception e) {
-            this.getLogger().error("Échec enregistrement module AutoTravel : {}", e.getMessage());
-            e.printStackTrace();
+            this.getLogger().error("Échec enregistrement module AutoTravel : {}", e.getMessage(), e);
         }
 
         try {
@@ -56,8 +53,7 @@ public class BaseFinderPlugin extends Plugin {
             RusherHackAPI.getModuleManager().registerFeature(autoMendingModule);
             this.getLogger().info("Module AutoMending enregistré (catégorie External)");
         } catch (Exception e) {
-            this.getLogger().error("Échec enregistrement module AutoMending : {}", e.getMessage());
-            e.printStackTrace();
+            this.getLogger().error("Échec enregistrement module AutoMending : {}", e.getMessage(), e);
         }
 
         try {
@@ -65,8 +61,7 @@ public class BaseFinderPlugin extends Plugin {
             RusherHackAPI.getModuleManager().registerFeature(portalHunterModule);
             this.getLogger().info("Module PortalHunter enregistré (catégorie External)");
         } catch (Exception e) {
-            this.getLogger().error("Échec enregistrement module PortalHunter : {}", e.getMessage());
-            e.printStackTrace();
+            this.getLogger().error("Échec enregistrement module PortalHunter : {}", e.getMessage(), e);
         }
 
         try {
@@ -74,8 +69,7 @@ public class BaseFinderPlugin extends Plugin {
             RusherHackAPI.getHudManager().registerFeature(hud);
             this.getLogger().info("HUD BaseFinder enregistré");
         } catch (Exception e) {
-            this.getLogger().error("Échec enregistrement HUD : {}", e.getMessage());
-            e.printStackTrace();
+            this.getLogger().error("Échec enregistrement HUD : {}", e.getMessage(), e);
         }
 
         try {
@@ -83,8 +77,7 @@ public class BaseFinderPlugin extends Plugin {
             RusherHackAPI.getCommandManager().registerFeature(command);
             this.getLogger().info("Commande BaseFinder enregistrée");
         } catch (Exception e) {
-            this.getLogger().error("Échec enregistrement commande : {}", e.getMessage());
-            e.printStackTrace();
+            this.getLogger().error("Échec enregistrement commande : {}", e.getMessage(), e);
         }
 
         try {
@@ -92,8 +85,7 @@ public class BaseFinderPlugin extends Plugin {
             RusherHackAPI.getCommandManager().registerFeature(phCommand);
             this.getLogger().info("Commande PortalHunter enregistrée");
         } catch (Exception e) {
-            this.getLogger().error("Échec enregistrement commande PortalHunter : {}", e.getMessage());
-            e.printStackTrace();
+            this.getLogger().error("Échec enregistrement commande PortalHunter : {}", e.getMessage(), e);
         }
 
         this.getLogger().info("Plugin BaseFinder chargé !");

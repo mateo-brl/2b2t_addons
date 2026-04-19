@@ -41,7 +41,7 @@ dependencies {
         parchment("org.parchmentmc.data:parchment-${project.parchment_version}@zip")
     }
 
-    rusherhackApi "org.rusherhack:rusherhack-api:$minecraft_version-SNAPSHOT"
+    rusherhackApi "org.rusherhack:rusherhack-api:${project.rusherhack_api_version}"
 
     // Baritone API - bundled with RusherHack at runtime, accessed via reflection
     // No compile dependency needed since BaritoneController uses reflection
@@ -88,12 +88,14 @@ processResources {
     inputs.property "plugin_name", project.plugin_name
     inputs.property "plugin_version", project.plugin_version
     inputs.property "minecraft_version", project.minecraft_version
+    inputs.property "rusherhack_api_version", project.rusherhack_api_version
 
     filesMatching("rusherhack-plugin.json") {
         expand(
                 "plugin_name": project.plugin_name,
                 "plugin_version": project.plugin_version,
-                "minecraft_version": project.minecraft_version
+                "minecraft_version": project.minecraft_version,
+                "rusherhack_api_version": project.rusherhack_api_version
         )
     }
 }

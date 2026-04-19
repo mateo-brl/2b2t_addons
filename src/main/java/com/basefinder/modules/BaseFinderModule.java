@@ -675,8 +675,7 @@ public class BaseFinderModule extends ToggleableModule {
             LOGGER.info("[BaseHunter] scanLoadedChunks returned {} finds, total scanned: {}",
                 newFinds != null ? newFinds.size() : "null", scanner.getScannedCount());
         } catch (Exception e) {
-            LOGGER.error("[BaseHunter] Error in scanLoadedChunks: {}", e.getMessage());
-            e.printStackTrace();
+            LOGGER.error("[BaseHunter] Error in scanLoadedChunks: {}", e.getMessage(), e);
             return;
         }
 
