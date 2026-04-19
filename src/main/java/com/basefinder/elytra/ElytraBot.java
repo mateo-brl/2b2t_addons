@@ -45,6 +45,7 @@ public class ElytraBot {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("ElytraBot");
     private final Minecraft mc = Minecraft.getInstance();
     private final PhysicsSimulator physics = new PhysicsSimulator();
+    private final com.basefinder.domain.flight.FlightController flightController = new com.basefinder.domain.flight.FlightController();
 
     // === FLIGHT PARAMETERS (set via module settings) ===
     private double cruiseAltitude = 200.0;
@@ -54,23 +55,14 @@ public class ElytraBot {
     private boolean useFlightNoise = true;
     private boolean useObstacleAvoidance = true;
 
-    // === PHYSICS CONSTANTS ===
-    /** Number of ticks to simulate ahead for safety. */
-    private static final int SIMULATION_TICKS = 40;
-    /** Number of candidate pitches to evaluate each tick. */
-    private static final int PITCH_CANDIDATES = 21;
-    /** Minimum pitch (max climb angle). */
-    private static final float MIN_PITCH = -55.0f;
-    /** Maximum pitch (max dive angle). */
-    private static final float MAX_PITCH = 45.0f;
+    // === PHYSICS / CONTROL CONSTANTS ===
+    // Pitch search space + trajectory scoring moved to FlightTuning.DEFAULT (domain.flight).
     /** Maximum pitch change per tick for smooth rotation. */
     private static final float MAX_PITCH_RATE = 4.0f;
     /** Maximum yaw change per tick during cruise. */
     private static final float MAX_YAW_RATE_CRUISE = 5.0f;
     /** Maximum yaw change per tick during critical phases. */
     private static final float MAX_YAW_RATE_FAST = 15.0f;
-    /** Minimum terrain clearance in blocks. */
-    private static final double SAFETY_CLEARANCE = 3.0;
     /** Emergency pull-up pitch. */
     private static final float EMERGENCY_PITCH = -55.0f;
     /** Stall recovery pitch (dive to regain speed). */
@@ -335,84 +327,13 @@ public class ElytraBot {
     private float calculateOptimalPitch(double targetAlt) {
         if (mc.player == null) return 0;
 
-        FlightState current = FlightState.fromPlayer(mc.player);
-        float currentPitch = mc.player.getXRot();
-        float bestPitch = currentPitch;
-        double bestScore = Double.NEGATIVE_INFINITY;
+        FlightState legacy = FlightState.fromPlayer(mc.player);
+        com.basefinder.domain.flight.FlightState domainState = new com.basefinder.domain.flight.FlightState(
+                legacy.x, legacy.y, legacy.z,
+                legacy.motionX, legacy.motionY, legacy.motionZ,
+                legacy.pitch, legacy.yaw);
 
-        // Evaluate coarse candidates
-        for (int i = 0; i < PITCH_CANDIDATES; i++) {
-            float candidate = MIN_PITCH + (MAX_PITCH - MIN_PITCH) * ((float) i / (PITCH_CANDIDATES - 1));
-            double score = evaluatePitchCandidate(current, candidate, targetAlt);
-            if (score > bestScore) {
-                bestScore = score;
-                bestPitch = candidate;
-            }
-        }
-
-        // Refine around best (+/- 4 degrees, 1-degree steps)
-        float refined = bestPitch;
-        double refinedScore = bestScore;
-        for (float delta = -4.0f; delta <= 4.0f; delta += 1.0f) {
-            float candidate = MathUtils.clamp(bestPitch + delta, MIN_PITCH, MAX_PITCH);
-            double score = evaluatePitchCandidate(current, candidate, targetAlt);
-            if (score > refinedScore) {
-                refinedScore = score;
-                refined = candidate;
-            }
-        }
-
-        return refined;
-    }
-
-    /**
-     * Evaluate a candidate pitch by simulating forward and scoring the trajectory.
-     */
-    private double evaluatePitchCandidate(FlightState current, float pitch, double targetAlt) {
-        FlightState[] trajectory = physics.simulateForward(current, pitch, current.yaw, SIMULATION_TICKS, false);
-
-        double score = 0;
-
-        for (int i = 0; i < trajectory.length; i++) {
-            FlightState s = trajectory[i];
-            double weight = 1.0 - ((double) i / trajectory.length); // Earlier ticks matter more
-
-            // 1. TERRAIN CLEARANCE (critical)
-            int groundY = getTerrainHeight((int) s.x, (int) s.z);
-            double clearance = s.y - groundY;
-
-            if (clearance < 0) {
-                return -1_000_000; // Collision = instant reject
-            }
-            if (clearance < SAFETY_CLEARANCE) {
-                score -= (SAFETY_CLEARANCE - clearance) * 500 * weight;
-            } else {
-                score += Math.min(clearance, 30) * weight; // Reward clearance up to a point
-            }
-
-            // 2. ALTITUDE PROXIMITY to target
-            double altError = Math.abs(s.y - targetAlt);
-            score -= altError * 8 * weight;
-
-            // 3. SPEED MAINTENANCE
-            double speed = s.getTotalSpeed();
-            if (speed < STALL_SPEED) {
-                score -= 300 * weight; // Stall penalty
-            } else if (speed > 0.5 && speed < 2.5) {
-                score += 15 * weight; // Good speed range
-            }
-
-            // 4. FALL DAMAGE check near ground
-            if (clearance < 6 && PhysicsSimulator.wouldCauseFallDamage(s.motionY)) {
-                score -= 5000 * weight;
-            }
-        }
-
-        // 5. SMOOTHNESS bonus (prefer small pitch changes)
-        double pitchChange = Math.abs(pitch - current.pitch);
-        score -= pitchChange * 2.5;
-
-        return score;
+        return flightController.planOptimalPitch(domainState, targetAlt, this::getTerrainHeight);
     }
 
     /**
