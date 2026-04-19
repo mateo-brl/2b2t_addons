@@ -28,6 +28,7 @@ repositories {
         name = 'ParchmentMC'
         url = 'https://maven.parchmentmc.org'
     }
+    mavenCentral()
 }
 
 dependencies {
@@ -44,6 +45,16 @@ dependencies {
 
     // Baritone API - bundled with RusherHack at runtime, accessed via reflection
     // No compile dependency needed since BaritoneController uses reflection
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
 }
 
 loom {
