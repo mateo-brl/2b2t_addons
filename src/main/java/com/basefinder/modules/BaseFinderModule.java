@@ -1,5 +1,6 @@
 package com.basefinder.modules;
 
+import com.basefinder.application.telemetry.EmitBotTickUseCase;
 import com.basefinder.bootstrap.ServiceRegistry;
 import com.basefinder.domain.view.BaseFinderViewModel;
 import com.basefinder.elytra.ElytraBot;
@@ -59,6 +60,7 @@ public class BaseFinderModule extends ToggleableModule {
     private final ElytraBot elytraBot;
     private final NavigationHelper navigation = new NavigationHelper();
     private final BaseLogger logger;
+    private final EmitBotTickUseCase emitBotTick;
     private final FreshnessEstimator freshnessEstimator = new FreshnessEstimator();
     private final SurvivalManager survivalManager = new SurvivalManager();
     private final StateManager stateManager = new StateManager();
@@ -199,6 +201,7 @@ public class BaseFinderModule extends ToggleableModule {
         this.scanner = registry.chunkScanner();
         this.elytraBot = registry.elytraBot();
         this.logger = registry.baseLogger();
+        this.emitBotTick = registry.emitBotTickUseCase();
 
         // Mode de recherche avec paramètres spécifiques par mode
         modeGroup.addSubSettings(searchMode, spiralStep,
@@ -589,6 +592,12 @@ public class BaseFinderModule extends ToggleableModule {
 
         tickCounter++;
         navigation.updateTracking();
+
+        // Émet un BotTick toutes les 20 ticks (~1 Hz) si le module est actif.
+        // Le sink (NDJSON ou NOOP) absorbe les échecs IO.
+        if (tickCounter % 20 == 0) {
+            emitBotTick.emit(snapshot());
+        }
 
         // Lag detection tick (TPS estimation)
         if (enable2b2tLag.getValue()) {
