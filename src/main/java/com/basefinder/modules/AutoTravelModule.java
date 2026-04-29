@@ -1,5 +1,6 @@
 package com.basefinder.modules;
 
+import com.basefinder.bootstrap.ServiceRegistry;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.util.Lang;
 import net.minecraft.client.Minecraft;
@@ -71,7 +72,7 @@ public class AutoTravelModule extends ToggleableModule {
     }
 
     // === INTERNAL STATE ===
-    private final ElytraBot elytraBot = new ElytraBot();
+    private final ElytraBot elytraBot;
     private TravelState travelState = TravelState.IDLE;
     private BlockPos finalTarget;
     private BlockPos currentTarget;
@@ -87,8 +88,9 @@ public class AutoTravelModule extends ToggleableModule {
     private int messageThrottle = 0;
     private int jumpCooldown = 0;
 
-    public AutoTravelModule() {
+    public AutoTravelModule(ServiceRegistry registry) {
         super("AutoTravel", "Voyage intelligent via Nether/Elytra/Marche", ModuleCategory.EXTERNAL);
+        this.elytraBot = registry.elytraBot();
 
         elytraGroup.addSubSettings(cruiseAltitude, fireworkInterval, minDurability);
         walkGroup.addSubSettings(autoSprint, autoJump);
