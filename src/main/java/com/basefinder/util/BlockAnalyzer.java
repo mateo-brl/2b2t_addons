@@ -1,5 +1,10 @@
 package com.basefinder.util;
 
+import com.basefinder.domain.scan.ChunkClassifier;
+import com.basefinder.domain.scan.ChunkCounts;
+import com.basefinder.domain.scan.ScoringContext;
+import com.basefinder.domain.scan.ScoringResult;
+import com.basefinder.domain.world.Dimension;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceKey;
@@ -355,25 +360,6 @@ public class BlockAnalyzer {
     }
 
     /**
-     * Calculate spawn distance multiplier.
-     */
-    public static double getSpawnDistanceMultiplier(double distFromSpawn) {
-        if (distFromSpawn < 500) {
-            return 0.5;
-        } else if (distFromSpawn < 2000) {
-            return 0.7;
-        } else if (distFromSpawn < 10000) {
-            return 0.8;
-        } else if (distFromSpawn < 50000) {
-            return 1.0;
-        } else if (distFromSpawn < 200000) {
-            return 1.3;
-        } else {
-            return 1.5;
-        }
-    }
-
-    /**
      * Scores a chunk for player activity. Tuned for 2b2t to avoid false positives.
      *
      * Two-pass scanning:
@@ -537,9 +523,6 @@ public class BlockAnalyzer {
             }
         }
 
-        // Only count obsidian as significant if there's a lot (>5 = not just a portal)
-        int significantObsidian = obsidianCount > 5 ? obsidianCount : 0;
-
         analysis.setPlayerBlockCount(strongBlockCount);
         analysis.setMediumBlockCount(mediumBlockCount);
         analysis.setStorageCount(storageCount);
@@ -548,107 +531,54 @@ public class BlockAnalyzer {
         analysis.setShulkerCount(shulkerCount);
         analysis.setSignCount(signWithTextCount);
 
-        // Determine base type
-        if (mapArtBlockCount > 50) {
-            analysis.setBaseType(BaseType.MAP_ART);
-        } else if (shulkerCount >= 1 && strongBlockCount < 5) {
-            // Stash: shulkers without much construction
-            analysis.setBaseType(BaseType.STASH);
-        } else if (shulkerCount >= 1) {
-            analysis.setBaseType(BaseType.STORAGE);
-        } else if (obsidianCount >= 10) {
-            analysis.setBaseType(BaseType.PORTAL);
-        } else if (strongBlockCount >= 3 && storageCount >= 3) {
-            analysis.setBaseType(BaseType.STORAGE);
-        } else if (strongBlockCount >= 5) {
-            analysis.setBaseType(BaseType.CONSTRUCTION);
-        } else if (trailBlockCount >= 15) {
-            analysis.setBaseType(BaseType.TRAIL);
-        } else {
-            analysis.setBaseType(BaseType.NONE);
-        }
-
-        // === Cave Air Analysis ===
+        // Cave air score (MC-dependent)
         double caveAirScore = CaveAirAnalyzer.analyzeChunkCaveAir(chunk, level);
-        if (caveAirScore >= CaveAirAnalyzer.getMinReportScore() && analysis.getBaseType() == BaseType.NONE) {
-            analysis.setBaseType(BaseType.CAVE_MINING);
-        }
 
-        // Score calculation
-        double score = caveAirScore
-                + shulkerCount * 25.0
-                + strongBlockCount * 5.0
-                + mediumBlockCount * 2.0
-                + significantObsidian * 2.0
-                + mapArtBlockCount * 1.0
-                + trailBlockCount * 0.5
-                + signWithTextCount * 15.0;
-
-        // Multi-Y bonuses
-        if (bedrockLayerBlocks >= 1) {
-            score += bedrockLayerBlocks * 8.0;
-        }
-        if (skyLayerBlocks >= 1) {
-            score += skyLayerBlocks * 6.0;
-        }
-
-        // === NATURAL STRUCTURE DETECTION: signature blocks override everything ===
-        // If we find village/trial chamber signature blocks, this is 100% a natural structure
-        if (villageSignatureCount >= 1 && shulkerCount == 0) {
-            // Less aggressive if chunk also has strong player blocks (base built in village)
-            double villagePenalty = strongBlockCount >= 3 ? 0.3 : 0.05;
-            score *= villagePenalty;
-            if (score < 10.0) analysis.setBaseType(BaseType.NONE);
-        }
-        if (trialChamberSignatureCount >= 1 && shulkerCount == 0) {
-            score *= 0.05; // 95% reduction - it's a trial chamber
-            if (score < 10.0) analysis.setBaseType(BaseType.NONE);
-        }
-
-        // === UNIFIED PENALTY: ancient city vs biome (never both) ===
-        // If ancient city blocks >= 5, use the more specific ancient city penalty.
-        // Otherwise, use the biome penalty. Never apply both in cascade.
-        if (ancientCityBlockCount >= 5 && shulkerCount == 0) {
-            // Ancient city penalty (more specific)
-            double ancientCityPenalty;
-            if (ancientCityBlockCount >= 30) {
-                ancientCityPenalty = 0.05; // 95% reduction
-            } else if (ancientCityBlockCount >= 15) {
-                ancientCityPenalty = 0.15; // 85% reduction
-            } else {
-                ancientCityPenalty = 0.3;  // 70% reduction
-            }
-            score *= ancientCityPenalty;
-
-            if (score < 10.0) {
-                analysis.setBaseType(BaseType.NONE);
-            }
-        } else if (shulkerCount == 0) {
-            // Biome penalty (only if no ancient city penalty applied)
-            double biomePenalty = getBiomePenalty(level, chunk);
-            if (biomePenalty < 1.0) {
-                double shulkerScore = shulkerCount * 25.0;
-                double otherScore = score - shulkerScore;
-                score = shulkerScore + otherScore * biomePenalty;
-            }
-        }
-
-        // Spawn distance
+        // Distance au spawn (utilisée par classifier + reportée dans analysis)
         double distFromSpawn = Math.sqrt(
                 Math.pow(chunk.getPos().getMiddleBlockX(), 2) +
                 Math.pow(chunk.getPos().getMiddleBlockZ(), 2));
         analysis.setDistanceFromSpawn(distFromSpawn);
 
-        double spawnMultiplier = getSpawnDistanceMultiplier(distFromSpawn);
-        score *= spawnMultiplier;
+        // Pénalité biome (MC-dependent)
+        double biomePenalty = (shulkerCount == 0 && ancientCityBlockCount < 5)
+                ? getBiomePenalty(level, chunk)
+                : 1.0;
 
-        // Shulkers guarantee minimum score - never miss a stash regardless of location
-        if (shulkerCount >= 1) {
-            score = Math.max(score, 25.0);
-        }
+        // Bascule vers la logique pure (domain/scan/ChunkClassifier)
+        ChunkCounts counts = ChunkCounts.builder()
+                .strongBlockCount(strongBlockCount)
+                .mediumBlockCount(mediumBlockCount)
+                .obsidianCount(obsidianCount)
+                .storageCount(storageCount)
+                .trailBlockCount(trailBlockCount)
+                .mapArtBlockCount(mapArtBlockCount)
+                .shulkerCount(shulkerCount)
+                .signWithTextCount(signWithTextCount)
+                .ancientCityBlockCount(ancientCityBlockCount)
+                .villageSignatureCount(villageSignatureCount)
+                .trialChamberSignatureCount(trialChamberSignatureCount)
+                .bedrockLayerBlocks(bedrockLayerBlocks)
+                .skyLayerBlocks(skyLayerBlocks)
+                .caveAirScore(caveAirScore)
+                .build();
 
-        analysis.setScore(score);
+        ScoringContext ctx = ScoringContext.of(
+                toDomainDimension(dimension),
+                biomePenalty,
+                distFromSpawn,
+                CaveAirAnalyzer.getMinReportScore());
+
+        ScoringResult result = ChunkClassifier.classify(counts, ctx);
+        analysis.setBaseType(result.baseType());
+        analysis.setScore(result.score());
         return analysis;
+    }
+
+    private static Dimension toDomainDimension(ResourceKey<Level> dimension) {
+        if (dimension == Level.END) return Dimension.END;
+        if (dimension == Level.NETHER) return Dimension.NETHER;
+        return Dimension.OVERWORLD;
     }
 
     /**
