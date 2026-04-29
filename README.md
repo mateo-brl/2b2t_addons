@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/Minecraft-1.21.4-62B47A?style=for-the-badge&logo=minecraft&logoColor=white" alt="Minecraft 1.21.4"/>
   <img src="https://img.shields.io/badge/RusherHack-Plugin-FF4444?style=for-the-badge" alt="RusherHack"/>
   <img src="https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" alt="Java 21"/>
-  <img src="https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge" alt="Version 2.0.0"/>
+  <img src="https://img.shields.io/badge/version-2.1.0-blue?style=for-the-badge" alt="Version 2.1.0"/>
   <img src="https://img.shields.io/github/license/mateo-brl/2b2t_addons?style=for-the-badge" alt="License"/>
 </p>
 
@@ -21,9 +21,16 @@
 
 ## Description
 
-BaseFinder est un plugin RusherHack qui automatise entierement la recherche de bases sur 2b2t. Il suffit d'activer le module : il vole en elytra, scanne les chunks, suit les trails et log tout ce qu'il trouve.
+BaseFinder est un plugin RusherHack qui automatise entièrement la recherche de bases sur 2b2t. Il suffit d'activer le module : il vole en elytra, scanne les chunks, suit les trails et log tout ce qu'il trouve.
 
-Concu pour fonctionner **24h/24 sans surveillance** avec des systemes de survie automatiques.
+Conçu pour fonctionner **24h/24 sans surveillance** avec des systèmes de survie automatiques.
+
+> **Pipeline complet (3 repos)** : ce plugin émet de la télémétrie NDJSON vers le
+> backend [`2b2t_backend`](https://github.com/mateo-brl/2b2t_backend) (Ktor + SQLite/Postgres),
+> qui est consommé par le dashboard live
+> [`2b2t_dashboard`](https://github.com/mateo-brl/2b2t_dashboard) (React + Vite + Tailwind).
+> Le bot reste utilisable seul — la télémétrie n'est activée que si la JVM
+> arg `-Dbasefinder.backend.url=...` est présente.
 
 ## Table des matieres
 
@@ -33,6 +40,7 @@ Concu pour fonctionner **24h/24 sans surveillance** avec des systemes de survie 
 - [Configuration](#configuration)
 - [Commandes](#commandes)
 - [Guide 24/7](#guide-247)
+- [Telemetrie](#telemetrie)
 - [Architecture](#architecture)
 - [English](#english)
 
@@ -152,10 +160,11 @@ IDLE → TAKING_OFF → CRUISING → LANDING
 
 | Module | Categorie | Description |
 |--------|-----------|-------------|
-| **BaseHunter** | External | Module principal — scan de bases automatise avec vol elytra, analyse de chunks, suivi de trails |
-| **ChunkHistory** | External | Detection et visualisation des new/old chunks. Fonctionne seul ou avec BaseHunter |
-| **ElytraBot** | External | Vol elytra standalone vers des coordonnees avec auto-swap et evitement d'obstacles |
-| **AutoTravel** | External | Voyage intelligent avec raccourci Nether, elytra/marche, detection de portails |
+| **BaseHunter** | External | Module principal — scan de bases automatisé avec vol elytra, analyse de chunks, suivi de trails |
+| **ElytraBot** | External | Vol elytra standalone vers des coordonnées avec auto-swap et évitement d'obstacles |
+| **AutoTravel** | External | Voyage intelligent avec raccourci Nether, elytra/marche, détection de portails |
+| **PortalHunter** | External | Scan automatique de bases via portails du Nether |
+| **AutoMending** | External | Auto-réparation des elytras Mending par minage de minerais XP |
 
 ---
 
@@ -164,7 +173,7 @@ IDLE → TAKING_OFF → CRUISING → LANDING
 ### Depuis les releases (recommande)
 
 1. Aller dans l'onglet **[Releases](../../releases)**
-2. Telecharger `basefinder-2.0.0.jar`
+2. Telecharger `basefinder-2.1.0.jar`
 3. Placer le `.jar` dans `.minecraft/rusherhack/plugins/`
 4. Ajouter les **arguments JVM requis** (voir ci-dessous)
 5. Lancer Minecraft avec RusherHack
@@ -174,11 +183,22 @@ IDLE → TAKING_OFF → CRUISING → LANDING
 
 ### Arguments JVM requis
 
-Les arguments suivants doivent etre ajoutes aux JVM Arguments de votre launcher pour que RusherHack charge les plugins :
+Les arguments suivants doivent être ajoutés aux JVM Arguments de votre launcher pour que RusherHack charge les plugins :
 
 ```
 -XX:+DisableAttachMechanism -DFabricMcEmu=net.minecraft.client.main.Main --add-opens java.base/java.lang=ALL-UNNAMED -Drusherhack.enablePlugins=true
 ```
+
+**Optionnel — activer le streaming télémétrie vers le backend** :
+
+```
+-Dbasefinder.backend.url=http://127.0.0.1:8080
+```
+
+Sans cet argument, le bot reste autonome et écrit uniquement le NDJSON local
+(`<gameDir>/rusherhack/basefinder/telemetry.ndjson`). Avec, chaque event est
+aussi POST sur `/v1/ingest` du backend (cf. [`2b2t_backend`](https://github.com/mateo-brl/2b2t_backend)).
+Voir la section [Télémétrie](#telemetrie).
 
 **PrismLauncher / MultiMC :** Clic droit sur l'instance > Parametres > Java > Arguments JVM supplementaires > coller les arguments.
 
@@ -192,7 +212,7 @@ cd 2b2t_addons
 ./gradlew build
 ```
 
-Le jar se trouve dans `build/libs/basefinder-2.0.0.jar`.
+Le jar se trouve dans `build/libs/basefinder-2.1.0.jar`.
 
 > **Important :** Utilisez le jar de `build/libs/` (remapped intermediary), **pas** celui de `build/devlibs/` (Mojang mappings) qui causera des `NoClassDefFoundError` au chargement.
 
@@ -282,61 +302,98 @@ vol, scan, detection, log, survie, et sauvegarde.
 
 ---
 
+<h2 id="telemetrie">Telemetrie</h2>
+
+Depuis la version 2.1.0, BaseFinder peut streamer ses événements internes
+(`bot_tick` à 1 Hz, `base_found` à chaque détection) vers un backend distant
+en NDJSON. Le format wire v1 est documenté dans [`audit/05-target-architecture.md`](audit/05-target-architecture.md).
+
+Architecture événementielle :
+
+```
+ElytraBot / BaseFinder           ┌── NdjsonFileSink (toujours)
+  → BotEvent sealed type ────────┤
+  → EmitUseCase (seq + idem key) └── HttpJsonLineSink (si backend.url)
+                                       │
+                                       ▼ POST /v1/ingest
+                                   2b2t_backend (Ktor)
+                                       │
+                                       ▼ INSERT OR IGNORE (idem key UNIQUE)
+                                   SQLite / Postgres
+                                       │
+                                       ▼ GET /v1/events polling 1 Hz
+                                   2b2t_dashboard (React)
+```
+
+| Composant | Rôle |
+|-----------|------|
+| `domain/event/{BotEvent, BaseFound, BotTick}` | Sealed types purs (zero MC import) |
+| `application/telemetry/{TelemetrySink, EmitUseCase}` | Port + use cases |
+| `adapter/io/telemetry/NdjsonFileSink` | Sink fichier append-only |
+| `adapter/io/telemetry/HttpJsonLineSink` | Sink HTTP queue + thread daemon |
+| `adapter/io/telemetry/CompositeSink` | Fan-out fichier + HTTP |
+| `adapter/io/telemetry/EventSerializer` | NDJSON v1 (snake_case keys) |
+
+Le sink HTTP utilise une `ArrayBlockingQueue` bornée (1024) avec drop-newest :
+le tick MC n'est jamais bloqué. Les échecs HTTP sont logués mais avalés
+(contrat `TelemetrySink.publish` ne lève jamais).
+
+Idempotence : chaque event a un `idempotency_key` (`tick:<seq>`, `base:<chunk-coords>`)
+qui sert de clé UNIQUE côté backend → repost après reconnect = no-op.
+
 ## Architecture
+
+Architecture **Ports & Adapters hexagonale** depuis le Jalon 1 (cf. [`audit/05-target-architecture.md`](audit/05-target-architecture.md) et [`docs/adr/0001-target-architecture.md`](docs/adr/0001-target-architecture.md)).
+Flèche de dépendance : `domain ← application ← adapter ← bootstrap`.
 
 ```
 com.basefinder/
-├── BaseFinderPlugin.java              # Point d'entree du plugin
-├── command/
-│   └── BaseFinderCommand.java         # Commandes /basefinder
-├── modules/
-│   ├── BaseFinderModule.java          # Orchestrateur principal (state machine)
-│   ├── ElytraBotModule.java           # Module elytra standalone
-│   ├── AutoTravelModule.java          # Voyage intelligent Nether/elytra/marche
-│   └── NewChunksModule.java           # Visualisation new/old chunks
-├── elytra/
-│   └── ElytraBot.java                 # Controleur de vol physique (40-tick lookahead)
-├── scanner/
-│   ├── ChunkScanner.java              # Orchestrateur d'analyse de chunks
-│   ├── BlockAnalyzer.java             # Detection de blocs joueurs
-│   ├── EntityScanner.java             # Detection d'entites
-│   ├── FreshnessEstimator.java        # Classification ACTIVE/ABANDONNEE/ANCIENNE
-│   ├── ChunkAgeAnalyzer.java          # Detection de version MC
-│   └── NewChunkDetector.java          # Liquid flow exploit
-├── terrain/
-│   ├── TerrainPredictor.java          # Prediction combinee heightmap + seed
-│   ├── HeightmapCache.java            # Cache de terrain observe
-│   └── SeedTerrainGenerator.java      # Generation basee sur la seed 2b2t
-├── trail/
-│   └── TrailFollower.java             # 3 methodes de suivi de trails
-├── navigation/
-│   └── NavigationHelper.java          # Generation de waypoints (7 patterns)
-├── survival/
-│   ├── SurvivalManager.java           # Orchestrateur de survie (priorites)
-│   ├── AutoTotem.java                 # Totem en offhand
-│   ├── AutoEat.java                   # Manger auto
-│   ├── PlayerDetector.java            # Radar joueurs + deconnexion
-│   └── FireworkResupply.java          # Reappro fusees depuis shulkers
-├── logger/
-│   ├── BaseLogger.java                # Log fichier + chat + screenshots
-│   └── DiscordNotifier.java           # Webhook Discord
-├── persistence/
-│   └── StateManager.java              # Sauvegarde/restauration de session
-├── hud/
-│   └── BaseFinderHud.java             # Panel de stats en jeu
-└── util/
-    ├── BaseRecord.java                # Modele de base trouvee
-    ├── BaseType.java                  # Enum des types de bases
-    ├── ChunkAnalysis.java             # Resultat d'analyse de chunk
-    ├── BlockAnalyzer.java             # Classification de blocs
-    ├── PhysicsSimulator.java          # Simulation physique elytra
-    ├── BaritoneController.java        # Integration Baritone (reflection)
-    ├── LagDetector.java               # Compensation lag 2b2t
-    ├── WaypointExporter.java          # Export Xaero/VoxelMap
-    ├── Lang.java                      # Gestion bilingue FR/EN
-    ├── Vec2d.java                     # Vecteur 2D
-    └── MathUtils.java                 # Utilitaires math
+├── BaseFinderPlugin.java                     # Point d'entree du plugin
+├── bootstrap/
+│   └── ServiceRegistry.java                  # Composition root (1 instance par service)
+├── domain/                                   # Pure : zero import MC ou RusherHack
+│   ├── event/{BotEvent, BaseFound, BotTick}  # Sealed events (telemetrie wire v1)
+│   ├── flight/{FlightController, FlightPhysics, FlightState, ...}
+│   ├── scan/{ChunkClassifier, ChunkCounts, BaseType, ScoringContext, ScoringResult}
+│   ├── view/BaseFinderViewModel              # Snapshot immuable pour HUD
+│   └── world/{ChunkId, Dimension}            # IDs packes en long (fastutil)
+├── application/                              # Use cases + ports (Java natif uniquement)
+│   ├── scan/{ChunkSource, ChunkScannerService}
+│   └── telemetry/{TelemetrySink, EmitBaseFoundUseCase, EmitBotTickUseCase, EventSequenceCounter}
+├── adapter/                                  # Implementations MC / IO / reflection
+│   ├── baritone/{BaritoneApi, BaritoneSettingsReflection}
+│   ├── io/telemetry/{NdjsonFileSink, HttpJsonLineSink, CompositeSink, EventSerializer}
+│   └── mc/McChunkSource                      # Lit LevelChunk -> ChunkCounts
+├── command/BaseFinderCommand.java
+├── modules/                                  # Surfaces RusherHack (un module = un toggle UI)
+│   ├── BaseFinderModule (alias BaseHunter)
+│   ├── ElytraBotModule
+│   ├── AutoTravelModule
+│   ├── PortalHunterModule
+│   └── AutoMendingModule
+├── elytra/ElytraBot.java                     # Controleur de vol (40-tick lookahead)
+├── scanner/                                  # Detection chunks + cave air + freshness
+├── terrain/                                  # Heightmap cache + generation par seed 2b2t
+├── trail/TrailFollower.java                  # 3 methodes de suivi de trails
+├── navigation/NavigationHelper.java          # Generation de waypoints (7 patterns)
+├── survival/                                 # AutoTotem, AutoEat, PlayerDetector, etc.
+├── logger/{BaseLogger, DiscordNotifier}
+├── persistence/StateManager.java             # Save async (BaseFinder-StateSave thread)
+├── hud/BaseFinderHud.java
+└── util/                                     # Helpers (PhysicsSimulator + FlightStatePool, ...)
 ```
+
+### Decisions structurantes
+
+- **Composition root** : une seule instance de `ElytraBot`, `ChunkScanner`,
+  `BaseLogger`, `DiscordNotifier`, `BaritoneApi`, `TelemetrySink` partagee
+  entre les 5 modules via `ServiceRegistry`.
+- **Pure domain** : `FlightController`, `ChunkClassifier`, `ChunkScannerService`,
+  `EmitUseCase` testables en JUnit sans Minecraft (56 tests dans `src/test/java/`).
+- **fastutil pour les chunks** : `LongOpenHashSet` 1M chunks (cap), `ChunkId.pack(x,z) = (x << 32) | (z & 0xFFFFFFFF)`,
+  bit-identique au format historique `(int x, int z)` -> migration transparente.
+- **FlightStatePool** : `simulateForwardInto` zero-alloc apres warm-up,
+  elimine ~1.9 MB/s GC churn pendant le vol.
 
 ### Systeme de scoring
 
@@ -359,8 +416,10 @@ Bonus entites : item frames (+2), armor stands (+1), minecarts (+3), entites nom
 | RusherHack API | Compile | API du client |
 | Minecraft 1.21.4 | Compile | Via Fabric Loom |
 | Parchment | Compile | Mappings deobfusques |
-| Baritone | Runtime | Navigation au sol (via reflection) |
+| fastutil 8.5.13 | Compile-only | `LongOpenHashSet` (deja bundled par MC) |
+| Baritone | Runtime | Navigation au sol (via reflection isolee dans `adapter/baritone/`) |
 | Fabric Loader 0.16.9 | Runtime | Chargement du mod |
+| JUnit 5.10.2 | Test | 56 tests (Flight, scan, telemetry, HTTP sink, ...) |
 
 ---
 
@@ -378,6 +437,12 @@ Bonus entites : item frames (+2), armor stands (+1), minecarts (+3), entites nom
 BaseFinder is a RusherHack plugin that fully automates base hunting on 2b2t. Just enable the module and it searches for bases on its own: it flies with elytra, scans chunks, follows trails, and logs everything it finds.
 
 Designed for **24/7 unattended operation** with automatic survival systems.
+
+> **Full pipeline (3 repos)** : the plugin streams NDJSON telemetry to the
+> [`2b2t_backend`](https://github.com/mateo-brl/2b2t_backend) (Ktor + SQLite/Postgres),
+> consumed live by the [`2b2t_dashboard`](https://github.com/mateo-brl/2b2t_dashboard)
+> (React + Vite + Tailwind). The bot stays usable on its own — telemetry is opt-in
+> via `-Dbasefinder.backend.url=...` JVM arg.
 
 ## Key Features
 
@@ -400,9 +465,10 @@ Designed for **24/7 unattended operation** with automatic survival systems.
 | Module | Description |
 |--------|-------------|
 | **BaseHunter** | Main module — automated base scanning with elytra flight, chunk analysis, trail following |
-| **ChunkHistory** | New/old chunk detection and visualization overlay |
 | **ElytraBot** | Standalone elytra flight to coordinates with auto-swap and obstacle avoidance |
 | **AutoTravel** | Smart travel with Nether shortcuts, elytra/walking, portal detection |
+| **PortalHunter** | Auto base scanning via Nether portals |
+| **AutoMending** | Auto-repair Mending elytras by mining XP ores |
 
 ## Commands
 
@@ -433,7 +499,7 @@ Designed for **24/7 unattended operation** with automatic survival systems.
 ### From releases (recommended)
 
 1. Go to the **[Releases](../../releases)** tab
-2. Download `basefinder-2.0.0.jar`
+2. Download `basefinder-2.1.0.jar`
 3. Place in `.minecraft/rusherhack/plugins/`
 4. Add the **required JVM arguments** (see below)
 5. Launch Minecraft with RusherHack
@@ -449,6 +515,16 @@ The following arguments must be added to your launcher's JVM Arguments for Rushe
 -XX:+DisableAttachMechanism -DFabricMcEmu=net.minecraft.client.main.Main --add-opens java.base/java.lang=ALL-UNNAMED -Drusherhack.enablePlugins=true
 ```
 
+**Optional — enable telemetry streaming to the backend**:
+
+```
+-Dbasefinder.backend.url=http://127.0.0.1:8080
+```
+
+Without this arg, the bot stays standalone and only writes the local NDJSON
+file (`<gameDir>/rusherhack/basefinder/telemetry.ndjson`). With it, every
+event is also POSTed to `/v1/ingest` of the [backend](https://github.com/mateo-brl/2b2t_backend).
+
 **PrismLauncher / MultiMC:** Right-click instance > Settings > Java > Additional JVM Arguments > paste the arguments.
 
 **Vanilla Launcher:** Installations > Edit > More Options > JVM Arguments > append at the end.
@@ -461,7 +537,7 @@ cd 2b2t_addons
 ./gradlew build
 ```
 
-Output: `build/libs/basefinder-2.0.0.jar`
+Output: `build/libs/basefinder-2.1.0.jar`
 
 > **Important:** Use the jar from `build/libs/` (remapped intermediary), **not** the one from `build/devlibs/` (Mojang mappings) which will cause `NoClassDefFoundError` at load time.
 
