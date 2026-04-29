@@ -35,6 +35,18 @@ public record ChunkId(int x, int z, Dimension dim) {
      * ou on doit passer ChunkId en clé directement.
      */
     public long packed() {
+        return pack(x, z);
+    }
+
+    public static long pack(int x, int z) {
         return (((long) x) << 32) | (z & 0xFFFFFFFFL);
+    }
+
+    public static int unpackX(long packed) {
+        return (int) (packed >> 32);
+    }
+
+    public static int unpackZ(long packed) {
+        return (int) packed;
     }
 }

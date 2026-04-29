@@ -1,46 +1,44 @@
 package com.basefinder.scanner;
 
-import com.basefinder.util.BaseRecord;
 import com.basefinder.domain.scan.BaseType;
+import com.basefinder.domain.world.ChunkId;
+import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BlockAnalyzer;
 import com.basefinder.util.ChunkAnalysis;
 import com.basefinder.util.LagDetector;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongIterator;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Scans loaded chunks for signs of player activity.
- * Keeps track of already-scanned chunks to avoid re-scanning.
  *
- * Enhanced with:
- * - Entity scanning (item frames, armor stands, minecarts, animals, villagers)
- * - Cluster scoring (aggregate neighboring chunk scores)
- * - Nether portal detection (obsidian frame patterns)
- * - Freshness estimation (active vs abandoned bases)
+ * fastutil-backed (audit/05 §5 étape 8) : {@code scannedChunks} et
+ * {@code deferredChunks} sont des {@code LongOpenHashSet}, {@code allAnalyses}
+ * un {@code Long2ObjectOpenHashMap}. Clés = packed long (x << 32 | z & mask),
+ * voir {@link ChunkId#pack(int, int)}.
+ *
+ * ~6 octets/entrée vs ~64 pour HashSet&lt;ChunkPos&gt; → cap 1M chunks possible.
  */
 public class ChunkScanner {
 
     private final Minecraft mc = Minecraft.getInstance();
-    private final Set<ChunkPos> scannedChunks = ConcurrentHashMap.newKeySet();
+    private final LongOpenHashSet scannedChunks = new LongOpenHashSet();
     private final List<ChunkAnalysis> interestingChunks = Collections.synchronizedList(new ArrayList<>());
     private int foundBasesCount = 0;
     private final List<ChunkAnalysis> trailChunks = Collections.synchronizedList(new ArrayList<>());
 
-    // All scanned analyses (for cluster scoring)
-    private final Map<ChunkPos, ChunkAnalysis> allAnalyses = new ConcurrentHashMap<>();
+    private final Long2ObjectOpenHashMap<ChunkAnalysis> allAnalyses = new Long2ObjectOpenHashMap<>();
 
-    // Entity scanner
     private final EntityScanner entityScanner = new EntityScanner();
-
-    // Freshness estimator
     private FreshnessEstimator freshnessEstimator;
 
-    // Lag detection - skip partially loaded chunks on 2b2t
     private LagDetector lagDetector;
-    private final Set<ChunkPos> deferredChunks = ConcurrentHashMap.newKeySet(); // Chunks skipped due to incomplete loading
+    private final LongOpenHashSet deferredChunks = new LongOpenHashSet();
     private int skippedCount = 0;
 
     private double minScore = 20.0;
@@ -54,18 +52,12 @@ public class ChunkScanner {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("BaseFinder");
     private int debugCounter = 0;
 
-    // Batch limits to prevent freezing when many chunks need scanning
     private static final int MAX_CHUNKS_PER_TICK = 50;
     private static final int MAX_DEFERRED_RETRIES_PER_TICK = 20;
 
     private int deferredRetryCounter = 0;
-    private static final int DEFERRED_RETRY_INTERVAL = 10; // Retry deferred chunks every 10 scan cycles
+    private static final int DEFERRED_RETRY_INTERVAL = 10;
 
-    /**
-     * Scan all currently loaded chunks that haven't been scanned yet.
-     * Also retries previously deferred chunks (skipped due to 2b2t lag).
-     * Returns newly found interesting chunks.
-     */
     public List<ChunkAnalysis> scanLoadedChunks() {
         if (mc.level == null || mc.player == null) {
             LOGGER.warn("[ChunkScanner] mc.level or mc.player is null!");
@@ -78,7 +70,6 @@ public class ChunkScanner {
         int chunksScanned = 0;
 
         try {
-            // Get chunks directly from the client chunk cache
             var chunkSource = mc.level.getChunkSource();
             int renderDist = mc.options.renderDistance().get();
             int playerChunkX = mc.player.chunkPosition().x;
@@ -89,28 +80,30 @@ public class ChunkScanner {
                 LOGGER.info("[ChunkScanner] Player at chunk ({}, {}), render distance: {}", playerChunkX, playerChunkZ, renderDist);
             }
 
-            // Retry deferred chunks periodically - these were skipped due to 2b2t lag
+            // Retry deferred chunks périodiquement
             deferredRetryCounter++;
             if (deferredRetryCounter >= DEFERRED_RETRY_INTERVAL && !deferredChunks.isEmpty()) {
                 deferredRetryCounter = 0;
-                List<ChunkPos> toRetry = new ArrayList<>(deferredChunks);
+                long[] toRetry = deferredChunks.toLongArray();
                 int retried = 0;
-                for (ChunkPos deferredPos : toRetry) {
-                    if (scannedChunks.contains(deferredPos)) {
-                        deferredChunks.remove(deferredPos);
+                for (long deferredKey : toRetry) {
+                    if (scannedChunks.contains(deferredKey)) {
+                        deferredChunks.remove(deferredKey);
                         continue;
                     }
-                    LevelChunk deferredChunk = chunkSource.getChunk(deferredPos.x, deferredPos.z, false);
+                    int dx = ChunkId.unpackX(deferredKey);
+                    int dz = ChunkId.unpackZ(deferredKey);
+                    LevelChunk deferredChunk = chunkSource.getChunk(dx, dz, false);
                     if (deferredChunk != null) {
                         boolean fullyLoaded = lagDetector == null || lagDetector.isChunkFullyLoaded(deferredChunk);
                         if (fullyLoaded) {
-                            deferredChunks.remove(deferredPos);
-                            scannedChunks.add(deferredPos);
+                            deferredChunks.remove(deferredKey);
+                            scannedChunks.add(deferredKey);
                             ChunkAnalysis analysis = BlockAnalyzer.analyzeChunk(mc.level, deferredChunk);
                             if (useEntityScanning) {
                                 entityScanner.scanEntities(analysis);
                             }
-                            allAnalyses.put(deferredPos, analysis);
+                            allAnalyses.put(deferredKey, analysis);
                             newlyScanned.add(analysis);
                             if (freshnessEstimator != null && analysis.isInteresting()) {
                                 freshnessEstimator.estimateFreshness(analysis);
@@ -142,40 +135,32 @@ public class ChunkScanner {
                         if (chunk == null) continue;
 
                         chunksFound++;
-                        ChunkPos pos = chunk.getPos();
+                        long key = ChunkId.pack(x, z);
 
-                        if (scannedChunks.contains(pos)) continue;
+                        if (scannedChunks.contains(key)) continue;
 
-                        // 2b2t lag protection: verify chunk is fully loaded before scanning
                         if (lagDetector != null && !lagDetector.isChunkFullyLoaded(chunk)) {
-                            // Defer this chunk - it may be partially loaded due to lag
-                            // Cap deferred size to prevent unbounded memory growth
                             if (deferredChunks.size() < 5000) {
-                                deferredChunks.add(pos);
+                                deferredChunks.add(key);
                             }
                             skippedCount++;
                             continue;
                         }
 
-                        // Remove from deferred if it was previously skipped and now loaded
-                        deferredChunks.remove(pos);
+                        deferredChunks.remove(key);
 
-                        scannedChunks.add(pos);
+                        scannedChunks.add(key);
                         chunksScanned++;
 
-                        // Block analysis (existing)
                         ChunkAnalysis analysis = BlockAnalyzer.analyzeChunk(mc.level, chunk);
 
-                        // Entity scanning (new) - additive, only increases scores
                         if (useEntityScanning) {
                             entityScanner.scanEntities(analysis);
                         }
 
-                        // Store all analyses for cluster scoring
-                        allAnalyses.put(pos, analysis);
+                        allAnalyses.put(key, analysis);
                         newlyScanned.add(analysis);
 
-                        // Freshness estimation
                         if (freshnessEstimator != null && analysis.isInteresting()) {
                             freshnessEstimator.estimateFreshness(analysis);
                         }
@@ -185,6 +170,7 @@ public class ChunkScanner {
 
                             interestingChunks.add(analysis);
                             newFinds.add(analysis);
+                            ChunkPos pos = chunk.getPos();
                             LOGGER.info("[ChunkScanner] Found interesting chunk at ({}, {}) - Type: {}, Score: {}{}",
                                 pos.x, pos.z, analysis.getBaseType(), String.format("%.1f", analysis.getScore()),
                                 analysis.getEntityScore() > 0 ? " (entities: " + String.format("%.1f", analysis.getEntityScore()) + ")" : "");
@@ -200,7 +186,6 @@ public class ChunkScanner {
                                         analysis.getStorageCount(),
                                         analysis.getShulkerCount()
                                 );
-                                // Add freshness and entity info to notes
                                 StringBuilder notes = new StringBuilder();
                                 if (analysis.getFreshness() != ChunkAnalysis.Freshness.UNKNOWN) {
                                     notes.append(analysis.getFreshness().name());
@@ -229,7 +214,6 @@ public class ChunkScanner {
                 }
             }
 
-            // Cluster scoring pass: check if newly scanned chunks form clusters
             if (useClusterScoring && !newlyScanned.isEmpty()) {
                 applyClusterScoring(newlyScanned, newFinds);
             }
@@ -246,25 +230,19 @@ public class ChunkScanner {
         return newFinds;
     }
 
-    /**
-     * CLUSTER SCORING: Aggregate scores from neighboring chunks.
-     * A multi-chunk base will have several chunks with moderate scores.
-     * By checking neighbors, we can detect bases that span multiple chunks.
-     */
     private void applyClusterScoring(List<ChunkAnalysis> newlyScanned, List<ChunkAnalysis> newFinds) {
         for (ChunkAnalysis analysis : newlyScanned) {
-            if (analysis.getScore() < 5) continue; // Only cluster chunks with some score
+            if (analysis.getScore() < 5) continue;
 
             ChunkPos pos = analysis.getChunkPos();
             double neighborScore = 0;
             int neighborCount = 0;
 
-            // Check all 8 neighbors
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
                     if (dx == 0 && dz == 0) continue;
-                    ChunkPos neighbor = new ChunkPos(pos.x + dx, pos.z + dz);
-                    ChunkAnalysis neighborAnalysis = allAnalyses.get(neighbor);
+                    long neighborKey = ChunkId.pack(pos.x + dx, pos.z + dz);
+                    ChunkAnalysis neighborAnalysis = allAnalyses.get(neighborKey);
                     if (neighborAnalysis != null && neighborAnalysis.getScore() > 0) {
                         neighborScore += neighborAnalysis.getScore();
                         neighborCount++;
@@ -272,13 +250,9 @@ public class ChunkScanner {
                 }
             }
 
-            // Stricter cluster thresholds to avoid village/structure amplification
-            // Require at least 1 strong block OR 1 storage in central chunk
             boolean hasCentralEvidence = analysis.getPlayerBlockCount() > 0 || analysis.getStorageCount() > 0;
             if (neighborCount >= 3 && neighborScore >= 30 && hasCentralEvidence) {
-                // This chunk is part of a cluster
-                double clusterBonus = neighborScore * 0.15; // 15% of neighbor scores (reduced from 30%)
-                // Cap the bonus to avoid runaway amplification
+                double clusterBonus = neighborScore * 0.15;
                 clusterBonus = Math.min(clusterBonus, minScore * 0.5);
                 analysis.setClusterScore(neighborScore);
                 analysis.setClusterSize(neighborCount);
@@ -288,7 +262,6 @@ public class ChunkScanner {
                 LOGGER.info("[ChunkScanner] Cluster detected at ({}, {}) - {} neighbors, bonus: {}, new score: {}",
                         pos.x, pos.z, neighborCount, String.format("%.1f", clusterBonus), String.format("%.1f", newScore));
 
-                // If the chunk wasn't interesting before but now is after cluster bonus, add it
                 if (analysis.isInteresting() && newScore >= minScore && !newFinds.contains(analysis)) {
                     if (shouldDetect(analysis.getBaseType())) {
                         interestingChunks.add(analysis);
@@ -314,7 +287,6 @@ public class ChunkScanner {
     private boolean detectStash = true;
     private boolean detectFarm = true;
     private boolean detectPortal = true;
-
     private boolean detectCaveMining = true;
 
     private boolean shouldDetect(BaseType type) {
@@ -332,14 +304,9 @@ public class ChunkScanner {
     }
 
     private int cleanupCounter = 0;
-    private static final int CLEANUP_INTERVAL = 200; // Every ~10 seconds (at 1 call/sec)
-    private static final int MAX_ANALYSES_SIZE = 25000; // Max cached analyses before cleanup
+    private static final int CLEANUP_INTERVAL = 200;
+    private static final int MAX_ANALYSES_SIZE = 25000;
 
-    /**
-     * Periodically clean up memory by removing old analysis data far from the player.
-     * Keeps scannedChunks (lightweight) but purges heavy allAnalyses entries.
-     * Call this every scan cycle.
-     */
     public void cleanupMemory() {
         cleanupCounter++;
         if (cleanupCounter % CLEANUP_INTERVAL != 0) return;
@@ -349,17 +316,16 @@ public class ChunkScanner {
 
         int playerChunkX = mc.player.chunkPosition().x;
         int playerChunkZ = mc.player.chunkPosition().z;
-        int purgeDistance = 128; // chunks (2048 blocks)
+        int purgeDistance = 128;
 
         int removed = 0;
-        var iterator = allAnalyses.entrySet().iterator();
-        while (iterator.hasNext()) {
-            var entry = iterator.next();
-            ChunkPos pos = entry.getKey();
-            int dx = Math.abs(pos.x - playerChunkX);
-            int dz = Math.abs(pos.z - playerChunkZ);
+        LongIterator it = allAnalyses.keySet().iterator();
+        while (it.hasNext()) {
+            long key = it.nextLong();
+            int dx = Math.abs(ChunkId.unpackX(key) - playerChunkX);
+            int dz = Math.abs(ChunkId.unpackZ(key) - playerChunkZ);
             if (dx > purgeDistance || dz > purgeDistance) {
-                iterator.remove();
+                it.remove();
                 removed++;
             }
         }
@@ -382,25 +348,44 @@ public class ChunkScanner {
 
     /**
      * Restore previously scanned chunk positions from saved state.
-     * These chunks will be skipped during future scans via the existing
-     * scannedChunks.contains() check.
      */
-    public void restoreScannedChunks(Set<ChunkPos> chunks) {
-        if (chunks != null && !chunks.isEmpty()) {
-            scannedChunks.addAll(chunks);
-            LOGGER.info("[ChunkScanner] Restored {} scanned chunks from saved state", chunks.size());
+    public void restoreScannedChunks(long[] packedKeys) {
+        if (packedKeys != null && packedKeys.length > 0) {
+            scannedChunks.addAll(LongOpenHashSet.of(packedKeys));
+            LOGGER.info("[ChunkScanner] Restored {} scanned chunks from saved state", packedKeys.length);
         }
     }
 
+    /**
+     * Snapshot des longs scannés pour le save async (copie défensive).
+     */
+    public long[] snapshotScannedChunks() {
+        return scannedChunks.toLongArray();
+    }
+
     public int getScannedCount() { return scannedChunks.size(); }
-    public Set<ChunkPos> getScannedChunksSet() { return Collections.unmodifiableSet(scannedChunks); }
+
+    /**
+     * Vue read-only en {@link ChunkPos} pour les callers (NavigationHelper)
+     * qui n'ont pas encore migré vers les longs. À supprimer quand ces callers
+     * seront refactorés.
+     */
+    public Set<ChunkPos> getScannedChunksSet() {
+        Set<ChunkPos> view = new HashSet<>(scannedChunks.size() * 2);
+        LongIterator it = scannedChunks.iterator();
+        while (it.hasNext()) {
+            long key = it.nextLong();
+            view.add(new ChunkPos(ChunkId.unpackX(key), ChunkId.unpackZ(key)));
+        }
+        return Collections.unmodifiableSet(view);
+    }
+
     public int getDeferredCount() { return deferredChunks.size(); }
     public int getSkippedCount() { return skippedCount; }
     public List<ChunkAnalysis> getInterestingChunks() { return Collections.unmodifiableList(interestingChunks); }
     public int getFoundBasesCount() { return foundBasesCount; }
     public List<ChunkAnalysis> getTrailChunks() { return Collections.unmodifiableList(trailChunks); }
 
-    // Settings
     public void setMinScore(double minScore) { this.minScore = minScore; }
     public void setDetectMapArt(boolean v) { this.detectMapArt = v; }
     public void setDetectStorage(boolean v) { this.detectStorage = v; }

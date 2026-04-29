@@ -15,6 +15,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Persists scan state to disk for crash recovery and session resumption.
@@ -35,6 +38,16 @@ public class StateManager {
     private int saveIntervalSeconds = 300; // Save every 5 minutes
     private long lastSaveTime = 0;
     private int tickCounter = 0;
+
+    /**
+     * Executor dédié aux saves : single-thread, daemon, file d'attente illimitée.
+     * Audit/03 §4 : les saves sur game thread causaient des stalls 40-500 ms.
+     */
+    private final ExecutorService saveExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "BaseFinder-StateSave");
+        t.setDaemon(true);
+        return t;
+    });
 
     public StateManager() {
         try {
@@ -68,20 +81,26 @@ public class StateManager {
     }
 
     /**
-     * Save scanned chunk positions to binary file.
-     * Format: int count, then pairs of (int x, int z).
-     * ~700KB for 89K chunks.
+     * Save scanned chunk positions to binary file, off the game thread.
+     * Le caller doit fournir un snapshot {@code long[]} (packed x|z) pour éviter
+     * toute mutation concurrente pendant l'écriture. Format : int count,
+     * puis count×long. ~8 octets/chunk vs ~16 avec l'ancien format pair-int.
      */
-    public void saveScannedChunks(Set<ChunkPos> chunks) {
-        if (chunksFile == null || chunks == null || chunks.isEmpty()) return;
+    public void saveScannedChunks(long[] snapshot) {
+        if (chunksFile == null || snapshot == null || snapshot.length == 0) return;
+        final Path target = chunksFile;
+        final long[] data = snapshot;
+        saveExecutor.submit(() -> writeScannedChunksTo(target, data));
+    }
+
+    private static void writeScannedChunksTo(Path target, long[] data) {
         try (DataOutputStream dos = new DataOutputStream(
-                new BufferedOutputStream(Files.newOutputStream(chunksFile)))) {
-            dos.writeInt(chunks.size());
-            for (ChunkPos pos : chunks) {
-                dos.writeInt(pos.x);
-                dos.writeInt(pos.z);
+                new BufferedOutputStream(Files.newOutputStream(target)))) {
+            dos.writeInt(data.length);
+            for (long packed : data) {
+                dos.writeLong(packed);
             }
-            LOGGER.info("[StateManager] Saved {} scanned chunks to disk", chunks.size());
+            LOGGER.info("[StateManager] Saved {} scanned chunks to disk (async)", data.length);
         } catch (IOException e) {
             LOGGER.error("[StateManager] Failed to save scanned chunks: {}", e.getMessage());
         }
@@ -89,24 +108,39 @@ public class StateManager {
 
     /**
      * Load scanned chunk positions from binary file.
-     * Returns empty set if no file or error.
+     * Détecte et migre l'ancien format {@code (int x, int z)} vers le nouveau
+     * {@code long packed} en lisant la taille fichier (transparent pour l'utilisateur).
      */
-    public Set<ChunkPos> loadScannedChunks() {
-        Set<ChunkPos> chunks = new HashSet<>();
-        if (chunksFile == null || !Files.exists(chunksFile)) return chunks;
-        try (DataInputStream dis = new DataInputStream(
-                new BufferedInputStream(Files.newInputStream(chunksFile)))) {
-            int count = dis.readInt();
-            for (int i = 0; i < count; i++) {
-                int x = dis.readInt();
-                int z = dis.readInt();
-                chunks.add(new ChunkPos(x, z));
+    public long[] loadScannedChunks() {
+        if (chunksFile == null || !Files.exists(chunksFile)) return new long[0];
+        try {
+            long fileSize = Files.size(chunksFile);
+            try (DataInputStream dis = new DataInputStream(
+                    new BufferedInputStream(Files.newInputStream(chunksFile)))) {
+                int count = dis.readInt();
+                if (count <= 0) return new long[0];
+                long[] result = new long[count];
+                long expectedNew = 4L + (long) count * 8L;
+                if (fileSize == expectedNew) {
+                    for (int i = 0; i < count; i++) {
+                        result[i] = dis.readLong();
+                    }
+                } else {
+                    // Ancien format : pairs (int x, int z) — migration transparente
+                    for (int i = 0; i < count; i++) {
+                        int x = dis.readInt();
+                        int z = dis.readInt();
+                        result[i] = (((long) x) << 32) | (z & 0xFFFFFFFFL);
+                    }
+                    LOGGER.info("[StateManager] Migrated {} chunks from legacy int-pair format", count);
+                }
+                LOGGER.info("[StateManager] Loaded {} scanned chunks from disk", count);
+                return result;
             }
-            LOGGER.info("[StateManager] Loaded {} scanned chunks from disk", chunks.size());
         } catch (IOException e) {
             LOGGER.error("[StateManager] Failed to load scanned chunks: {}", e.getMessage());
+            return new long[0];
         }
-        return chunks;
     }
 
     /**
@@ -119,6 +153,25 @@ public class StateManager {
             LOGGER.warn("[StateManager] Cannot save: state directory not initialized");
             return;
         }
+
+        // Snapshot défensif : copie immuable des bases pour éviter mutation pendant l'écriture
+        final List<BaseRecord> basesCopy = new ArrayList<>(bases);
+        final Path target = stateFile;
+        final int wp = waypointIndex;
+        final double dist = distanceTraveled;
+        final int chunks = chunksScanned;
+        final String mode = searchMode;
+        final int cx = centerX;
+        final int cz = centerZ;
+        final long upSec = uptimeSeconds;
+        lastSaveTime = System.currentTimeMillis();
+
+        saveExecutor.submit(() -> writeStateTo(target, basesCopy, wp, dist, chunks, mode, cx, cz, upSec));
+    }
+
+    private static void writeStateTo(Path target, List<BaseRecord> bases, int waypointIndex,
+                                     double distanceTraveled, int chunksScanned, String searchMode,
+                                     int centerX, int centerZ, long uptimeSeconds) {
         try {
             Properties props = new Properties();
             props.setProperty("waypointIndex", String.valueOf(waypointIndex));
@@ -131,10 +184,8 @@ public class StateManager {
             props.setProperty("uptimeSeconds", String.valueOf(uptimeSeconds));
             props.setProperty("baseCount", String.valueOf(bases.size()));
 
-            // Save bases
             StringBuilder basesStr = new StringBuilder();
-            for (int i = 0; i < bases.size(); i++) {
-                BaseRecord base = bases.get(i);
+            for (BaseRecord base : bases) {
                 basesStr.append(String.format("%d,%d,%d,%s,%.1f,%d,%d,%d,%s\n",
                         base.getPosition().getX(), base.getPosition().getY(), base.getPosition().getZ(),
                         base.getType().name(), base.getScore(),
@@ -143,16 +194,31 @@ public class StateManager {
             }
             props.setProperty("bases", basesStr.toString());
 
-            try (OutputStream out = Files.newOutputStream(stateFile)) {
+            try (OutputStream out = Files.newOutputStream(target)) {
                 props.store(out, "BaseFinder Session State");
             }
 
-            LOGGER.info("[StateManager] State saved: {} bases, WP {}, {} chunks",
+            LOGGER.info("[StateManager] State saved (async): {} bases, WP {}, {} chunks",
                     bases.size(), waypointIndex, chunksScanned);
-            lastSaveTime = System.currentTimeMillis();
-
         } catch (IOException e) {
             LOGGER.error("[StateManager] Failed to save state: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Drain et arrête le thread save. À appeler dans onUnload pour ne pas perdre
+     * un dernier save pending. Bloque max 5 secondes.
+     */
+    public void shutdown() {
+        saveExecutor.shutdown();
+        try {
+            if (!saveExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                LOGGER.warn("[StateManager] Save executor did not terminate within 5s; forcing shutdown");
+                saveExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            saveExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 
