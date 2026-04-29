@@ -14,7 +14,7 @@ import com.basefinder.terrain.HeightmapCache;
 import com.basefinder.terrain.SeedTerrainGenerator;
 import com.basefinder.terrain.TerrainPredictor;
 import com.basefinder.trail.TrailFollower;
-import com.basefinder.util.BaritoneController;
+import com.basefinder.adapter.baritone.BaritoneApi;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.domain.scan.BaseType;
 import com.basefinder.util.ChunkAnalysis;
@@ -65,7 +65,7 @@ public class BaseFinderModule extends ToggleableModule {
     private final SurvivalManager survivalManager = new SurvivalManager();
     private final StateManager stateManager = new StateManager();
     private final LagDetector lagDetector = new LagDetector();
-    private final BaritoneController baritoneController = new BaritoneController();
+    private final BaritoneApi baritoneController = new BaritoneApi();
     private final HeightmapCache heightmapCache = new HeightmapCache();
     private TerrainPredictor terrainPredictor = null;
 

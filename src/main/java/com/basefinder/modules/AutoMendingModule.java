@@ -1,6 +1,6 @@
 package com.basefinder.modules;
 
-import com.basefinder.util.BaritoneController;
+import com.basefinder.adapter.baritone.BaritoneApi;
 import com.basefinder.util.Lang;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.Holder;
@@ -58,7 +58,7 @@ public class AutoMendingModule extends ToggleableModule {
     }
 
     private MendingState state = MendingState.IDLE;
-    private final BaritoneController baritoneController = new BaritoneController();
+    private final BaritoneApi baritoneController = new BaritoneApi();
 
     // Elytra swap state (3-tick process)
     private int swapStep = 0; // 0=none, 1=pickup, 2=equip, 3=putdown
