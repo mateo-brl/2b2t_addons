@@ -22,7 +22,7 @@ import org.rusherhack.core.setting.NumberSetting;
 public class ElytraBotModule extends ToggleableModule {
 
     private final ElytraBot elytraBot;
-    private final BaritoneApi baritoneController = new BaritoneApi();
+    private final BaritoneApi baritoneController;
 
     private final NumberSetting<Integer> targetX = new NumberSetting<>("Cible X", 0, -30000000, 30000000).incremental(1.0);
     private final NumberSetting<Integer> targetZ = new NumberSetting<>("Cible Z", 0, -30000000, 30000000).incremental(1.0);
@@ -38,6 +38,7 @@ public class ElytraBotModule extends ToggleableModule {
     public ElytraBotModule(ServiceRegistry registry) {
         super("ElytraBot", "Vol elytra automatique vers des coordonnées", ModuleCategory.EXTERNAL);
         this.elytraBot = registry.elytraBot();
+        this.baritoneController = registry.baritoneApi();
 
         this.registerSettings(
                 targetX,

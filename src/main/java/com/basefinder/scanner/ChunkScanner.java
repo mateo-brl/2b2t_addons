@@ -9,6 +9,8 @@ import com.basefinder.util.LagDetector;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
+import it.unimi.dsi.fastutil.longs.LongSets;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -366,18 +368,12 @@ public class ChunkScanner {
     public int getScannedCount() { return scannedChunks.size(); }
 
     /**
-     * Vue read-only en {@link ChunkPos} pour les callers (NavigationHelper)
-     * qui n'ont pas encore migré vers les longs. À supprimer quand ces callers
-     * seront refactorés.
+     * Vue read-only en {@link LongSet} (clés packed via {@link ChunkId#pack}).
+     * Audit/05 §5 étape 8 : NavigationHelper consomme ça directement, pas
+     * de conversion ChunkPos.
      */
-    public Set<ChunkPos> getScannedChunksSet() {
-        Set<ChunkPos> view = new HashSet<>(scannedChunks.size() * 2);
-        LongIterator it = scannedChunks.iterator();
-        while (it.hasNext()) {
-            long key = it.nextLong();
-            view.add(new ChunkPos(ChunkId.unpackX(key), ChunkId.unpackZ(key)));
-        }
-        return Collections.unmodifiableSet(view);
+    public LongSet getScannedChunks() {
+        return LongSets.unmodifiable(scannedChunks);
     }
 
     public int getDeferredCount() { return deferredChunks.size(); }
