@@ -2,7 +2,7 @@ package com.basefinder.modules;
 
 import com.basefinder.bootstrap.ServiceRegistry;
 import com.basefinder.elytra.ElytraBot;
-import com.basefinder.util.BaritoneController;
+import com.basefinder.adapter.baritone.BaritoneApi;
 import com.basefinder.util.Lang;
 import net.minecraft.core.BlockPos;
 import org.rusherhack.client.api.RusherHackAPI;
@@ -22,7 +22,7 @@ import org.rusherhack.core.setting.NumberSetting;
 public class ElytraBotModule extends ToggleableModule {
 
     private final ElytraBot elytraBot;
-    private final BaritoneController baritoneController = new BaritoneController();
+    private final BaritoneApi baritoneController = new BaritoneApi();
 
     private final NumberSetting<Integer> targetX = new NumberSetting<>("Cible X", 0, -30000000, 30000000).incremental(1.0);
     private final NumberSetting<Integer> targetZ = new NumberSetting<>("Cible Z", 0, -30000000, 30000000).incremental(1.0);
