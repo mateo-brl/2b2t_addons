@@ -241,7 +241,7 @@ public class NavigationHelper {
     /**
      * Check zone coverage: returns the set of zone chunks that have NOT been scanned yet.
      */
-    public Set<ChunkPos> getMissedZoneChunks(Set<ChunkPos> scannedChunks) {
+    public Set<ChunkPos> getMissedZoneChunks(it.unimi.dsi.fastutil.longs.LongSet scannedChunks) {
         if (!isZoneMode) return Collections.emptySet();
         long totalExpected = (long)(zoneChunkMaxX - zoneChunkMinX + 1) * (zoneChunkMaxZ - zoneChunkMinZ + 1);
         if (totalExpected <= 0) return Collections.emptySet();
@@ -251,9 +251,8 @@ public class NavigationHelper {
             Set<ChunkPos> missed = new HashSet<>();
             for (int cx = zoneChunkMinX; cx <= zoneChunkMaxX; cx++) {
                 for (int cz = zoneChunkMinZ; cz <= zoneChunkMaxZ; cz++) {
-                    ChunkPos pos = new ChunkPos(cx, cz);
-                    if (!scannedChunks.contains(pos)) {
-                        missed.add(pos);
+                    if (!scannedChunks.contains(com.basefinder.domain.world.ChunkId.pack(cx, cz))) {
+                        missed.add(new ChunkPos(cx, cz));
                     }
                 }
             }
@@ -271,9 +270,8 @@ public class NavigationHelper {
                     int cx = wcx + dx;
                     int cz = wcz + dz;
                     if (cx >= zoneChunkMinX && cx <= zoneChunkMaxX && cz >= zoneChunkMinZ && cz <= zoneChunkMaxZ) {
-                        ChunkPos pos = new ChunkPos(cx, cz);
-                        if (!scannedChunks.contains(pos)) {
-                            missed.add(pos);
+                        if (!scannedChunks.contains(com.basefinder.domain.world.ChunkId.pack(cx, cz))) {
+                            missed.add(new ChunkPos(cx, cz));
                         }
                     }
                 }
@@ -286,15 +284,21 @@ public class NavigationHelper {
     /**
      * Get zone coverage percentage.
      */
-    public double getZoneCoveragePercent(Set<ChunkPos> scannedChunks) {
+    public double getZoneCoveragePercent(it.unimi.dsi.fastutil.longs.LongSet scannedChunks) {
         if (!isZoneMode) return 100.0;
         long totalExpected = (long)(zoneChunkMaxX - zoneChunkMinX + 1) * (zoneChunkMaxZ - zoneChunkMinZ + 1);
         if (totalExpected <= 0) return 100.0;
-        // Count scanned chunks that fall within zone bounds
-        long covered = scannedChunks.stream()
-                .filter(cp -> cp.x >= zoneChunkMinX && cp.x <= zoneChunkMaxX
-                           && cp.z >= zoneChunkMinZ && cp.z <= zoneChunkMaxZ)
-                .count();
+        long covered = 0;
+        it.unimi.dsi.fastutil.longs.LongIterator it = scannedChunks.iterator();
+        while (it.hasNext()) {
+            long packed = it.nextLong();
+            int cx = com.basefinder.domain.world.ChunkId.unpackX(packed);
+            int cz = com.basefinder.domain.world.ChunkId.unpackZ(packed);
+            if (cx >= zoneChunkMinX && cx <= zoneChunkMaxX
+                    && cz >= zoneChunkMinZ && cz <= zoneChunkMaxZ) {
+                covered++;
+            }
+        }
         return (double) covered / totalExpected * 100.0;
     }
 
@@ -303,7 +307,7 @@ public class NavigationHelper {
      * Groups missed chunks and generates waypoints at their centers.
      * Returns true if new waypoints were added.
      */
-    public boolean generateMissedChunkWaypoints(Set<ChunkPos> scannedChunks) {
+    public boolean generateMissedChunkWaypoints(it.unimi.dsi.fastutil.longs.LongSet scannedChunks) {
         Set<ChunkPos> missed = getMissedZoneChunks(scannedChunks);
         if (missed.isEmpty()) return false;
 

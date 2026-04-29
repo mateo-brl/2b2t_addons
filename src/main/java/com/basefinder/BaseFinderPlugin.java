@@ -62,7 +62,7 @@ public class BaseFinderPlugin extends Plugin {
         }
 
         try {
-            AutoMendingModule autoMendingModule = new AutoMendingModule();
+            AutoMendingModule autoMendingModule = new AutoMendingModule(services);
             RusherHackAPI.getModuleManager().registerFeature(autoMendingModule);
             this.getLogger().info("Module AutoMending enregistré (catégorie External)");
         } catch (Exception e) {
