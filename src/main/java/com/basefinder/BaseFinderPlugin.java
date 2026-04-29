@@ -2,6 +2,11 @@ package com.basefinder;
 
 import com.basefinder.bootstrap.ServiceRegistry;
 import com.basefinder.modules.AutoMendingModule;
+import net.minecraft.client.Minecraft;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import com.basefinder.modules.AutoTravelModule;
 import com.basefinder.modules.BaseFinderModule;
 import com.basefinder.modules.ElytraBotModule;
@@ -25,7 +30,11 @@ public class BaseFinderPlugin extends Plugin {
         instance = this;
         this.getLogger().info("Plugin BaseFinder en chargement...");
 
-        services = new ServiceRegistry();
+        Path telemetryFile = resolveTelemetryFile();
+        services = new ServiceRegistry(telemetryFile);
+        if (telemetryFile != null) {
+            this.getLogger().info("Telemetry NDJSON sink: {}", telemetryFile);
+        }
 
         // Enregistrer les modules individuellement avec try/catch
         try {
@@ -106,5 +115,21 @@ public class BaseFinderPlugin extends Plugin {
 
     public ServiceRegistry services() {
         return services;
+    }
+
+    /**
+     * Chemin du fichier NDJSON de télémétrie : {@code <gameDir>/rusherhack/basefinder/telemetry.ndjson}.
+     * Retourne {@code null} si la résolution échoue (le registry tombera sur NOOP).
+     */
+    private Path resolveTelemetryFile() {
+        try {
+            Path gameDir = Minecraft.getInstance().gameDirectory.toPath();
+            Path pluginDir = gameDir.resolve("rusherhack").resolve("basefinder");
+            Files.createDirectories(pluginDir);
+            return pluginDir.resolve("telemetry.ndjson");
+        } catch (IOException | RuntimeException e) {
+            this.getLogger().warn("Telemetry file resolution failed, using NOOP sink: {}", e.getMessage());
+            return null;
+        }
     }
 }

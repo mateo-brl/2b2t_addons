@@ -1,5 +1,8 @@
 package com.basefinder.logger;
 
+import com.basefinder.application.telemetry.EmitBaseFoundUseCase;
+import com.basefinder.domain.world.ChunkId;
+import com.basefinder.domain.world.Dimension;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.domain.scan.BaseType;
 import com.basefinder.util.Lang;
@@ -38,9 +41,12 @@ public class BaseLogger {
     private boolean logToFile = true;
     private boolean autoScreenshot = false;
     private final DiscordNotifier discordNotifier;
+    private final EmitBaseFoundUseCase emitBaseFound;
+    private Dimension currentDimension = Dimension.OVERWORLD;
 
-    public BaseLogger(DiscordNotifier discordNotifier) {
+    public BaseLogger(DiscordNotifier discordNotifier, EmitBaseFoundUseCase emitBaseFound) {
         this.discordNotifier = discordNotifier;
+        this.emitBaseFound = emitBaseFound;
         try {
             Path minecraftDir = Minecraft.getInstance().gameDirectory.toPath();
             Path pluginDir = minecraftDir.resolve("rusherhack").resolve("basefinder");
@@ -80,6 +86,22 @@ public class BaseLogger {
         }
 
         discordNotifier.notifyBase(record);
+
+        // Telemetry : émet un BaseFound vers le sink (NDJSON local en v1).
+        if (emitBaseFound != null) {
+            BlockPos pos = record.getPosition();
+            ChunkId chunkId = new ChunkId(pos.getX() >> 4, pos.getZ() >> 4, currentDimension);
+            emitBaseFound.emit(chunkId, record.getType(), record.getScore(),
+                    pos.getX(), pos.getY(), pos.getZ());
+        }
+    }
+
+    /**
+     * Indique au logger dans quelle dimension le bot scanne actuellement.
+     * Utilisé pour annoter correctement les events {@code BaseFound}.
+     */
+    public void setCurrentDimension(Dimension dimension) {
+        this.currentDimension = dimension;
     }
 
     /**
