@@ -44,7 +44,11 @@ dependencies {
     rusherhackApi "org.rusherhack:rusherhack-api:${project.rusherhack_api_version}"
 
     // Baritone API - bundled with RusherHack at runtime, accessed via reflection
-    // No compile dependency needed since BaritoneController uses reflection
+    // No compile dependency needed since BaritoneApi uses cached reflection
+
+    // fastutil - LongOpenHashSet, Long2ObjectOpenHashMap pour cap 1M chunks
+    // Bundled by Minecraft already, so we can use it directly without packaging.
+    compileOnly 'it.unimi.dsi:fastutil:8.5.13'
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
