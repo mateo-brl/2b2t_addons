@@ -20,3 +20,5 @@ Thumbs.db
 
 # Minecraft
 *.log
+*.log.gz
+logs/
