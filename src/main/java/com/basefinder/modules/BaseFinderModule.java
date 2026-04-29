@@ -1,6 +1,7 @@
 package com.basefinder.modules;
 
 import com.basefinder.bootstrap.ServiceRegistry;
+import com.basefinder.domain.view.BaseFinderViewModel;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.navigation.NavigationHelper;
@@ -1115,6 +1116,79 @@ public class BaseFinderModule extends ToggleableModule {
     public LagDetector getLagDetector() { return lagDetector; }
     public TerrainPredictor getTerrainPredictor() { return terrainPredictor; }
     public HeightmapCache getHeightmapCache() { return heightmapCache; }
+
+    /**
+     * Snapshot immuable de l'état du module pour la couche présentation.
+     * Construit à chaque tick HUD (~10-20 Hz). Pas d'allocation cachée :
+     * le ViewModel est un record, ses sous-records aussi.
+     */
+    public BaseFinderViewModel snapshot() {
+        if (!isToggled()) {
+            return BaseFinderViewModel.INACTIVE;
+        }
+
+        BaseFinderViewModel.PlayerVm playerVm = (mc.player != null)
+                ? new BaseFinderViewModel.PlayerVm(true, (int) mc.player.getY(), (int) mc.player.getHealth())
+                : BaseFinderViewModel.PlayerVm.UNKNOWN;
+
+        BaseFinderViewModel.FlightVm flightVm = elytraBot.isFlying()
+                ? new BaseFinderViewModel.FlightVm(
+                        true,
+                        elytraBot.getState().name(),
+                        elytraBot.getDistanceToDestination(),
+                        elytraBot.getFireworkCount(),
+                        elytraBot.isCircling(),
+                        elytraBot.getCircleTicks(),
+                        elytraBot.hasUnloadedChunksAhead())
+                : BaseFinderViewModel.FlightVm.OFF;
+
+        BaseFinderViewModel.TerrainVm terrainVm = null;
+        if (terrainPredictor != null && elytraBot.isFlying() && mc.player != null) {
+            int predicted = terrainPredictor.getMaxHeightAhead(
+                    mc.player.position(), mc.player.getDeltaMovement(), 200);
+            terrainVm = new BaseFinderViewModel.TerrainVm(predicted, terrainPredictor.getLastSource());
+        }
+
+        BaseFinderViewModel.ScanVm scanVm = new BaseFinderViewModel.ScanVm(
+                scanner.getScannedCount(),
+                scanner.getDeferredCount(),
+                logger.getCount());
+
+        BaseFinderViewModel.NavigationVm navVm = new BaseFinderViewModel.NavigationVm(
+                navigation.getCurrentTarget() != null,
+                navigation.getCurrentWaypointIndex(),
+                navigation.getWaypointCount(),
+                navigation.getProgressPercent(),
+                navigation.getTotalDistanceTraveled());
+
+        BaseFinderViewModel.TrailVm trailVm = trailFollower.isFollowingTrail()
+                ? new BaseFinderViewModel.TrailVm(
+                        trailFollower.getCurrentTrailType().name(),
+                        trailFollower.getTrailLength())
+                : null;
+
+        BaseFinderViewModel.SurvivalVm survVm = new BaseFinderViewModel.SurvivalVm(
+                survivalManager.getTotemCount(),
+                survivalManager.getUptimeSeconds(),
+                survivalManager.isEmergencyLanding(),
+                survivalManager.isResupplying());
+
+        BaseFinderViewModel.LagVm lagVm = new BaseFinderViewModel.LagVm(
+                lagDetector.getEstimatedTPS(),
+                lagDetector.isSeverelyLagging());
+
+        return new BaseFinderViewModel(
+                true,
+                state.name(),
+                flightVm,
+                terrainVm,
+                scanVm,
+                navVm,
+                trailVm,
+                survVm,
+                lagVm,
+                playerVm);
+    }
 
     public int[] getZoneBounds() {
         return new int[]{ zoneMinX.getValue(), zoneMaxX.getValue(), zoneMinZ.getValue(), zoneMaxZ.getValue() };
