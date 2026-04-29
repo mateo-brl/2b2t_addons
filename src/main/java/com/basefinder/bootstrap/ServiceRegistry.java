@@ -2,6 +2,9 @@ package com.basefinder.bootstrap;
 
 import com.basefinder.adapter.baritone.BaritoneApi;
 import com.basefinder.adapter.io.telemetry.NdjsonFileSink;
+import com.basefinder.adapter.mc.McChunkSource;
+import com.basefinder.application.scan.ChunkScannerService;
+import com.basefinder.application.scan.ChunkSource;
 import com.basefinder.application.telemetry.EmitBaseFoundUseCase;
 import com.basefinder.application.telemetry.EmitBotTickUseCase;
 import com.basefinder.application.telemetry.EventSequenceCounter;
@@ -34,6 +37,8 @@ public final class ServiceRegistry {
     private final EventSequenceCounter eventSequence;
     private final EmitBaseFoundUseCase emitBaseFoundUseCase;
     private final EmitBotTickUseCase emitBotTickUseCase;
+    private final ChunkSource chunkSource;
+    private final ChunkScannerService chunkScannerService;
 
     /**
      * @param telemetryFile chemin du fichier NDJSON de télémétrie ; si {@code null}
@@ -51,6 +56,8 @@ public final class ServiceRegistry {
         this.emitBaseFoundUseCase = new EmitBaseFoundUseCase(telemetrySink, eventSequence);
         this.emitBotTickUseCase = new EmitBotTickUseCase(telemetrySink, eventSequence);
         this.baseLogger = new BaseLogger(discordNotifier, emitBaseFoundUseCase);
+        this.chunkSource = new McChunkSource();
+        this.chunkScannerService = new ChunkScannerService(chunkSource);
     }
 
     /** Surcharge sans télémétrie — utile pour les tests d'intégration. */
@@ -67,4 +74,6 @@ public final class ServiceRegistry {
     public EventSequenceCounter eventSequence() { return eventSequence; }
     public EmitBaseFoundUseCase emitBaseFoundUseCase() { return emitBaseFoundUseCase; }
     public EmitBotTickUseCase emitBotTickUseCase() { return emitBotTickUseCase; }
+    public ChunkSource chunkSource() { return chunkSource; }
+    public ChunkScannerService chunkScannerService() { return chunkScannerService; }
 }
