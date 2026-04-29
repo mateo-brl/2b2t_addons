@@ -1,5 +1,6 @@
 package com.basefinder.bootstrap;
 
+import com.basefinder.adapter.baritone.BaritoneApi;
 import com.basefinder.adapter.io.telemetry.NdjsonFileSink;
 import com.basefinder.application.telemetry.EmitBaseFoundUseCase;
 import com.basefinder.application.telemetry.EmitBotTickUseCase;
@@ -28,6 +29,7 @@ public final class ServiceRegistry {
     private final BaseLogger baseLogger;
     private final ElytraBot elytraBot;
     private final ChunkScanner chunkScanner;
+    private final BaritoneApi baritoneApi;
     private final TelemetrySink telemetrySink;
     private final EventSequenceCounter eventSequence;
     private final EmitBaseFoundUseCase emitBaseFoundUseCase;
@@ -41,6 +43,7 @@ public final class ServiceRegistry {
         this.discordNotifier = new DiscordNotifier();
         this.elytraBot = new ElytraBot();
         this.chunkScanner = new ChunkScanner();
+        this.baritoneApi = new BaritoneApi();
         this.telemetrySink = telemetryFile != null
                 ? new NdjsonFileSink(telemetryFile)
                 : TelemetrySink.NOOP;
@@ -59,6 +62,7 @@ public final class ServiceRegistry {
     public BaseLogger baseLogger() { return baseLogger; }
     public ElytraBot elytraBot() { return elytraBot; }
     public ChunkScanner chunkScanner() { return chunkScanner; }
+    public BaritoneApi baritoneApi() { return baritoneApi; }
     public TelemetrySink telemetrySink() { return telemetrySink; }
     public EventSequenceCounter eventSequence() { return eventSequence; }
     public EmitBaseFoundUseCase emitBaseFoundUseCase() { return emitBaseFoundUseCase; }

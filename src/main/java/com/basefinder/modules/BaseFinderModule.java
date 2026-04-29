@@ -65,7 +65,7 @@ public class BaseFinderModule extends ToggleableModule {
     private final SurvivalManager survivalManager = new SurvivalManager();
     private final StateManager stateManager = new StateManager();
     private final LagDetector lagDetector = new LagDetector();
-    private final BaritoneApi baritoneController = new BaritoneApi();
+    private final BaritoneApi baritoneController;
     private final HeightmapCache heightmapCache = new HeightmapCache();
     private TerrainPredictor terrainPredictor = null;
 
@@ -201,6 +201,7 @@ public class BaseFinderModule extends ToggleableModule {
         this.scanner = registry.chunkScanner();
         this.elytraBot = registry.elytraBot();
         this.logger = registry.baseLogger();
+        this.baritoneController = registry.baritoneApi();
         this.emitBotTick = registry.emitBotTickUseCase();
 
         // Mode de recherche avec paramètres spécifiques par mode
@@ -697,7 +698,7 @@ public class BaseFinderModule extends ToggleableModule {
         if (tickCounter % 200 == 0) {
             String statusMsg = "[BaseHunter] " + Lang.t("Scanned: ", "Scannés : ") + scanner.getScannedCount() + Lang.t(" chunks | Found: ", " chunks | Trouvés : ") + logger.getCount() + " bases";
             if (navigation.isZoneMode() && navigation.getExpectedZoneChunkCount() > 0) {
-                double coverage = navigation.getZoneCoveragePercent(scanner.getScannedChunksSet());
+                double coverage = navigation.getZoneCoveragePercent(scanner.getScannedChunks());
                 statusMsg += Lang.t(" | Zone: ", " | Zone : ") + String.format("%.1f", coverage) + "%";
             }
             ChatUtils.print(statusMsg);
@@ -906,14 +907,14 @@ public class BaseFinderModule extends ToggleableModule {
             if (!navigation.advanceToNext()) {
                 // All waypoints visited - check zone coverage if in zone mode
                 if (navigation.isZoneMode() && navigation.getExpectedZoneChunkCount() > 0) {
-                    double coverage = navigation.getZoneCoveragePercent(scanner.getScannedChunksSet());
+                    double coverage = navigation.getZoneCoveragePercent(scanner.getScannedChunks());
                     ChatUtils.print("[BaseHunter] " + Lang.t(
                             "Zone pass complete! Coverage: " + String.format("%.1f", coverage) + "% (" + scanner.getScannedCount() + "/" + navigation.getExpectedZoneChunkCount() + " chunks)",
                             "Passe de zone terminée ! Couverture : " + String.format("%.1f", coverage) + "% (" + scanner.getScannedCount() + "/" + navigation.getExpectedZoneChunkCount() + " chunks)"));
 
                     // If coverage is not 100%, generate additional waypoints for missed chunks
                     if (coverage < 99.0 && navigation.getZoneMissedPassCount() < 3) {
-                        boolean hasMore = navigation.generateMissedChunkWaypoints(scanner.getScannedChunksSet());
+                        boolean hasMore = navigation.generateMissedChunkWaypoints(scanner.getScannedChunks());
                         if (hasMore) {
                             int newWp = navigation.getWaypointCount() - navigation.getCurrentWaypointIndex();
                             ChatUtils.print("[BaseHunter] " + Lang.t(

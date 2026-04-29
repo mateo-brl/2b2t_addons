@@ -52,7 +52,7 @@ public class PortalHunterModule extends ToggleableModule {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("PortalHunter");
 
     // === COMPONENTS ===
-    private final BaritoneApi baritone = new BaritoneApi();
+    private final BaritoneApi baritone;
     private final ElytraBot elytraBot;
     private final ChunkScanner chunkScanner;
     private final BaseLogger baseLogger;
@@ -165,6 +165,7 @@ public class PortalHunterModule extends ToggleableModule {
         this.elytraBot = registry.elytraBot();
         this.chunkScanner = registry.chunkScanner();
         this.baseLogger = registry.baseLogger();
+        this.baritone = registry.baritoneApi();
 
         zoneGroup.addSubSettings(zoneMinX, zoneMaxX, zoneMinZ, zoneMaxZ, zoneSpacing);
         sweepGroup.addSubSettings(sweepRadius, sweepPoints);

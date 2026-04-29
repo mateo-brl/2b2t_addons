@@ -58,7 +58,7 @@ public class AutoMendingModule extends ToggleableModule {
     }
 
     private MendingState state = MendingState.IDLE;
-    private final BaritoneApi baritoneController = new BaritoneApi();
+    private final BaritoneApi baritoneController;
 
     // Elytra swap state (3-tick process)
     private int swapStep = 0; // 0=none, 1=pickup, 2=equip, 3=putdown
@@ -74,8 +74,9 @@ public class AutoMendingModule extends ToggleableModule {
     private int elytrasRepaired = 0;
     private int totalElytrasToRepair = 0;
 
-    public AutoMendingModule() {
+    public AutoMendingModule(com.basefinder.bootstrap.ServiceRegistry registry) {
         super("AutoMending", "Auto-repair Mending elytras by mining XP ores", ModuleCategory.EXTERNAL);
+        this.baritoneController = registry.baritoneApi();
 
         this.registerSettings(
                 mineLapis,
