@@ -1,6 +1,6 @@
 package com.basefinder.domain.scan;
 
-import com.basefinder.util.BaseType;
+import com.basefinder.domain.scan.BaseType;
 
 /**
  * Logique pure de classification d'un chunk en BaseType + score, à partir de

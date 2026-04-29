@@ -14,7 +14,7 @@ import com.basefinder.terrain.TerrainPredictor;
 import com.basefinder.trail.TrailFollower;
 import com.basefinder.util.BaritoneController;
 import com.basefinder.util.BaseRecord;
-import com.basefinder.util.BaseType;
+import com.basefinder.domain.scan.BaseType;
 import com.basefinder.util.ChunkAnalysis;
 import com.basefinder.util.LagDetector;
 import com.basefinder.util.Lang;

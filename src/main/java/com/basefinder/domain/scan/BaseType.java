@@ -1,7 +1,7 @@
-package com.basefinder.util;
+package com.basefinder.domain.scan;
 
 /**
- * Types of bases that can be detected.
+ * Types de bases détectables. Sortie de {@link ChunkClassifier#pickBaseType}.
  */
 public enum BaseType {
     NONE("Aucun"),

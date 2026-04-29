@@ -1,5 +1,6 @@
 package com.basefinder.util;
 
+import com.basefinder.domain.scan.BaseType;
 import net.minecraft.core.BlockPos;
 
 import java.time.LocalDateTime;

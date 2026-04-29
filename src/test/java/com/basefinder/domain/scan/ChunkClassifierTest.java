@@ -1,7 +1,7 @@
 package com.basefinder.domain.scan;
 
 import com.basefinder.domain.world.Dimension;
-import com.basefinder.util.BaseType;
+import com.basefinder.domain.scan.BaseType;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
