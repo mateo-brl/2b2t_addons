@@ -37,9 +37,10 @@ public class BaseLogger {
     private boolean logToChat = true;
     private boolean logToFile = true;
     private boolean autoScreenshot = false;
-    private final DiscordNotifier discordNotifier = new DiscordNotifier();
+    private final DiscordNotifier discordNotifier;
 
-    public BaseLogger() {
+    public BaseLogger(DiscordNotifier discordNotifier) {
+        this.discordNotifier = discordNotifier;
         try {
             Path minecraftDir = Minecraft.getInstance().gameDirectory.toPath();
             Path pluginDir = minecraftDir.resolve("rusherhack").resolve("basefinder");

@@ -1,5 +1,6 @@
 package com.basefinder.modules;
 
+import com.basefinder.bootstrap.ServiceRegistry;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.navigation.NavigationHelper;
@@ -52,11 +53,11 @@ import java.util.Set;
 public class BaseFinderModule extends ToggleableModule {
 
     // Components
-    private final ChunkScanner scanner = new ChunkScanner();
+    private final ChunkScanner scanner;
     private final TrailFollower trailFollower = new TrailFollower();
-    private final ElytraBot elytraBot = new ElytraBot();
+    private final ElytraBot elytraBot;
     private final NavigationHelper navigation = new NavigationHelper();
-    private final BaseLogger logger = new BaseLogger();
+    private final BaseLogger logger;
     private final FreshnessEstimator freshnessEstimator = new FreshnessEstimator();
     private final SurvivalManager survivalManager = new SurvivalManager();
     private final StateManager stateManager = new StateManager();
@@ -192,8 +193,11 @@ public class BaseFinderModule extends ToggleableModule {
         PAUSED
     }
 
-    public BaseFinderModule() {
+    public BaseFinderModule(ServiceRegistry registry) {
         super("BaseHunter", "Chasse de bases automatique sur 2b2t", ModuleCategory.EXTERNAL);
+        this.scanner = registry.chunkScanner();
+        this.elytraBot = registry.elytraBot();
+        this.logger = registry.baseLogger();
 
         // Mode de recherche avec paramètres spécifiques par mode
         modeGroup.addSubSettings(searchMode, spiralStep,
