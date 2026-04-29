@@ -89,6 +89,12 @@ public class ElytraBot {
     private int takeoffAttempts = 0;
     private int takeoffAirTicks = 0;
     private boolean isTakingOff = false;
+    // Sent once per attempt: prevents START_FALL_FLYING toggle spam on
+    // laggy servers (2b2t). Reset on every retry.
+    private boolean takeoffFlyPacketSent = false;
+    // Tolerate brief !isFallFlying flickers right after takeoff (server lag)
+    // before reverting handleClimbing → TAKING_OFF.
+    private int climbingDropoutTicks = 0;
 
     // Stall recovery
     private int stallRecoveryTicks = 0;
@@ -247,6 +253,8 @@ public class ElytraBot {
                 state = FlightPhase.TAKING_OFF;
                 takeoffTimer = 0;
                 takeoffPhase = -1;
+                takeoffFlyPacketSent = false;
+                climbingDropoutTicks = 0;
                 isTakingOff = true;
             }
         }
@@ -263,6 +271,8 @@ public class ElytraBot {
         lowFireworkWarned = false;
         isTakingOff = false;
         takeoffPhase = -1;
+        takeoffFlyPacketSent = false;
+        climbingDropoutTicks = 0;
         stallRecoveryTicks = 0;
         circleCenter = null;
         circleTicks = 0;
@@ -545,12 +555,17 @@ public class ElytraBot {
                     takeoffPhase = 3;
                     break;
                 }
-                if (mc.getConnection() != null) {
+                // Send START_FALL_FLYING ONCE per attempt. On laggy 2b2t,
+                // spamming it every tick toggles the server-side state and
+                // makes the player oscillate between flying/falling.
+                if (!takeoffFlyPacketSent && mc.getConnection() != null) {
                     mc.getConnection().send(new ServerboundPlayerCommandPacket(
                             mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
                     ));
+                    takeoffFlyPacketSent = true;
                 }
-                if (takeoffAirTicks > 5 || mc.player.onGround()) {
+                // Wait a bit longer for the ack on laggy servers before retrying.
+                if (takeoffAirTicks > 12 || mc.player.onGround()) {
                     takeoffAttempts++;
                     if (takeoffAttempts >= 5) {
                         LOGGER.warn("[ElytraBot] Takeoff failed after 5 attempts, resetting to IDLE");
@@ -562,9 +577,11 @@ public class ElytraBot {
                         takeoffPhase = -1;
                         takeoffAirTicks = 0;
                         takeoffTimer = 0;
+                        takeoffFlyPacketSent = false;
                         return;
                     } else {
                         takeoffPhase = -1;
+                        takeoffFlyPacketSent = false;
                     }
                 }
             }
@@ -578,6 +595,8 @@ public class ElytraBot {
                 takeoffAttempts = 0;
                 takeoffAirTicks = 0;
                 takeoffTimer = 0;
+                takeoffFlyPacketSent = false;
+                climbingDropoutTicks = 0;
                 state = FlightPhase.CLIMBING;
             }
         }
@@ -589,6 +608,7 @@ public class ElytraBot {
             takeoffAttempts = 0;
             takeoffAirTicks = 0;
             takeoffTimer = 0;
+            takeoffFlyPacketSent = false;
         }
     }
 
@@ -596,12 +616,21 @@ public class ElytraBot {
         if (mc.player == null) return;
 
         if (!mc.player.isFallFlying()) {
-            state = FlightPhase.TAKING_OFF;
-            takeoffTimer = 0;
-            takeoffPhase = -1;
-            isTakingOff = true;
+            // Brief flickers right after takeoff are common on 2b2t (lag).
+            // Tolerate up to 4 ticks before reverting to TAKING_OFF — but if
+            // the player actually touched ground, revert immediately.
+            climbingDropoutTicks++;
+            if (mc.player.onGround() || climbingDropoutTicks > 4) {
+                state = FlightPhase.TAKING_OFF;
+                takeoffTimer = 0;
+                takeoffPhase = -1;
+                takeoffFlyPacketSent = false;
+                climbingDropoutTicks = 0;
+                isTakingOff = true;
+            }
             return;
         }
+        climbingDropoutTicks = 0;
 
         double effectiveAlt = getEffectiveTargetAltitude();
         double altDiff = effectiveAlt - mc.player.getY();
