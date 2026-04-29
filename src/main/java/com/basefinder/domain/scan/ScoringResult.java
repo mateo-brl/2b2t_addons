@@ -1,6 +1,6 @@
 package com.basefinder.domain.scan;
 
-import com.basefinder.util.BaseType;
+import com.basefinder.domain.scan.BaseType;
 
 /**
  * Résultat du scoring pur d'un chunk : type de base détecté + score numérique.

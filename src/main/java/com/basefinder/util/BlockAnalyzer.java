@@ -1,5 +1,6 @@
 package com.basefinder.util;
 
+import com.basefinder.domain.scan.BaseType;
 import com.basefinder.domain.scan.ChunkClassifier;
 import com.basefinder.domain.scan.ChunkCounts;
 import com.basefinder.domain.scan.ScoringContext;

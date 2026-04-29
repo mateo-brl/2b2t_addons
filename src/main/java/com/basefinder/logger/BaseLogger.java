@@ -1,7 +1,7 @@
 package com.basefinder.logger;
 
 import com.basefinder.util.BaseRecord;
-import com.basefinder.util.BaseType;
+import com.basefinder.domain.scan.BaseType;
 import com.basefinder.util.Lang;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
