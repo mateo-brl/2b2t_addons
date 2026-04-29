@@ -1,6 +1,8 @@
 package com.basefinder.bootstrap;
 
 import com.basefinder.adapter.baritone.BaritoneApi;
+import com.basefinder.adapter.io.telemetry.CompositeSink;
+import com.basefinder.adapter.io.telemetry.HttpJsonLineSink;
 import com.basefinder.adapter.io.telemetry.NdjsonFileSink;
 import com.basefinder.adapter.mc.McChunkSource;
 import com.basefinder.application.scan.ChunkScannerService;
@@ -15,6 +17,8 @@ import com.basefinder.logger.DiscordNotifier;
 import com.basefinder.scanner.ChunkScanner;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Composition root.
@@ -49,15 +53,32 @@ public final class ServiceRegistry {
         this.elytraBot = new ElytraBot();
         this.chunkScanner = new ChunkScanner();
         this.baritoneApi = new BaritoneApi();
-        this.telemetrySink = telemetryFile != null
-                ? new NdjsonFileSink(telemetryFile)
-                : TelemetrySink.NOOP;
+        this.telemetrySink = buildTelemetrySink(telemetryFile);
         this.eventSequence = new EventSequenceCounter();
         this.emitBaseFoundUseCase = new EmitBaseFoundUseCase(telemetrySink, eventSequence);
         this.emitBotTickUseCase = new EmitBotTickUseCase(telemetrySink, eventSequence);
         this.baseLogger = new BaseLogger(discordNotifier, emitBaseFoundUseCase);
         this.chunkSource = new McChunkSource();
         this.chunkScannerService = new ChunkScannerService(chunkSource);
+    }
+
+    /**
+     * Combine NDJSON file sink (always on if file given) + HTTP sink (if
+     * {@code -Dbasefinder.backend.url=...} is set, e.g. {@code http://127.0.0.1:8080}).
+     * NOOP if neither is configured.
+     */
+    private static TelemetrySink buildTelemetrySink(Path telemetryFile) {
+        List<TelemetrySink> sinks = new ArrayList<>(2);
+        if (telemetryFile != null) {
+            sinks.add(new NdjsonFileSink(telemetryFile));
+        }
+        String backendUrl = System.getProperty("basefinder.backend.url");
+        if (backendUrl != null && !backendUrl.isBlank()) {
+            sinks.add(new HttpJsonLineSink(backendUrl.trim()));
+        }
+        if (sinks.isEmpty()) return TelemetrySink.NOOP;
+        if (sinks.size() == 1) return sinks.get(0);
+        return new CompositeSink(sinks);
     }
 
     /** Surcharge sans télémétrie — utile pour les tests d'intégration. */
