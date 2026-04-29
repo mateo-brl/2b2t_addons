@@ -45,6 +45,7 @@ public class ElytraBot {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("ElytraBot");
     private final Minecraft mc = Minecraft.getInstance();
     private final PhysicsSimulator physics = new PhysicsSimulator();
+    private final PhysicsSimulator.FlightStatePool flightStatePool = new PhysicsSimulator.FlightStatePool();
     private final com.basefinder.domain.flight.FlightController flightController = new com.basefinder.domain.flight.FlightController();
 
     // === FLIGHT PARAMETERS (set via module settings) ===
@@ -467,9 +468,11 @@ public class ElytraBot {
     private void applySafePitch(float desiredPitch) {
         if (mc.player == null) return;
 
-        // Verify with physics simulation before applying
+        // Verify with physics simulation before applying.
+        // Use pooled variant: zero-alloc after warm-up (was ~22 FlightState + 1 array per tick).
         FlightState current = FlightState.fromPlayer(mc.player);
-        FlightState[] trajectory = physics.simulateForward(current, desiredPitch, mc.player.getYRot(), 20, false);
+        FlightState[] trajectory = physics.simulateForwardInto(
+                current, desiredPitch, mc.player.getYRot(), 20, false, flightStatePool);
 
         boolean safe = true;
         for (FlightState s : trajectory) {
