@@ -573,6 +573,7 @@ public class BlockAnalyzer {
         ScoringResult result = ChunkClassifier.classify(counts, ctx);
         analysis.setBaseType(result.baseType());
         analysis.setScore(result.score());
+        analysis.setCounts(counts);
         return analysis;
     }
 
