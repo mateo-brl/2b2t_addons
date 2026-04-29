@@ -1,5 +1,6 @@
 package com.basefinder;
 
+import com.basefinder.bootstrap.ServiceRegistry;
 import com.basefinder.modules.AutoMendingModule;
 import com.basefinder.modules.AutoTravelModule;
 import com.basefinder.modules.BaseFinderModule;
@@ -17,15 +18,18 @@ import org.rusherhack.client.api.plugin.Plugin;
 public class BaseFinderPlugin extends Plugin {
 
     private static BaseFinderPlugin instance;
+    private ServiceRegistry services;
 
     @Override
     public void onLoad() {
         instance = this;
         this.getLogger().info("Plugin BaseFinder en chargement...");
 
+        services = new ServiceRegistry();
+
         // Enregistrer les modules individuellement avec try/catch
         try {
-            BaseFinderModule baseFinderModule = new BaseFinderModule();
+            BaseFinderModule baseFinderModule = new BaseFinderModule(services);
             RusherHackAPI.getModuleManager().registerFeature(baseFinderModule);
             this.getLogger().info("Module BaseHunter enregistré (catégorie External)");
         } catch (Exception e) {
@@ -33,7 +37,7 @@ public class BaseFinderPlugin extends Plugin {
         }
 
         try {
-            ElytraBotModule elytraBotModule = new ElytraBotModule();
+            ElytraBotModule elytraBotModule = new ElytraBotModule(services);
             RusherHackAPI.getModuleManager().registerFeature(elytraBotModule);
             this.getLogger().info("Module ElytraBot enregistré (catégorie External)");
         } catch (Exception e) {
@@ -41,7 +45,7 @@ public class BaseFinderPlugin extends Plugin {
         }
 
         try {
-            AutoTravelModule autoTravelModule = new AutoTravelModule();
+            AutoTravelModule autoTravelModule = new AutoTravelModule(services);
             RusherHackAPI.getModuleManager().registerFeature(autoTravelModule);
             this.getLogger().info("Module AutoTravel enregistré (catégorie External)");
         } catch (Exception e) {
@@ -57,7 +61,7 @@ public class BaseFinderPlugin extends Plugin {
         }
 
         try {
-            PortalHunterModule portalHunterModule = new PortalHunterModule();
+            PortalHunterModule portalHunterModule = new PortalHunterModule(services);
             RusherHackAPI.getModuleManager().registerFeature(portalHunterModule);
             this.getLogger().info("Module PortalHunter enregistré (catégorie External)");
         } catch (Exception e) {
@@ -98,5 +102,9 @@ public class BaseFinderPlugin extends Plugin {
 
     public static BaseFinderPlugin getInstance() {
         return instance;
+    }
+
+    public ServiceRegistry services() {
+        return services;
     }
 }

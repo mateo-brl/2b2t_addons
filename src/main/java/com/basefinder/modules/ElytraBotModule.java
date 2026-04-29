@@ -1,5 +1,6 @@
 package com.basefinder.modules;
 
+import com.basefinder.bootstrap.ServiceRegistry;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.util.BaritoneController;
 import com.basefinder.util.Lang;
@@ -20,7 +21,7 @@ import org.rusherhack.core.setting.NumberSetting;
  */
 public class ElytraBotModule extends ToggleableModule {
 
-    private final ElytraBot elytraBot = new ElytraBot();
+    private final ElytraBot elytraBot;
     private final BaritoneController baritoneController = new BaritoneController();
 
     private final NumberSetting<Integer> targetX = new NumberSetting<>("Cible X", 0, -30000000, 30000000).incremental(1.0);
@@ -34,8 +35,9 @@ public class ElytraBotModule extends ToggleableModule {
     // --- LANGUE / LANGUAGE ---
     private final BooleanSetting langFr = new BooleanSetting("Français", "Interface en français (off = English)", true);
 
-    public ElytraBotModule() {
+    public ElytraBotModule(ServiceRegistry registry) {
         super("ElytraBot", "Vol elytra automatique vers des coordonnées", ModuleCategory.EXTERNAL);
+        this.elytraBot = registry.elytraBot();
 
         this.registerSettings(
                 targetX,

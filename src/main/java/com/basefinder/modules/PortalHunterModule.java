@@ -1,5 +1,6 @@
 package com.basefinder.modules;
 
+import com.basefinder.bootstrap.ServiceRegistry;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.scanner.ChunkScanner;
@@ -52,9 +53,9 @@ public class PortalHunterModule extends ToggleableModule {
 
     // === COMPONENTS ===
     private final BaritoneController baritone = new BaritoneController();
-    private final ElytraBot elytraBot = new ElytraBot();
-    private final ChunkScanner chunkScanner = new ChunkScanner();
-    private final BaseLogger baseLogger = new BaseLogger();
+    private final ElytraBot elytraBot;
+    private final ChunkScanner chunkScanner;
+    private final BaseLogger baseLogger;
     private final SurvivalManager survivalManager = new SurvivalManager();
 
     // === SETTINGS ===
@@ -159,8 +160,11 @@ public class PortalHunterModule extends ToggleableModule {
     // Heartbeat debug
     private int lastHeartbeatTick = 0;
 
-    public PortalHunterModule() {
+    public PortalHunterModule(ServiceRegistry registry) {
         super("PortalHunter", "Scan automatique de bases via portails du Nether", ModuleCategory.EXTERNAL);
+        this.elytraBot = registry.elytraBot();
+        this.chunkScanner = registry.chunkScanner();
+        this.baseLogger = registry.baseLogger();
 
         zoneGroup.addSubSettings(zoneMinX, zoneMaxX, zoneMinZ, zoneMaxZ, zoneSpacing);
         sweepGroup.addSubSettings(sweepRadius, sweepPoints);
