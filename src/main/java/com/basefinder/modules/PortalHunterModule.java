@@ -5,7 +5,7 @@ import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.scanner.ChunkScanner;
 import com.basefinder.survival.SurvivalManager;
-import com.basefinder.util.BaritoneController;
+import com.basefinder.adapter.baritone.BaritoneApi;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.domain.scan.BaseType;
 import com.basefinder.util.ChunkAnalysis;
@@ -52,7 +52,7 @@ public class PortalHunterModule extends ToggleableModule {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("PortalHunter");
 
     // === COMPONENTS ===
-    private final BaritoneController baritone = new BaritoneController();
+    private final BaritoneApi baritone = new BaritoneApi();
     private final ElytraBot elytraBot;
     private final ChunkScanner chunkScanner;
     private final BaseLogger baseLogger;

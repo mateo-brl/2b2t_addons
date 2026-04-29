@@ -1,7 +1,7 @@
 package com.basefinder.elytra;
 
 import com.basefinder.terrain.TerrainPredictor;
-import com.basefinder.util.BaritoneController;
+import com.basefinder.adapter.baritone.BaritoneApi;
 import com.basefinder.util.LagDetector;
 import com.basefinder.util.Lang;
 import com.basefinder.util.MathUtils;
@@ -141,7 +141,7 @@ public class ElytraBot {
     // Baritone landing
     private boolean useBaritoneLanding = true;
     private int acceptedFallDamage = 3;
-    private BaritoneController baritoneController = null;
+    private BaritoneApi baritoneController = null;
     private int baritoneLandingTimer = 0;
     private static final int BARITONE_LANDING_TIMEOUT = 200;
 
@@ -1334,7 +1334,7 @@ public class ElytraBot {
     public void setCircleTimeout(int ticks) { this.circleTimeout = ticks; }
     public void setUseBaritoneLanding(boolean v) { this.useBaritoneLanding = v; }
     public void setAcceptedFallDamage(int halfHearts) { this.acceptedFallDamage = halfHearts; }
-    public void setBaritoneController(BaritoneController ctrl) { this.baritoneController = ctrl; }
+    public void setBaritoneController(BaritoneApi ctrl) { this.baritoneController = ctrl; }
     public void setTerrainPredictor(TerrainPredictor predictor) { this.terrainPredictor = predictor; }
     public void setTerrainSafetyMargin(int margin) { this.terrainSafetyMargin = margin; }
     public TerrainPredictor getTerrainPredictor() { return terrainPredictor; }
