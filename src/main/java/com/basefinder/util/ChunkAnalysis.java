@@ -1,6 +1,7 @@
 package com.basefinder.util;
 
 import com.basefinder.domain.scan.BaseType;
+import com.basefinder.domain.scan.ChunkCounts;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
@@ -46,6 +47,10 @@ public class ChunkAnalysis {
 
     // Distance from spawn (0,0)
     private double distanceFromSpawn;
+
+    // Pure-domain counts produced during scan (consumed by ChunkScannerService /
+    // McChunkSource). Filled by BlockAnalyzer.analyzeChunk; null until then.
+    private ChunkCounts counts;
 
     public enum Freshness {
         UNKNOWN,
@@ -121,6 +126,9 @@ public class ChunkAnalysis {
     // Distance from spawn
     public double getDistanceFromSpawn() { return distanceFromSpawn; }
     public void setDistanceFromSpawn(double distance) { this.distanceFromSpawn = distance; }
+
+    public ChunkCounts getCounts() { return counts; }
+    public void setCounts(ChunkCounts counts) { this.counts = counts; }
 
     public BlockPos getCenterBlockPos() {
         return new BlockPos(chunkPos.getMiddleBlockX(), 64, chunkPos.getMiddleBlockZ());
