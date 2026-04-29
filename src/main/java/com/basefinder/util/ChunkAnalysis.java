@@ -1,5 +1,6 @@
 package com.basefinder.util;
 
+import com.basefinder.domain.scan.BaseType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;

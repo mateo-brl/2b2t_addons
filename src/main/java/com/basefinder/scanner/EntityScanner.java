@@ -1,6 +1,6 @@
 package com.basefinder.scanner;
 
-import com.basefinder.util.BaseType;
+import com.basefinder.domain.scan.BaseType;
 import com.basefinder.util.ChunkAnalysis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;

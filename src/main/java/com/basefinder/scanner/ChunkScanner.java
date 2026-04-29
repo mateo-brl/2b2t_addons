@@ -1,7 +1,7 @@
 package com.basefinder.scanner;
 
 import com.basefinder.util.BaseRecord;
-import com.basefinder.util.BaseType;
+import com.basefinder.domain.scan.BaseType;
 import com.basefinder.util.BlockAnalyzer;
 import com.basefinder.util.ChunkAnalysis;
 import com.basefinder.util.LagDetector;

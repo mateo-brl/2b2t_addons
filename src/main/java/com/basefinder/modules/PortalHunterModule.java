@@ -7,7 +7,7 @@ import com.basefinder.scanner.ChunkScanner;
 import com.basefinder.survival.SurvivalManager;
 import com.basefinder.util.BaritoneController;
 import com.basefinder.util.BaseRecord;
-import com.basefinder.util.BaseType;
+import com.basefinder.domain.scan.BaseType;
 import com.basefinder.util.ChunkAnalysis;
 import com.basefinder.util.Lang;
 import com.google.gson.Gson;
