@@ -370,12 +370,12 @@ public class BaseFinderModule extends ToggleableModule {
 
         // Restore scanned chunks and bases from saved state
         if (savedState != null && enableAutoSave.getValue()) {
-            Set<ChunkPos> savedChunks = stateManager.loadScannedChunks();
-            if (!savedChunks.isEmpty()) {
+            long[] savedChunks = stateManager.loadScannedChunks();
+            if (savedChunks.length > 0) {
                 scanner.restoreScannedChunks(savedChunks);
                 ChatUtils.print("[BaseHunter] " + Lang.t(
-                        "Restored " + savedChunks.size() + " scanned chunks from previous session",
-                        "Restauré " + savedChunks.size() + " chunks scannés de la session précédente"));
+                        "Restored " + savedChunks.length + " scanned chunks from previous session",
+                        "Restauré " + savedChunks.length + " chunks scannés de la session précédente"));
             }
             // Restore found bases into the logger
             if (!savedState.bases.isEmpty()) {
@@ -494,7 +494,7 @@ public class BaseFinderModule extends ToggleableModule {
                     center != null ? center.getZ() : 0,
                     survivalManager.getUptimeSeconds()
             );
-            stateManager.saveScannedChunks(scanner.getScannedChunksSet());
+            stateManager.saveScannedChunks(scanner.snapshotScannedChunks());
         }
 
         if (mc.level != null) {
@@ -623,7 +623,7 @@ public class BaseFinderModule extends ToggleableModule {
                         center != null ? center.getZ() : 0,
                         survivalManager.getUptimeSeconds()
                 );
-                stateManager.saveScannedChunks(scanner.getScannedChunksSet());
+                stateManager.saveScannedChunks(scanner.snapshotScannedChunks());
             }
             return;
         }
@@ -654,7 +654,7 @@ public class BaseFinderModule extends ToggleableModule {
                     center != null ? center.getZ() : 0,
                     survivalManager.getUptimeSeconds()
             );
-            stateManager.saveScannedChunks(scanner.getScannedChunksSet());
+            stateManager.saveScannedChunks(scanner.snapshotScannedChunks());
         }
 
         // Record chunk heights for terrain prediction
