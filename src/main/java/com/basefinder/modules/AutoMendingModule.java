@@ -10,6 +10,7 @@ import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.core.component.DataComponents;
 import org.rusherhack.client.api.events.client.EventUpdate;
@@ -69,6 +70,16 @@ public class AutoMendingModule extends ToggleableModule {
     private int mineCheckInterval = 20; // check durability every second
     private int ascendingTimer = 0;
     private static final int ASCENDING_TIMEOUT = 6000; // 5 minutes
+
+    // Stuck detection — Baritone tente parfois de pickup un drop qu'il ne peut pas
+    // (inventaire plein, drop dans la lave / portail / faille) et reste figé.
+    // Si la position du joueur ne bouge pas pendant ~30 s pendant MINING, on
+    // annule et relance la commande pour qu'il cherche un autre filon.
+    private Vec3 lastMiningPos = null;
+    private int stuckTicks = 0;
+    private int restartCount = 0;
+    private static final int STUCK_THRESHOLD_TICKS = 600; // 30 s
+    private static final double STUCK_DISTANCE = 3.0;     // blocs
 
     // Track which elytras we've repaired
     private int elytrasRepaired = 0;
@@ -151,6 +162,9 @@ public class AutoMendingModule extends ToggleableModule {
         ascendingTimer = 0;
         swapStep = 0;
         swapSlot = -1;
+        lastMiningPos = null;
+        stuckTicks = 0;
+        restartCount = 0;
 
         ChatUtils.print("[AutoMending] " + Lang.t(
                 "Starting! " + totalElytrasToRepair + " elytra(s) to repair.",
@@ -297,6 +311,12 @@ public class AutoMendingModule extends ToggleableModule {
             cmd.append(" nether_quartz_ore");
         }
 
+        // Désactive le pickup des drops côté Baritone : sur 2b2t, un drop
+        // perdu (lave / portail / inventaire plein) bloque le bot. Pour
+        // Mending on n'a besoin que de casser le minerai pour gagner l'XP,
+        // les items au sol ne servent à rien.
+        baritoneController.configureForMendingMine();
+
         baritoneController.executeCommand(cmd.toString());
         state = MendingState.MINING;
 
@@ -324,6 +344,33 @@ public class AutoMendingModule extends ToggleableModule {
      * MINING: Monitor durability while Baritone mines.
      */
     private void handleMining() {
+        // Stuck detection : tourne à chaque tick (pas seulement aux checks).
+        // Si Baritone est figé sur un pickup impossible (drop dans la lave,
+        // inventaire plein, etc.), la position du joueur ne change plus.
+        Vec3 pos = mc.player.position();
+        if (lastMiningPos == null || pos.distanceTo(lastMiningPos) >= STUCK_DISTANCE) {
+            lastMiningPos = pos;
+            stuckTicks = 0;
+        } else {
+            stuckTicks++;
+            if (stuckTicks >= STUCK_THRESHOLD_TICKS) {
+                restartCount++;
+                LOGGER.warn("[AutoMending] Stuck for {} ticks at {} — cancelling Baritone and relaunching mine (restart #{})",
+                        stuckTicks, pos, restartCount);
+                ChatUtils.print("[AutoMending] " + Lang.t(
+                        "Stuck — relaunching mine (restart " + restartCount + ")",
+                        "Bloqué — relance du minage (relance " + restartCount + ")"));
+                baritoneController.cancelAll();
+                stuckTicks = 0;
+                lastMiningPos = pos;
+                // Au prochain tick %20 == 0, on relancera via startMining() (cf. plus bas).
+                // Drop reference sur lastMiningPos pour forcer recompute après restart.
+                lastMiningPos = null;
+                startMining();
+                return;
+            }
+        }
+
         if (tickCounter % mineCheckInterval != 0) return;
 
         // Check equipped elytra durability
@@ -352,6 +399,8 @@ public class AutoMendingModule extends ToggleableModule {
             ));
             baritoneController.cancelAll();
             state = MendingState.SWAPPING;
+            lastMiningPos = null;
+            stuckTicks = 0;
             return;
         }
 

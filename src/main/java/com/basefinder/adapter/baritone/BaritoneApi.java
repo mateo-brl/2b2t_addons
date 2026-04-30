@@ -191,6 +191,29 @@ public class BaritoneApi {
         }
     }
 
+    /**
+     * Configure Baritone pour AutoMending : on veut juste casser les
+     * minerais (XP via Mending) sans jamais tenter de ramasser les drops.
+     *
+     * - {@code mineScanDroppedItems = false} : ne marche pas vers les items au sol
+     *   après avoir miné. Sur 2b2t, un drop tombé dans la lave / un trou /
+     *   un portail = bot bloqué indéfiniment, et l'inventaire plein causerait
+     *   le même blocage.
+     * - {@code allowInventory = false} : Baritone ne va pas tenter de réorganiser
+     *   l'inventaire (s'arrête de manger / placer pendant le mine).
+     */
+    public void configureForMendingMine() {
+        if (!isAvailable()) return;
+        try {
+            Object settings = M_API_GET_SETTINGS.invoke(null);
+            BaritoneSettingsReflection.setBool(settings, "mineScanDroppedItems", false);
+            BaritoneSettingsReflection.setBool(settings, "allowInventory", false);
+            LOGGER.info("Configured AutoMending: skip drops, no inventory swaps");
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            LOGGER.warn("Failed to configure mending settings: {}", e.getMessage());
+        }
+    }
+
     public void landAt(BlockPos target) {
         this.landingTarget = target;
         this.landingActive = true;
