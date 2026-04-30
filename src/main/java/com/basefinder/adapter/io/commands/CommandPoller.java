@@ -140,7 +140,40 @@ public final class CommandPoller {
             case "basefinder.pause" -> callBaseHunterMethod("pause");
             case "basefinder.resume" -> callBaseHunterMethod("resume");
             case "basefinder.skip" -> callBaseHunterMethod("skipWaypoint");
+            case "basefinder.delete-base" -> deleteBase(payload);
             default -> LOGGER.info("[CommandPoller] Ignored unknown command type: {}", type);
+        }
+    }
+
+    /**
+     * Reçoit le payload {@code {base_key: "..."}} et délègue à
+     * {@code BaseFinderModule.getBaseLogger().removeByKey(key)} via
+     * réflexion. Idempotent : une key inconnue retourne false côté
+     * BaseLogger et on ack quand même.
+     */
+    private void deleteBase(JsonObject payload) {
+        if (payload == null || !payload.has("base_key")) {
+            LOGGER.warn("[CommandPoller] basefinder.delete-base missing base_key");
+            return;
+        }
+        String key = payload.get("base_key").getAsString();
+        IModule mod = RusherHackAPI.getModuleManager().getFeature("BaseHunter").orElse(null);
+        if (mod == null) {
+            LOGGER.warn("[CommandPoller] BaseHunter module not found for delete-base");
+            return;
+        }
+        try {
+            // BaseFinderModule.getBaseLogger() then logger.removeByKey(key)
+            Object logger = mod.getClass().getMethod("getBaseLogger").invoke(mod);
+            if (logger == null) {
+                LOGGER.warn("[CommandPoller] BaseHunter has no logger");
+                return;
+            }
+            Object result = logger.getClass().getMethod("removeByKey", String.class).invoke(logger, key);
+            boolean ok = result instanceof Boolean && (Boolean) result;
+            LOGGER.info("[CommandPoller] delete-base {} -> {}", key, ok ? "removed" : "not found");
+        } catch (ReflectiveOperationException e) {
+            LOGGER.warn("[CommandPoller] delete-base failed: {}", e.getMessage());
         }
     }
 

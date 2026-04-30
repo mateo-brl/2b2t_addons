@@ -308,6 +308,59 @@ public class BaseLogger {
         }
     }
 
+    /**
+     * Supprime une base de la liste en mémoire et ré-écrit
+     * {@code bases.log} sans elle. La saving auto persiste ensuite via
+     * {@link com.basefinder.persistence.StateManager} qui consomme
+     * {@link #getRecords()} — donc {@code session.dat} reflètera la
+     * suppression au prochain save (~5 minutes ou onDisable).
+     *
+     * @param idempotencyKey clé canonique de la base (cf. {@code BaseFound.idempotencyKey()}).
+     * @return {@code true} si une base a été retirée, {@code false} sinon.
+     */
+    public boolean removeByKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) return false;
+        BaseRecord toRemove = null;
+        synchronized (records) {
+            for (BaseRecord r : records) {
+                String key = currentDimension.legacyName()
+                        + ":" + (r.getPosition().getX() >> 4)
+                        + ":" + (r.getPosition().getZ() >> 4)
+                        + ":" + r.getType().name();
+                if (key.equals(idempotencyKey)) {
+                    toRemove = r;
+                    break;
+                }
+            }
+            if (toRemove != null) records.remove(toRemove);
+        }
+        if (toRemove == null) return false;
+        rewriteLogFile();
+        LOGGER.info("[BaseLogger] Removed base by key: {}", idempotencyKey);
+        return true;
+    }
+
+    /**
+     * Vide {@code bases.log} et le ré-écrit avec les records restants.
+     * Appelé après {@link #removeByKey} pour garder le file en cohérence
+     * avec la liste en mémoire.
+     */
+    private void rewriteLogFile() {
+        if (logFile == null) return;
+        try {
+            StringBuilder sb = new StringBuilder();
+            synchronized (records) {
+                for (BaseRecord r : records) {
+                    sb.append(r.toLogLine()).append("\n");
+                }
+            }
+            Files.writeString(logFile, sb.toString(),
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            LOGGER.warn("[BaseLogger] Failed to rewrite log file after removal: {}", e.getMessage());
+        }
+    }
+
     public void exportAll(String filename) {
         try {
             Path exportFile = logFile.getParent().resolve(filename);
