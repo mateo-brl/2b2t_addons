@@ -61,6 +61,14 @@ public class NavigationHelper {
     private double totalDistanceTraveled = 0;
     private BlockPos lastPosition = null;
 
+    // Smart cluster scan : quand une base est trouvée, le bot insère un
+    // micro-pattern dense autour pour exploiter le fait que les bases 2b2t
+    // sont souvent groupées en cluster (multi-stash, base + farm, etc.).
+    // {@link #clustersInvestigated} dédup par cellule de 2k blocs pour ne
+    // pas re-scanner la même zone si plusieurs bases proches sont trouvées
+    // d'affilée.
+    private final Set<Long> clustersInvestigated = new HashSet<>();
+
     public enum SearchPattern {
         SPIRAL,      // Spiral out from current position
         GRID,        // Systematic grid coverage in squares
@@ -80,6 +88,7 @@ public class NavigationHelper {
         this.waypoints.clear();
         this.currentWaypointIndex = 0;
         this.isZoneMode = false;
+        this.clustersInvestigated.clear();
 
         switch (pattern) {
             case SPIRAL -> generateSpiralWaypoints(center);
@@ -348,6 +357,63 @@ public class NavigationHelper {
         if (currentTarget == null) {
             currentTarget = pos;
         }
+    }
+
+    /**
+     * Insère un cluster de waypoints denses autour d'une base trouvée. Les
+     * bases sur 2b2t sont souvent groupées (multi-stash, base + farm de
+     * villageois, plusieurs cabanes voisines), donc dès qu'on en trouve
+     * une il vaut le coup de balayer un radius {@code radius} avec un
+     * pas {@code spacing} avant de continuer le pattern principal.
+     *
+     * Insère les waypoints juste après le current index pour les
+     * consommer en priorité. Dédup par cellule de 2k blocs : si on a
+     * déjà investigué un cluster proche, on n'en re-génère pas.
+     *
+     * @return nombre de waypoints insérés (0 si dédup ou hors zone)
+     */
+    public int insertClusterWaypoints(BlockPos basePos, double radius, double spacing) {
+        long key = ((long) Math.floorDiv(basePos.getX(), 2000)) << 32
+                | (Math.floorDiv(basePos.getZ(), 2000) & 0xFFFFFFFFL);
+        if (!clustersInvestigated.add(key)) return 0;
+
+        int spacingI = Math.max(200, (int) spacing);
+        int radiusI = (int) radius;
+        double radius2 = radius * radius;
+        int insertAt = Math.min(currentWaypointIndex + 1, waypoints.size());
+        int added = 0;
+
+        // Spirale carré-en-spirale (couverture homogène + ordonnée par
+        // distance approximative — on commence proche et on s'éloigne).
+        int maxRing = (radiusI + spacingI - 1) / spacingI;
+        int cx = basePos.getX();
+        int cz = basePos.getZ();
+
+        for (int ring = 1; ring <= maxRing; ring++) {
+            int r = ring * spacingI;
+            for (int dx = -r; dx <= r; dx += spacingI) {
+                for (int dz = -r; dz <= r; dz += spacingI) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue; // ring perimeter only
+                    if ((double) dx * dx + (double) dz * dz > radius2) continue;
+                    int wx = cx + dx;
+                    int wz = cz + dz;
+                    if (isZoneMode) {
+                        if (wx < zoneMinX || wx > zoneMaxX) continue;
+                        if (wz < zoneMinZ || wz > zoneMaxZ) continue;
+                    }
+                    waypoints.add(insertAt + added, new BlockPos(wx, 200, wz));
+                    added++;
+                }
+            }
+        }
+        return added;
+    }
+
+    /** Pour tests : voir l'état du dédup cluster. */
+    public boolean isClusterInvestigated(BlockPos basePos) {
+        long key = ((long) Math.floorDiv(basePos.getX(), 2000)) << 32
+                | (Math.floorDiv(basePos.getZ(), 2000) & 0xFFFFFFFFL);
+        return clustersInvestigated.contains(key);
     }
 
     /**
