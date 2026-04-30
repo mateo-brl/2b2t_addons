@@ -163,6 +163,9 @@ public class BaseFinderModule extends ToggleableModule {
     private final BooleanSetting followTrails = new BooleanSetting("Suivre les pistes", "Suivre automatiquement les pistes détectées", true);
     private final BooleanSetting autoScreenshot = new BooleanSetting("Auto capture", "Capturer l'écran à chaque découverte", false);
     private final BooleanSetting visitBases = new BooleanSetting("Visiter les bases", "Voler vers les bases détectées pour les photographier", true);
+    private final BooleanSetting clusterScan = new BooleanSetting("Scan cluster", "Insère un balayage dense autour de chaque base trouvée (les bases 2b2t sont souvent groupées)", true);
+    private final NumberSetting<Integer> clusterRadius = new NumberSetting<>("Rayon cluster", 3000, 500, 10000).incremental(500);
+    private final NumberSetting<Integer> clusterSpacing = new NumberSetting<>("Espacement cluster", 800, 200, 2000).incremental(100);
 
     // --- SURVIE 24/7 ---
     private final NullSetting survivalGroup = new NullSetting("Survie 24/7");
@@ -234,7 +237,8 @@ public class BaseFinderModule extends ToggleableModule {
         // Détection
         detectGroup.addSubSettings(detectConstruction, detectStorage, detectMapArt, detectTrails,
                 detectStash, detectFarm, detectPortal,
-                minScore, useEntityScanning, useClusterScoring, followTrails, autoScreenshot, visitBases);
+                minScore, useEntityScanning, useClusterScoring, followTrails, autoScreenshot, visitBases,
+                clusterScan, clusterRadius, clusterSpacing);
 
         // Survie
         survivalGroup.addSubSettings(enableAutoTotem, enableAutoEat, healthThreshold,
@@ -757,6 +761,7 @@ public class BaseFinderModule extends ToggleableModule {
                 // Add enriched notes from analysis
                 addAnalysisNotes(record, analysis);
                 logger.logBase(record);
+                triggerClusterScan(record);
 
                 if (visitBases.getValue() && (bestApproach == null || record.getScore() > bestApproach.getScore())) {
                     bestApproach = record;
@@ -876,6 +881,7 @@ public class BaseFinderModule extends ToggleableModule {
                     );
                     addAnalysisNotes(record, analysis);
                     logger.logBase(record);
+                    triggerClusterScan(record);
 
                     if (visitBases.getValue() && (bestApproach == null || record.getScore() > bestApproach.getScore())) {
                         bestApproach = record;
@@ -916,6 +922,7 @@ public class BaseFinderModule extends ToggleableModule {
                     );
                     addAnalysisNotes(record, analysis);
                     logger.logBase(record);
+                    triggerClusterScan(record);
 
                     if (visitBases.getValue() && (bestApproach == null || record.getScore() > bestApproach.getScore())) {
                         bestApproach = record;
@@ -1244,6 +1251,30 @@ public class BaseFinderModule extends ToggleableModule {
                 survVm,
                 lagVm,
                 playerVm);
+    }
+
+    /**
+     * Smart cluster scan : insère des waypoints denses autour d'une base
+     * trouvée. Effectif seulement si BaseHunter navigue (pas en
+     * APPROACHING_BASE). Le NavigationHelper dédup par cellule de 2k
+     * blocs, donc trouver 5 bases proches l'une de l'autre n'insère qu'un
+     * seul cluster.
+     */
+    private void triggerClusterScan(BaseRecord record) {
+        if (!clusterScan.getValue()) return;
+        if (record == null || record.getPosition() == null) return;
+        // En mode APPROACHING_BASE, on est en train d'aller voir une base —
+        // pas besoin d'insérer un cluster autour, il sera consommé après le
+        // visit.
+        int added = navigation.insertClusterWaypoints(
+                record.getPosition(),
+                clusterRadius.getValue(),
+                clusterSpacing.getValue());
+        if (added > 0) {
+            ChatUtils.print("[BaseHunter] " + Lang.t(
+                    "Cluster scan: +" + added + " waypoints around " + record.getPosition().toShortString(),
+                    "Scan cluster : +" + added + " waypoints autour de " + record.getPosition().toShortString()));
+        }
     }
 
     private String currentDimensionLegacy() {
