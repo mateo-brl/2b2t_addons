@@ -103,6 +103,17 @@ IDLE → TAKING_OFF → CRUISING → LANDING
 | **Anneau** | Recherche a une distance specifique |
 | **Custom** | Waypoints personnalises |
 
+> **Zones dessinées (dashboard)** — quand l'utilisateur dessine un
+> rectangle / polygon / cercle sur le dashboard
+> [`2b2t_dashboard`](https://github.com/mateo-brl/2b2t_dashboard), le
+> bot poll `/v1/zones` toutes les 5 s via `ZonePoller` et :
+> 1) `ChunkScanner` skip les chunks dont le centre est hors zone
+>    (filter immédiat, peu importe le mode courant) ;
+> 2) au prochain `enable` de BaseHunter, le module force `SearchPattern.ZONE`
+>    avec la bbox d'union des zones actives → zigzag dedans.
+> Cercle / polygon : la bbox sert au pattern, le filtre exclut les
+> coins hors-forme.
+
 ### Voyage intelligent (AutoTravel)
 
 - **Raccourci Nether** — utilise automatiquement le Nether pour les longs trajets (8x plus rapide)
@@ -327,12 +338,20 @@ ElytraBot / BaseFinder           ┌── NdjsonFileSink (toujours)
 
 | Composant | Rôle |
 |-----------|------|
-| `domain/event/{BotEvent, BaseFound, BotTick}` | Sealed types purs (zero MC import) |
-| `application/telemetry/{TelemetrySink, EmitUseCase}` | Port + use cases |
+| `domain/event/{BotEvent, BaseFound, BotTick, ChunksScannedBatch}` | Sealed types purs (zero MC import) |
+| `application/telemetry/{TelemetrySink, EmitBotTick, EmitBaseFound, EmitChunksScanned}` | Port + use cases |
 | `adapter/io/telemetry/NdjsonFileSink` | Sink fichier append-only |
 | `adapter/io/telemetry/HttpJsonLineSink` | Sink HTTP queue + thread daemon |
 | `adapter/io/telemetry/CompositeSink` | Fan-out fichier + HTTP |
 | `adapter/io/telemetry/EventSerializer` | NDJSON v1 (snake_case keys) |
+| `adapter/tracking/PositionTracker` | Tick 1 Hz hors BaseHunter via EventBus RusherHack |
+| `domain/zone/{SearchZone, ZoneFilter}` | Polygon / Circle + ray-casting + bbox |
+| `adapter/io/zones/ZonePoller` | Daemon poll `GET /v1/zones` toutes les 5 s |
+
+`BotTick` v2 inclut désormais `pos_x`, `pos_z` et `dimension`
+(le dashboard suit la position live et filtre par dim).
+`ChunksScannedBatch` (toutes les ~10 s ou > 500 chunks) alimente la
+coverage layer du dashboard sans recopier l'intégralité du set scanné.
 
 Le sink HTTP utilise une `ArrayBlockingQueue` bornée (1024) avec drop-newest :
 le tick MC n'est jamais bloqué. Les échecs HTTP sont logués mais avalés
