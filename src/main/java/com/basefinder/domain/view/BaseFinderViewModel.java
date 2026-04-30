@@ -100,9 +100,12 @@ public record BaseFinderViewModel(
 
     public record PlayerVm(
             boolean present,
+            int x,
             int y,
+            int z,
+            String dimension,
             int health
     ) {
-        public static final PlayerVm UNKNOWN = new PlayerVm(false, 0, 0);
+        public static final PlayerVm UNKNOWN = new PlayerVm(false, 0, 0, 0, "overworld", 0);
     }
 }

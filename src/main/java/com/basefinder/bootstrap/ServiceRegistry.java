@@ -4,13 +4,16 @@ import com.basefinder.adapter.baritone.BaritoneApi;
 import com.basefinder.adapter.io.telemetry.CompositeSink;
 import com.basefinder.adapter.io.telemetry.HttpJsonLineSink;
 import com.basefinder.adapter.io.telemetry.NdjsonFileSink;
+import com.basefinder.adapter.io.zones.ZonePoller;
 import com.basefinder.adapter.mc.McChunkSource;
 import com.basefinder.application.scan.ChunkScannerService;
 import com.basefinder.application.scan.ChunkSource;
 import com.basefinder.application.telemetry.EmitBaseFoundUseCase;
 import com.basefinder.application.telemetry.EmitBotTickUseCase;
+import com.basefinder.application.telemetry.EmitChunksScannedUseCase;
 import com.basefinder.application.telemetry.EventSequenceCounter;
 import com.basefinder.application.telemetry.TelemetrySink;
+import com.basefinder.domain.zone.ZoneFilter;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
 import com.basefinder.logger.DiscordNotifier;
@@ -41,8 +44,11 @@ public final class ServiceRegistry {
     private final EventSequenceCounter eventSequence;
     private final EmitBaseFoundUseCase emitBaseFoundUseCase;
     private final EmitBotTickUseCase emitBotTickUseCase;
+    private final EmitChunksScannedUseCase emitChunksScannedUseCase;
     private final ChunkSource chunkSource;
     private final ChunkScannerService chunkScannerService;
+    private final ZoneFilter zoneFilter;
+    private final ZonePoller zonePoller;
 
     /**
      * @param telemetryFile chemin du fichier NDJSON de télémétrie ; si {@code null}
@@ -57,9 +63,19 @@ public final class ServiceRegistry {
         this.eventSequence = new EventSequenceCounter();
         this.emitBaseFoundUseCase = new EmitBaseFoundUseCase(telemetrySink, eventSequence);
         this.emitBotTickUseCase = new EmitBotTickUseCase(telemetrySink, eventSequence);
+        this.emitChunksScannedUseCase = new EmitChunksScannedUseCase(telemetrySink, eventSequence);
         this.baseLogger = new BaseLogger(discordNotifier, emitBaseFoundUseCase);
         this.chunkSource = new McChunkSource();
         this.chunkScannerService = new ChunkScannerService(chunkSource);
+        this.zoneFilter = new ZoneFilter();
+        this.chunkScanner.setZoneFilter(zoneFilter);
+        String backendUrl = System.getProperty("basefinder.backend.url");
+        this.zonePoller = (backendUrl != null && !backendUrl.isBlank())
+                ? new ZonePoller(backendUrl.trim(), zoneFilter)
+                : null;
+        if (zonePoller != null) {
+            zonePoller.start();
+        }
     }
 
     /**
@@ -95,6 +111,9 @@ public final class ServiceRegistry {
     public EventSequenceCounter eventSequence() { return eventSequence; }
     public EmitBaseFoundUseCase emitBaseFoundUseCase() { return emitBaseFoundUseCase; }
     public EmitBotTickUseCase emitBotTickUseCase() { return emitBotTickUseCase; }
+    public EmitChunksScannedUseCase emitChunksScannedUseCase() { return emitChunksScannedUseCase; }
     public ChunkSource chunkSource() { return chunkSource; }
     public ChunkScannerService chunkScannerService() { return chunkScannerService; }
+    public ZoneFilter zoneFilter() { return zoneFilter; }
+    public ZonePoller zonePoller() { return zonePoller; }
 }

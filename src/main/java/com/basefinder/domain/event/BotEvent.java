@@ -10,7 +10,7 @@ package com.basefinder.domain.event;
  * v2 (futur) : protobuf, même structure, schémas versionnés par event.
  */
 public sealed interface BotEvent
-        permits BaseFound, BotTick {
+        permits BaseFound, BotTick, ChunksScannedBatch {
 
     /** Type d'événement (string court — utilisé comme discriminant JSON). */
     String type();

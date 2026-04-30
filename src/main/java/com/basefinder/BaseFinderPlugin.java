@@ -1,5 +1,6 @@
 package com.basefinder;
 
+import com.basefinder.adapter.tracking.PositionTracker;
 import com.basefinder.bootstrap.ServiceRegistry;
 import com.basefinder.modules.AutoMendingModule;
 import net.minecraft.client.Minecraft;
@@ -99,6 +100,14 @@ public class BaseFinderPlugin extends Plugin {
             this.getLogger().info("Commande PortalHunter enregistrée");
         } catch (Exception e) {
             this.getLogger().error("Échec enregistrement commande PortalHunter : {}", e.getMessage(), e);
+        }
+
+        try {
+            PositionTracker tracker = new PositionTracker(services.emitBotTickUseCase());
+            RusherHackAPI.getEventBus().subscribe(tracker);
+            this.getLogger().info("PositionTracker enregistré (tick 1 Hz hors BaseHunter)");
+        } catch (Exception e) {
+            this.getLogger().error("Échec enregistrement PositionTracker : {}", e.getMessage(), e);
         }
 
         this.getLogger().info("Plugin BaseFinder chargé !");

@@ -9,7 +9,10 @@ package com.basefinder.domain.event;
  *
  * Idempotency key = bot session + seq.
  *
+ * @param posX            coordonnée bloc X du joueur
  * @param posY            altitude du joueur (-64 à 320 typiquement)
+ * @param posZ            coordonnée bloc Z du joueur
+ * @param dimension       legacy name : "overworld" / "nether" / "end"
  * @param hp              points de vie (0-20)
  * @param tps             TPS estimés observés côté client
  * @param scannedChunks   compteur cumulé de chunks scannés
@@ -22,7 +25,10 @@ package com.basefinder.domain.event;
 public record BotTick(
         long seq,
         long tsUtcMs,
+        int posX,
         int posY,
+        int posZ,
+        String dimension,
         int hp,
         double tps,
         int scannedChunks,

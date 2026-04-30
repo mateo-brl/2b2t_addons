@@ -101,6 +101,6 @@ class HttpJsonLineSinkTest {
     }
 
     private static BotTick tick(long seq) {
-        return new BotTick(seq, seq * 1000L, 64, 20, 20.0, 100, 0, false, "IDLE", 0, 0);
+        return new BotTick(seq, seq * 1000L, 0, 64, 0, "overworld", 20, 20.0, 100, 0, false, "IDLE", 0, 0);
     }
 }

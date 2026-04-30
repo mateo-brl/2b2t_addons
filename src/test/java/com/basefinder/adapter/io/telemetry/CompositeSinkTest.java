@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CompositeSinkTest {
 
     private static final BotEvent EVT = new BotTick(
-            1L, 0L, 64, 20, 20.0, 100, 0, false, "IDLE", 0, 0);
+            1L, 0L, 0, 64, 0, "overworld", 20, 20.0, 100, 0, false, "IDLE", 0, 0);
 
     @Test
     void publishFansOutToAllSinks() {
