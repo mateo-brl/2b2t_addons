@@ -1,5 +1,6 @@
 package com.basefinder.logger;
 
+import com.basefinder.adapter.io.screenshots.ScreenshotUploader;
 import com.basefinder.application.telemetry.EmitBaseFoundUseCase;
 import com.basefinder.domain.world.ChunkId;
 import com.basefinder.domain.world.Dimension;
@@ -44,6 +45,7 @@ public class BaseLogger {
     private boolean autoScreenshot = false;
     private final DiscordNotifier discordNotifier;
     private final EmitBaseFoundUseCase emitBaseFound;
+    private ScreenshotUploader screenshotUploader; // optional, set by registry
     private Dimension currentDimension = Dimension.OVERWORLD;
 
     public BaseLogger(DiscordNotifier discordNotifier, EmitBaseFoundUseCase emitBaseFound) {
@@ -113,19 +115,29 @@ public class BaseLogger {
     }
 
     /**
-     * Construit la clé d'idempotence canonique d'une base, identique à
-     * celle utilisée par {@code BaseFound.idempotencyKey()} côté
-     * télémétrie. Sert à nommer les screenshots de façon à pouvoir les
-     * lier à l'event base_found correspondant côté backend.
-     *
-     * Format : {@code <dim>_<chunkX>_<chunkZ>_<TYPE>}.
+     * Clé d'idempotence canonique de la base, identique à
+     * {@code BaseFound.idempotencyKey()} côté télémétrie ({@code :}
+     * comme séparateur). Sert au backend pour lier la screenshot à
+     * l'event base_found.
      */
-    private String idempotencyKeySafe(BaseRecord record) {
+    private String idempotencyKeyCanonical(BaseRecord record) {
         BlockPos pos = record.getPosition();
         return currentDimension.legacyName()
-                + "_" + (pos.getX() >> 4)
-                + "_" + (pos.getZ() >> 4)
-                + "_" + record.getType().name();
+                + ":" + (pos.getX() >> 4)
+                + ":" + (pos.getZ() >> 4)
+                + ":" + record.getType().name();
+    }
+
+    /**
+     * Variante FS-safe ({@code _} au lieu de {@code :}) pour les noms de
+     * fichiers locaux. Windows et certains FS rejettent {@code :}.
+     */
+    private String idempotencyKeySafe(BaseRecord record) {
+        return idempotencyKeyCanonical(record).replace(':', '_');
+    }
+
+    public void setScreenshotUploader(ScreenshotUploader uploader) {
+        this.screenshotUploader = uploader;
     }
 
     /**
@@ -155,9 +167,12 @@ public class BaseLogger {
 
             String safeAngle = angle == null || angle.isBlank() ? "auto" : angle;
             String filename = idempotencyKeySafe(record) + "_" + safeAngle + ".png";
+            String canonicalKey = idempotencyKeyCanonical(record);
+            long takenAtMs = System.currentTimeMillis();
 
             // Capture on the next render frame — MC writes the file from
-            // the render thread.
+            // the render thread. Once the file is on disk, we hand it to
+            // the optional ScreenshotUploader for backend POST.
             mc.execute(() -> {
                 try {
                     Screenshot.grab(
@@ -166,6 +181,13 @@ public class BaseLogger {
                             mc.getMainRenderTarget(),
                             (component) -> {
                                 LOGGER.info("[BaseLogger] Screenshot {} saved: {}", safeAngle, filename);
+                                if (screenshotUploader != null && screenshotDir != null) {
+                                    screenshotUploader.upload(
+                                            screenshotDir.resolve(filename),
+                                            canonicalKey,
+                                            safeAngle,
+                                            takenAtMs);
+                                }
                             }
                     );
                 } catch (Exception e) {
