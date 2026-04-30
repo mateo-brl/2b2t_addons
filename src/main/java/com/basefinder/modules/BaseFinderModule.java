@@ -783,8 +783,7 @@ public class BaseFinderModule extends ToggleableModule {
                 );
                 // Add enriched notes from analysis
                 addAnalysisNotes(record, analysis);
-                logger.logBase(record);
-                triggerClusterScan(record);
+                logBaseSafe(record);
 
                 if (visitBases.getValue() && (bestApproach == null || record.getScore() > bestApproach.getScore())) {
                     bestApproach = record;
@@ -903,8 +902,7 @@ public class BaseFinderModule extends ToggleableModule {
                             analysis.getShulkerCount()
                     );
                     addAnalysisNotes(record, analysis);
-                    logger.logBase(record);
-                    triggerClusterScan(record);
+                    logBaseSafe(record);
 
                     if (visitBases.getValue() && (bestApproach == null || record.getScore() > bestApproach.getScore())) {
                         bestApproach = record;
@@ -944,8 +942,7 @@ public class BaseFinderModule extends ToggleableModule {
                             analysis.getShulkerCount()
                     );
                     addAnalysisNotes(record, analysis);
-                    logger.logBase(record);
-                    triggerClusterScan(record);
+                    logBaseSafe(record);
 
                     if (visitBases.getValue() && (bestApproach == null || record.getScore() > bestApproach.getScore())) {
                         bestApproach = record;
@@ -1387,6 +1384,32 @@ public class BaseFinderModule extends ToggleableModule {
      * blocs, donc trouver 5 bases proches l'une de l'autre n'insère qu'un
      * seul cluster.
      */
+    /**
+     * Wrapper resilient autour de {@code logger.logBase} +
+     * {@link #triggerClusterScan}. Sans ce filet, une exception dans
+     * une dépendance optionnelle de {@code logBase} (Discord webhook
+     * unreachable, alerte chat malformée, etc.) tuait le loop d'un
+     * tick et toutes les bases suivantes du même scan étaient perdues.
+     * Maintenant l'erreur est loggée et on continue avec la base
+     * suivante.
+     */
+    private void logBaseSafe(BaseRecord record) {
+        try {
+            logger.logBase(record);
+        } catch (Throwable t) {
+            LOGGER.error("[BaseHunter] logBase failed for {} ({}, {}): {}",
+                    record.getType(),
+                    record.getPosition().getX(),
+                    record.getPosition().getZ(),
+                    t.getMessage(), t);
+        }
+        try {
+            triggerClusterScan(record);
+        } catch (Throwable t) {
+            LOGGER.error("[BaseHunter] triggerClusterScan failed: {}", t.getMessage(), t);
+        }
+    }
+
     private void triggerClusterScan(BaseRecord record) {
         if (!clusterScan.getValue()) return;
         if (record == null || record.getPosition() == null) return;
