@@ -3,11 +3,13 @@ package com.basefinder.adapter.io.telemetry;
 import com.basefinder.domain.event.BaseFound;
 import com.basefinder.domain.event.BotEvent;
 import com.basefinder.domain.event.BotTick;
+import com.basefinder.domain.event.ChunksScannedBatch;
 import com.basefinder.domain.scan.BaseType;
 import com.basefinder.domain.world.ChunkId;
 import com.basefinder.domain.world.Dimension;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 /**
@@ -41,7 +43,10 @@ public final class EventSerializer {
             json.addProperty("world_y", bf.worldY());
             json.addProperty("world_z", bf.worldZ());
         } else if (event instanceof BotTick t) {
+            json.addProperty("pos_x", t.posX());
             json.addProperty("pos_y", t.posY());
+            json.addProperty("pos_z", t.posZ());
+            json.addProperty("dimension", t.dimension());
             json.addProperty("hp", t.hp());
             json.addProperty("tps", t.tps());
             json.addProperty("scanned_chunks", t.scannedChunks());
@@ -50,6 +55,13 @@ public final class EventSerializer {
             json.addProperty("flight_state", t.flightStateName());
             json.addProperty("wp_index", t.waypointIndex());
             json.addProperty("wp_total", t.waypointTotal());
+        } else if (event instanceof ChunksScannedBatch b) {
+            json.addProperty("dimension", b.dimension());
+            JsonArray arr = new JsonArray(b.chunks().length);
+            for (long key : b.chunks()) {
+                arr.add(key);
+            }
+            json.add("chunks", arr);
         } else {
             // Future event types : add a branch here. Default = no payload, just metadata.
         }
@@ -84,7 +96,10 @@ public final class EventSerializer {
             }
             case "bot_tick" -> new BotTick(
                     seq, ts,
+                    json.get("pos_x").getAsInt(),
                     json.get("pos_y").getAsInt(),
+                    json.get("pos_z").getAsInt(),
+                    json.get("dimension").getAsString(),
                     json.get("hp").getAsInt(),
                     json.get("tps").getAsDouble(),
                     json.get("scanned_chunks").getAsInt(),
@@ -93,6 +108,15 @@ public final class EventSerializer {
                     json.get("flight_state").getAsString(),
                     json.get("wp_index").getAsInt(),
                     json.get("wp_total").getAsInt());
+            case "chunks_scanned_batch" -> {
+                JsonArray arr = json.getAsJsonArray("chunks");
+                long[] chunks = new long[arr.size()];
+                for (int i = 0; i < arr.size(); i++) chunks[i] = arr.get(i).getAsLong();
+                yield new ChunksScannedBatch(
+                        seq, ts,
+                        json.get("dimension").getAsString(),
+                        chunks);
+            }
             default -> throw new IllegalArgumentException("Unknown event type: " + type);
         };
     }

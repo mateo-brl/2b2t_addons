@@ -26,7 +26,10 @@ public final class EmitBotTickUseCase {
         BotTick event = new BotTick(
                 sequence.next(),
                 System.currentTimeMillis(),
+                vm.player().x(),
                 vm.player().y(),
+                vm.player().z(),
+                vm.player().dimension(),
                 vm.player().health(),
                 vm.lag().estimatedTps(),
                 vm.scan().scannedCount(),

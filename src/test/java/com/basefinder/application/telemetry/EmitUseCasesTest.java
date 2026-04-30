@@ -73,14 +73,17 @@ class EmitUseCasesTest {
                 null,
                 new BaseFinderViewModel.SurvivalVm(8, 60, false, false),
                 new BaseFinderViewModel.LagVm(19.8, false),
-                new BaseFinderViewModel.PlayerVm(true, 200, 18));
+                new BaseFinderViewModel.PlayerVm(true, 1500, 200, -2400, "overworld", 18));
 
         uc.emit(vm);
 
         assertEquals(1, sink.captured.size());
         BotTick t = (BotTick) sink.captured.get(0);
         assertEquals(0L, t.seq());
+        assertEquals(1500, t.posX());
         assertEquals(200, t.posY());
+        assertEquals(-2400, t.posZ());
+        assertEquals("overworld", t.dimension());
         assertEquals(18, t.hp());
         assertEquals(19.8, t.tps());
         assertEquals(1234, t.scannedChunks());

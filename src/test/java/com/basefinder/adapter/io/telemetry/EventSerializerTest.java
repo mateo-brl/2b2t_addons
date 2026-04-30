@@ -47,7 +47,8 @@ class EventSerializerTest {
     void botTick_roundTrip() {
         BotTick original = new BotTick(
                 100, 1_700_000_000_000L,
-                200, 18, 19.5,
+                1500, 200, -2400, "overworld",
+                18, 19.5,
                 1234, 8,
                 true, "CRUISING",
                 42, 500);
@@ -62,7 +63,7 @@ class EventSerializerTest {
 
     @Test
     void serializedLine_isSingleLineCompactJson() {
-        BotTick t = new BotTick(1, 2, 3, 4, 5.0, 6, 7, false, "IDLE", 0, 100);
+        BotTick t = new BotTick(1, 2, 100, 64, -100, "nether", 4, 5.0, 6, 7, false, "IDLE", 0, 100);
         String line = EventSerializer.toNdjsonLine(t);
 
         assertFalse(line.contains("\n"));

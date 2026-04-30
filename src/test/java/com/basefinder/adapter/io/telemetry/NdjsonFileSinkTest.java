@@ -22,8 +22,8 @@ class NdjsonFileSinkTest {
     void publish_writesOneLinePerEvent(@TempDir Path tmp) throws IOException {
         Path file = tmp.resolve("telemetry.ndjson");
         try (NdjsonFileSink sink = new NdjsonFileSink(file)) {
-            sink.publish(new BotTick(0, 1, 100, 20, 20.0, 0, 0, false, "IDLE", 0, 0));
-            sink.publish(new BotTick(1, 2, 101, 19, 19.8, 50, 0, false, "IDLE", 0, 0));
+            sink.publish(new BotTick(0, 1, 0, 100, 0, "overworld", 20, 20.0, 0, 0, false, "IDLE", 0, 0));
+            sink.publish(new BotTick(1, 2, 10, 101, -10, "overworld", 19, 19.8, 50, 0, false, "IDLE", 0, 0));
             sink.publish(new BaseFound(2, 3,
                     new ChunkId(7, 7, Dimension.OVERWORLD),
                     BaseType.STASH, 50.0, 112, 64, 112));
@@ -43,7 +43,7 @@ class NdjsonFileSinkTest {
         Files.writeString(file, "PRIOR\n");
 
         try (NdjsonFileSink sink = new NdjsonFileSink(file)) {
-            sink.publish(new BotTick(0, 1, 100, 20, 20.0, 0, 0, false, "IDLE", 0, 0));
+            sink.publish(new BotTick(0, 1, 0, 100, 0, "overworld", 20, 20.0, 0, 0, false, "IDLE", 0, 0));
         }
 
         List<String> lines = Files.readAllLines(file);
@@ -58,7 +58,7 @@ class NdjsonFileSinkTest {
         assertTrue(!Files.exists(file.getParent()));
 
         try (NdjsonFileSink sink = new NdjsonFileSink(file)) {
-            sink.publish(new BotTick(0, 1, 0, 0, 0, 0, 0, false, "IDLE", 0, 0));
+            sink.publish(new BotTick(0, 1, 0, 0, 0, "overworld", 0, 0, 0, 0, false, "IDLE", 0, 0));
         }
 
         assertTrue(Files.exists(file));
