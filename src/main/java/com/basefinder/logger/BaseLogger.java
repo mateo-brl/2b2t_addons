@@ -36,6 +36,8 @@ public class BaseLogger {
 
     private final List<BaseRecord> records = Collections.synchronizedList(new ArrayList<>());
     private Path logFile;
+    /** Parent directory passed to {@link Screenshot#grab} ; the API appends "screenshots/" itself. */
+    private Path screenshotParentDir;
     private Path screenshotDir;
     private boolean logToChat = true;
     private boolean logToFile = true;
@@ -53,7 +55,10 @@ public class BaseLogger {
             Files.createDirectories(pluginDir);
             logFile = pluginDir.resolve("bases.log");
 
-            // Screenshot directory
+            // Screenshot.grab(gameDir, ...) writes to "gameDir/screenshots/" — so we
+            // pass pluginDir as the "gameDir" and MC creates the subfolder
+            // "<gameDir>/rusherhack/basefinder/screenshots/" itself.
+            screenshotParentDir = pluginDir;
             screenshotDir = pluginDir.resolve("screenshots");
             Files.createDirectories(screenshotDir);
         } catch (IOException e) {
@@ -81,9 +86,12 @@ public class BaseLogger {
             writeToFile(record);
         }
 
-        if (autoScreenshot) {
-            takeScreenshot(record);
-        }
+        // Note : on NE prend PAS de screenshot ici. À la détection, le bot
+        // est typiquement en pleine croisière à 200m d'altitude au-dessus
+        // de la base — la capture est inutile (ciel + terrain à peine
+        // rendu). Les screenshots sont prises pendant le flow d'approach
+        // par BaseFinderModule.handleApproachingBase() (vue aérienne +
+        // panoramique au sol + détail).
 
         discordNotifier.notifyBase(record);
 
@@ -105,30 +113,59 @@ public class BaseLogger {
     }
 
     /**
-     * Takes a screenshot with base coordinates in the filename.
-     * Format: base_TYPE_X_Z_TIMESTAMP.png
+     * Construit la clé d'idempotence canonique d'une base, identique à
+     * celle utilisée par {@code BaseFound.idempotencyKey()} côté
+     * télémétrie. Sert à nommer les screenshots de façon à pouvoir les
+     * lier à l'event base_found correspondant côté backend.
+     *
+     * Format : {@code <dim>_<chunkX>_<chunkZ>_<TYPE>}.
+     */
+    private String idempotencyKeySafe(BaseRecord record) {
+        BlockPos pos = record.getPosition();
+        return currentDimension.legacyName()
+                + "_" + (pos.getX() >> 4)
+                + "_" + (pos.getZ() >> 4)
+                + "_" + record.getType().name();
+    }
+
+    /**
+     * Backward-compat : ancienne signature single-shot, conservée pour ne
+     * pas casser d'éventuels appelants externes. Délègue avec angle "auto".
      */
     public void takeScreenshot(BaseRecord record) {
+        takeScreenshot(record, "auto");
+    }
+
+    /**
+     * Capture une frame du jeu et l'écrit dans
+     * {@code <gameDir>/rusherhack/basefinder/screenshots/<key>_<angle>.png}.
+     *
+     * - Le filename est canonique : la clé d'idempotence de la base
+     *   permet au backend de lier la screenshot à l'event {@code base_found}.
+     * - On utilise l'overload {@code Screenshot.grab(File, String, ...)}
+     *   qui prend un nom personnalisé, contrairement à l'ancien code qui
+     *   construisait le nom en string et l'ignorait totalement (le PNG
+     *   atterrissait avec un nom timestamp dans {@code <gameDir>/screenshots/}).
+     */
+    public void takeScreenshot(BaseRecord record, String angle) {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null || mc.level == null) return;
+            if (screenshotParentDir == null) return;
 
-            BlockPos pos = record.getPosition();
-            String timestamp = LocalDateTime.now().format(SCREENSHOT_FORMAT);
-            String filename = String.format("base_%s_%d_%d_%s",
-                    record.getType().name().toLowerCase(),
-                    pos.getX(), pos.getZ(),
-                    timestamp);
+            String safeAngle = angle == null || angle.isBlank() ? "auto" : angle;
+            String filename = idempotencyKeySafe(record) + "_" + safeAngle + ".png";
 
-            // Use MC's screenshot API - takes screenshot on next frame render
+            // Capture on the next render frame — MC writes the file from
+            // the render thread.
             mc.execute(() -> {
                 try {
                     Screenshot.grab(
-                            mc.gameDirectory,
+                            screenshotParentDir.toFile(),
+                            filename,
                             mc.getMainRenderTarget(),
                             (component) -> {
-                                LOGGER.info("[BaseLogger] Screenshot saved: {}", component.getString());
-                                ChatUtils.print("[BaseHunter] " + Lang.t("Screenshot saved!", "Capture d'écran sauvegardée !"));
+                                LOGGER.info("[BaseLogger] Screenshot {} saved: {}", safeAngle, filename);
                             }
                     );
                 } catch (Exception e) {
