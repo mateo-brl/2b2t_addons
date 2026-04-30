@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.minecraft.client.Minecraft;
 import org.rusherhack.client.api.RusherHackAPI;
 import org.rusherhack.client.api.feature.module.IModule;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
@@ -122,6 +123,16 @@ public final class CommandPoller {
      * n'en vaut pas la peine pour un poller à 2 s.
      */
     private void execute(String type, JsonObject payload) {
+        // Toutes les commandes basefinder.* exigent que le joueur soit
+        // dans un monde (BaseFinderModule.onEnable() rejette sinon avec
+        // "Vous devez être dans un monde !"). Pendant la queue 2b2t ou
+        // un chargement, on ne tente même pas l'exécution — on ack quand
+        // même pour drainer la file (sinon les commandes restent
+        // pending et finissent par être appliquées au mauvais moment).
+        if (type.startsWith("basefinder.") && !inWorld()) {
+            LOGGER.info("[CommandPoller] Skipping {} — not in world (queue/loading)", type);
+            return;
+        }
         switch (type) {
             case "basefinder.toggle" -> toggleBaseHunter(null);
             case "basefinder.enable" -> toggleBaseHunter(Boolean.TRUE);
@@ -131,6 +142,11 @@ public final class CommandPoller {
             case "basefinder.skip" -> callBaseHunterMethod("skipWaypoint");
             default -> LOGGER.info("[CommandPoller] Ignored unknown command type: {}", type);
         }
+    }
+
+    private static boolean inWorld() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc != null && mc.player != null && mc.level != null;
     }
 
     /**
