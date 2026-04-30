@@ -222,18 +222,32 @@ public class ElytraBot {
                     destination != null ? destination.toShortString() : "none");
         }
 
-        switch (state) {
-            case IDLE -> {}
-            case TAKING_OFF -> handleTakeoff();
-            case CLIMBING -> handleClimbing();
-            case CRUISING -> handleCruising();
-            case DESCENDING -> handleDescending();
-            case SAFE_DESCENDING -> handleSafeDescent();
-            case FLARING -> handleFlaring();
-            case LANDING -> handleLanding();
-            case REFUELING -> handleRefueling();
-            case CIRCLING -> handleCircling();
-            case BARITONE_LANDING -> handleBaritoneLanding();
+        // Wrapper try/catch : avant ce changement, une exception dans un
+        // handleXxx() faisait remonter l'erreur jusqu'à RusherHack et figeait
+        // l'état de la FSM tel quel — le bot pouvait alors rester en
+        // DESCENDING sans plus contrôler son vol et tomber. On loggue, on
+        // route vers LANDING (filet de sécurité) et on continue à ticker.
+        try {
+            switch (state) {
+                case IDLE -> {}
+                case TAKING_OFF -> handleTakeoff();
+                case CLIMBING -> handleClimbing();
+                case CRUISING -> handleCruising();
+                case DESCENDING -> handleDescending();
+                case SAFE_DESCENDING -> handleSafeDescent();
+                case FLARING -> handleFlaring();
+                case LANDING -> handleLanding();
+                case REFUELING -> handleRefueling();
+                case CIRCLING -> handleCircling();
+                case BARITONE_LANDING -> handleBaritoneLanding();
+            }
+        } catch (Throwable t) {
+            LOGGER.error("[ElytraBot] Exception in handler (state={}, fallFlying={}, Y={}): {}",
+                    state, mc.player.isFallFlying(), (int) mc.player.getY(), t.getMessage(), t);
+            if (state != FlightPhase.IDLE && state != FlightPhase.BARITONE_LANDING) {
+                state = FlightPhase.LANDING;
+                landingTimer = 0;
+            }
         }
     }
 
@@ -501,7 +515,11 @@ public class ElytraBot {
             // Fallback: climb to avoid danger
             float originalPitch = desiredPitch;
             desiredPitch = Math.min(desiredPitch, -20.0f);
-            LOGGER.warn("[ElytraBot] Pitch {} rejected by safety check, using {}", originalPitch, desiredPitch);
+            // Ne logger que si on a vraiment changé le pitch — sinon ça spamme
+            // 50× quand le pitch était déjà en climb (-45 par exemple).
+            if (originalPitch != desiredPitch) {
+                LOGGER.warn("[ElytraBot] Pitch {} clamped to {} (terrain ahead)", originalPitch, desiredPitch);
+            }
         }
 
         applySmoothRotation(desiredPitch, targetYaw);
@@ -740,8 +758,30 @@ public class ElytraBot {
         if (mc.player == null) return;
 
         if (!mc.player.isFallFlying()) {
+            // Si on perd le fall flying en l'air (server desync, kick mineur,
+            // chunks unloaded), on est en chute libre : route directe vers
+            // BARITONE_LANDING (parachute via Baritone) au lieu d'attendre
+            // 10 s en LANDING.
+            if (!mc.player.onGround() && mc.player.getDeltaMovement().y < -0.3) {
+                LOGGER.warn("[ElytraBot] Lost fallFlying mid-descent at Y={} (Δy={}), emergency parachute",
+                        (int) mc.player.getY(),
+                        String.format("%.2f", mc.player.getDeltaMovement().y));
+                if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable()) {
+                    startBaritoneLanding();
+                    return;
+                }
+            }
             state = FlightPhase.LANDING;
             landingTimer = 0;
+            return;
+        }
+
+        // Pre-flight: trop de chunks unloaded en avant pendant une descente
+        // active = risque de desync (chute soudaine). On entre en CIRCLING
+        // pour laisser les chunks charger avant de continuer la descente.
+        if (lagDetector != null && lagDetector.getUnloadedChunksAhead() >= 2) {
+            LOGGER.warn("[ElytraBot] Unloaded chunks ahead during descent — entering CIRCLING");
+            enterCircling();
             return;
         }
 
@@ -911,6 +951,26 @@ public class ElytraBot {
                 finishLanding();
             }
             return;
+        }
+
+        // Chute libre détectée pendant LANDING : on ne peut pas se permettre
+        // d'attendre 10 s, le bot va se noyer / mourir de fall damage. Tenter
+        // de re-déployer l'élytra toutes les 5 ticks. Si rien ne change après
+        // 60 ticks (~3 s), on demande à Baritone un atterrissage parachute.
+        boolean falling = !mc.player.onGround() && mc.player.getDeltaMovement().y < -0.3;
+        if (falling) {
+            if (landingTimer % 5 == 0 && mc.getConnection() != null) {
+                mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                        mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING
+                ));
+            }
+            if (landingTimer > 60) {
+                if (useBaritoneLanding && baritoneController != null && baritoneController.isAvailable()) {
+                    LOGGER.warn("[ElytraBot] Free-fall during LANDING, switching to BARITONE_LANDING parachute");
+                    startBaritoneLanding();
+                    return;
+                }
+            }
         }
 
         if (landingTimer > 200) finishLanding();
