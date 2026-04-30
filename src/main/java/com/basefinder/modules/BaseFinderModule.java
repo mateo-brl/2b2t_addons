@@ -88,8 +88,14 @@ public class BaseFinderModule extends ToggleableModule {
     private static final int RETURN_HOME_TIMEOUT_TICKS = 24000; // 20 minutes
     private int approachTicks = 0;
     private boolean approachReachedBase = false;
-    private boolean approachScreenshotDone = false;
+    private boolean approachAerialDone = false;
+    private boolean approachGroundDone = false;
+    private boolean approachDetailDone = false;
+    private int approachReachedTick = 0;
+    private int approachGroundTick = 0;
     private int approachLandedTick = 0;
+    private static final int AERIAL_DELAY_TICKS = 18;   // ~0.9s after we mark "near base" — bot is mid-descent, camera looking down
+    private static final int DETAIL_DELAY_TICKS = 40;   // ~2s after the ground shot — same spot, slightly different framing
     private FinderState stateBeforeApproach = FinderState.SCANNING;
     private static final int APPROACH_DISTANCE = 150;
     private static final int APPROACH_WAIT_TICKS = 60;
@@ -1038,7 +1044,11 @@ public class BaseFinderModule extends ToggleableModule {
         pendingBaseApproach = record;
         approachTicks = 0;
         approachReachedBase = false;
-        approachScreenshotDone = false;
+        approachAerialDone = false;
+        approachGroundDone = false;
+        approachDetailDone = false;
+        approachReachedTick = 0;
+        approachGroundTick = 0;
         approachLandedTick = 0;
         stateBeforeApproach = state;
         state = FinderState.APPROACHING_BASE;
@@ -1144,6 +1154,7 @@ public class BaseFinderModule extends ToggleableModule {
             if (dist <= APPROACH_DISTANCE) {
                 // Close enough - mark arrival, ElytraBot will land safely
                 approachReachedBase = true;
+                approachReachedTick = approachTicks;
                 ChatUtils.print("[BaseHunter] " + Lang.t(
                         "Near base! Safe landing in progress...",
                         "Proche de la base ! Atterrissage sécurisé en cours..."));
@@ -1163,7 +1174,15 @@ public class BaseFinderModule extends ToggleableModule {
             return;
         }
 
-        // === PHASE 2: Aerial screenshot done - waiting for ElytraBot to land safely ===
+        // === PHASE 2: Descent — capture aerial screenshot mid-descent ===
+        // À ce moment l'élytra contrôle le pitch (regard vers le sol pendant
+        // la descente), donc la base apparaît naturellement dans le frame.
+        // On ne touche PAS aux rotations en vol.
+        if (!approachAerialDone && approachTicks - approachReachedTick >= AERIAL_DELAY_TICKS) {
+            approachAerialDone = true;
+            logger.takeScreenshot(pendingBaseApproach, "aerial");
+        }
+
         if (elytraBot.isFlying()) {
             // ElytraBot handles the entire descent safely - just wait
             if (approachTicks > APPROACH_TIMEOUT * 2) {
@@ -1193,21 +1212,42 @@ public class BaseFinderModule extends ToggleableModule {
         if (arrivedAtBase || walkTimeout) {
             baritoneController.cancelLanding();
 
-            if (!approachScreenshotDone) {
-                approachScreenshotDone = true;
-                // Look at the base for ground-level screenshot
-                float yaw = (float) Math.toDegrees(Math.atan2(-(basePos.getX() - mc.player.getX()), basePos.getZ() - mc.player.getZ()));
+            // Aim camera at the base on first arrival — once for both shots.
+            if (!approachGroundDone && !approachDetailDone) {
+                float yaw = (float) Math.toDegrees(Math.atan2(
+                        -(basePos.getX() - mc.player.getX()),
+                        basePos.getZ() - mc.player.getZ()));
                 mc.player.setYRot(yaw);
-                mc.player.setXRot(10); // Slight downward look
+                mc.player.setXRot(8); // Slight downward look
             }
 
-            // Wait for chunks to render before taking screenshot
             int ticksSinceLook = approachTicks - approachLandedTick;
-            if (arrivedAtBase && ticksSinceLook >= APPROACH_WAIT_TICKS) {
-                logger.takeScreenshot(pendingBaseApproach);
-                ChatUtils.print("[BaseHunter] " + Lang.t("Base photographed from ground!", "Base photographiée depuis le sol !"));
+
+            // Ground panoramic shot — wait the chunks to render fully.
+            if (arrivedAtBase && !approachGroundDone && ticksSinceLook >= APPROACH_WAIT_TICKS) {
+                approachGroundDone = true;
+                approachGroundTick = approachTicks;
+                logger.takeScreenshot(pendingBaseApproach, "ground");
+                ChatUtils.print("[BaseHunter] " + Lang.t(
+                        "Ground shot taken.",
+                        "Photo au sol prise."));
+            }
+
+            // Detail close-up — same spot, slightly tighter pitch ; let
+            // the chunk LODs settle a bit more.
+            if (approachGroundDone && !approachDetailDone
+                    && approachTicks - approachGroundTick >= DETAIL_DELAY_TICKS) {
+                approachDetailDone = true;
+                mc.player.setXRot(-4);
+                logger.takeScreenshot(pendingBaseApproach, "detail");
+                ChatUtils.print("[BaseHunter] " + Lang.t(
+                        "Detail shot taken. Resuming.",
+                        "Photo détail prise. Reprise."));
                 finishApproach();
-            } else if (walkTimeout) {
+                return;
+            }
+
+            if (walkTimeout) {
                 ChatUtils.print("[BaseHunter] " + Lang.t("Walk timeout, continuing search.", "Timeout marche, reprise de la recherche."));
                 finishApproach();
             }
