@@ -81,6 +81,11 @@ public class BaseFinderModule extends ToggleableModule {
 
     // Base approach state
     private BaseRecord pendingBaseApproach = null;
+    /** Position du joueur au moment du toggle ON. Utilisée par le mode "retour au départ". */
+    private BlockPos homePos = null;
+    /** Tick auquel on est entré en RETURNING_HOME — pour le timeout de sécurité. */
+    private int returnHomeStartTick = 0;
+    private static final int RETURN_HOME_TIMEOUT_TICKS = 24000; // 20 minutes
     private int approachTicks = 0;
     private boolean approachReachedBase = false;
     private boolean approachScreenshotDone = false;
@@ -186,6 +191,9 @@ public class BaseFinderModule extends ToggleableModule {
     private final NumberSetting<Integer> scanIntervalSetting = new NumberSetting<>("Vitesse scan (ticks)", 20, 5, 100);
     private final NumberSetting<Double> waypointThreshold = new NumberSetting<>("Rayon waypoint", 100.0, 20.0, 500.0);
 
+    // --- RETOUR AU DÉPART ---
+    private final BooleanSetting returnHomeSetting = new BooleanSetting("Retour au départ", "Une fois la zone scannée, voler vers le point de départ et atterrir", true);
+
     // --- LOG ---
     private final BooleanSetting logToChat = new BooleanSetting("Alertes chat", "Afficher les découvertes dans le chat", true);
     private final BooleanSetting logToFile = new BooleanSetting("Sauvegarder", "Sauvegarder les bases dans un fichier .csv", true);
@@ -200,6 +208,7 @@ public class BaseFinderModule extends ToggleableModule {
         FLYING_TO_WAYPOINT,
         INVESTIGATING,
         APPROACHING_BASE,
+        RETURNING_HOME,
         PAUSED
     }
 
@@ -258,6 +267,7 @@ public class BaseFinderModule extends ToggleableModule {
                 detectGroup,
                 survivalGroup,
                 advancedGroup,
+                returnHomeSetting,
                 logToChat,
                 logToFile,
                 langFr
@@ -288,6 +298,12 @@ public class BaseFinderModule extends ToggleableModule {
             this.toggle();
             return;
         }
+
+        // Capture la position de départ — sert au "retour au départ" en
+        // fin de scan. Capturé avant tout autre calcul pour que les
+        // override (zones, savedState) ne décalent pas la valeur.
+        homePos = mc.player.blockPosition();
+        returnHomeStartTick = 0;
 
         if (isElytraBotInUse()) {
             ChatUtils.print("[BaseHunter] " + Lang.t(
@@ -715,6 +731,7 @@ public class BaseFinderModule extends ToggleableModule {
             case FLYING_TO_WAYPOINT -> handleFlying();
             case INVESTIGATING -> handleInvestigating();
             case APPROACHING_BASE -> handleApproachingBase();
+            case RETURNING_HOME -> handleReturningHome();
             case PAUSED, IDLE -> {}
         }
     }
@@ -791,7 +808,7 @@ public class BaseFinderModule extends ToggleableModule {
                 if (!navigation.advanceToNext()) {
                     // No more waypoints
                     ChatUtils.print("[BaseHunter] " + Lang.t("All waypoints visited! Total bases found: ", "Tous les waypoints visités ! Bases trouvées : ") + logger.getCount());
-                    this.toggle();
+                    finishOrReturnHome();
                     return;
                 }
             }
@@ -973,7 +990,7 @@ public class BaseFinderModule extends ToggleableModule {
                     }
                 }
                 ChatUtils.print("[BaseHunter] " + Lang.t("All waypoints visited! Total bases found: ", "Tous les waypoints visités ! Bases trouvées : ") + logger.getCount());
-                this.toggle();
+                finishOrReturnHome();
                 return;
             }
             state = FinderState.SCANNING;
@@ -1033,6 +1050,76 @@ public class BaseFinderModule extends ToggleableModule {
         ChatUtils.print("[BaseHunter] " + Lang.t(
                 "Flying to base... (" + record.toShortString() + ")",
                 "Vol vers la base... (" + record.toShortString() + ")"));
+    }
+
+    // ===== RETURN HOME =====
+
+    /**
+     * Décide de la fin de session : si la setting "Retour au départ" est
+     * active et qu'on a une position de départ assez éloignée, on bascule
+     * en RETURNING_HOME et on vole vers home en élytra. Sinon on toggle
+     * directement le module off (comportement historique).
+     */
+    private void finishOrReturnHome() {
+        if (!returnHomeSetting.getValue() || homePos == null || mc.player == null) {
+            this.toggle();
+            return;
+        }
+        double dx = mc.player.getX() - homePos.getX();
+        double dz = mc.player.getZ() - homePos.getZ();
+        double dist = Math.sqrt(dx * dx + dz * dz);
+        // Si on est déjà très près de la maison, pas la peine de redécoller.
+        if (dist < 50) {
+            this.toggle();
+            return;
+        }
+        state = FinderState.RETURNING_HOME;
+        returnHomeStartTick = tickCounter;
+        elytraBot.stop();
+        if (useElytra.getValue()) {
+            elytraBot.startFlight(homePos);
+        }
+        ChatUtils.print("[BaseHunter] " + Lang.t(
+                "Returning home (" + (int) dist + " blocks)…",
+                "Retour au départ (" + (int) dist + " blocs)…"));
+    }
+
+    private void handleReturningHome() {
+        if (mc.player == null || homePos == null) {
+            this.toggle();
+            return;
+        }
+        // Tick l'élytra : il gère takeoff / cruising / descending / landing.
+        if (useElytra.getValue()) {
+            elytraBot.tick();
+        }
+
+        double dx = mc.player.getX() - homePos.getX();
+        double dz = mc.player.getZ() - homePos.getZ();
+        double dist = Math.sqrt(dx * dx + dz * dz);
+
+        // Arrivé : on est posé près de home → toggle off.
+        if (mc.player.onGround() && dist < 12) {
+            ChatUtils.print("[BaseHunter] " + Lang.t(
+                    "Home reached. Stopping.",
+                    "Point de départ atteint. Arrêt."));
+            this.toggle();
+            return;
+        }
+
+        // Si l'élytra a déjà fini son cycle (IDLE) mais qu'on est encore
+        // loin, on relance un vol.
+        if (useElytra.getValue() && !elytraBot.isFlying() && dist > 30) {
+            elytraBot.startFlight(homePos);
+        }
+
+        // Filet de sécurité : ne pas tourner en rond > RETURN_HOME_TIMEOUT_TICKS.
+        if (tickCounter - returnHomeStartTick > RETURN_HOME_TIMEOUT_TICKS) {
+            ChatUtils.print("[BaseHunter] " + Lang.t(
+                    "Return-home timeout — stopping anyway.",
+                    "Timeout retour départ — arrêt forcé."));
+            this.toggle();
+        }
     }
 
     private void handleApproachingBase() {
