@@ -5,6 +5,7 @@ import com.basefinder.adapter.io.telemetry.CompositeSink;
 import com.basefinder.adapter.io.telemetry.HttpJsonLineSink;
 import com.basefinder.adapter.io.telemetry.NdjsonFileSink;
 import com.basefinder.adapter.io.commands.CommandPoller;
+import com.basefinder.adapter.io.screenshots.ScreenshotUploader;
 import com.basefinder.adapter.io.zones.ZonePoller;
 import com.basefinder.adapter.mc.McChunkSource;
 import com.basefinder.application.scan.ChunkScannerService;
@@ -51,6 +52,7 @@ public final class ServiceRegistry {
     private final ZoneFilter zoneFilter;
     private final ZonePoller zonePoller;
     private final CommandPoller commandPoller;
+    private final ScreenshotUploader screenshotUploader;
 
     /**
      * @param telemetryFile chemin du fichier NDJSON de télémétrie ; si {@code null}
@@ -76,11 +78,14 @@ public final class ServiceRegistry {
             String trimmedUrl = backendUrl.trim();
             this.zonePoller = new ZonePoller(trimmedUrl, zoneFilter);
             this.commandPoller = new CommandPoller(trimmedUrl);
+            this.screenshotUploader = new ScreenshotUploader(trimmedUrl);
             zonePoller.start();
             commandPoller.start();
+            this.baseLogger.setScreenshotUploader(screenshotUploader);
         } else {
             this.zonePoller = null;
             this.commandPoller = null;
+            this.screenshotUploader = null;
         }
     }
 
@@ -123,4 +128,5 @@ public final class ServiceRegistry {
     public ZoneFilter zoneFilter() { return zoneFilter; }
     public ZonePoller zonePoller() { return zonePoller; }
     public CommandPoller commandPoller() { return commandPoller; }
+    public ScreenshotUploader screenshotUploader() { return screenshotUploader; }
 }
