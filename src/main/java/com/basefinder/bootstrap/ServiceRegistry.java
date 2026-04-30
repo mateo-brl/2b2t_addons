@@ -4,6 +4,7 @@ import com.basefinder.adapter.baritone.BaritoneApi;
 import com.basefinder.adapter.io.telemetry.CompositeSink;
 import com.basefinder.adapter.io.telemetry.HttpJsonLineSink;
 import com.basefinder.adapter.io.telemetry.NdjsonFileSink;
+import com.basefinder.adapter.io.commands.CommandPoller;
 import com.basefinder.adapter.io.zones.ZonePoller;
 import com.basefinder.adapter.mc.McChunkSource;
 import com.basefinder.application.scan.ChunkScannerService;
@@ -49,6 +50,7 @@ public final class ServiceRegistry {
     private final ChunkScannerService chunkScannerService;
     private final ZoneFilter zoneFilter;
     private final ZonePoller zonePoller;
+    private final CommandPoller commandPoller;
 
     /**
      * @param telemetryFile chemin du fichier NDJSON de télémétrie ; si {@code null}
@@ -70,11 +72,15 @@ public final class ServiceRegistry {
         this.zoneFilter = new ZoneFilter();
         this.chunkScanner.setZoneFilter(zoneFilter);
         String backendUrl = System.getProperty("basefinder.backend.url");
-        this.zonePoller = (backendUrl != null && !backendUrl.isBlank())
-                ? new ZonePoller(backendUrl.trim(), zoneFilter)
-                : null;
-        if (zonePoller != null) {
+        if (backendUrl != null && !backendUrl.isBlank()) {
+            String trimmedUrl = backendUrl.trim();
+            this.zonePoller = new ZonePoller(trimmedUrl, zoneFilter);
+            this.commandPoller = new CommandPoller(trimmedUrl);
             zonePoller.start();
+            commandPoller.start();
+        } else {
+            this.zonePoller = null;
+            this.commandPoller = null;
         }
     }
 
@@ -116,4 +122,5 @@ public final class ServiceRegistry {
     public ChunkScannerService chunkScannerService() { return chunkScannerService; }
     public ZoneFilter zoneFilter() { return zoneFilter; }
     public ZonePoller zonePoller() { return zonePoller; }
+    public CommandPoller commandPoller() { return commandPoller; }
 }
