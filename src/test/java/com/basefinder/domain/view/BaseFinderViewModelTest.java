@@ -53,7 +53,7 @@ class BaseFinderViewModelTest {
                 new BaseFinderViewModel.TrailVm("ICE", 25),
                 new BaseFinderViewModel.SurvivalVm(8, 3600, false, false),
                 new BaseFinderViewModel.LagVm(19.8, false),
-                new BaseFinderViewModel.PlayerVm(true, 200, 18)
+                new BaseFinderViewModel.PlayerVm(true, 1500, 200, -2400, "overworld", 18)
         );
 
         assertEquals(true, vm.active());

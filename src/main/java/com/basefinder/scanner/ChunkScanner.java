@@ -2,6 +2,7 @@ package com.basefinder.scanner;
 
 import com.basefinder.domain.scan.BaseType;
 import com.basefinder.domain.world.ChunkId;
+import com.basefinder.domain.zone.ZoneFilter;
 import com.basefinder.util.BaseRecord;
 import com.basefinder.util.BlockAnalyzer;
 import com.basefinder.util.ChunkAnalysis;
@@ -30,6 +31,12 @@ public class ChunkScanner {
 
     private final Minecraft mc = Minecraft.getInstance();
     private final LongOpenHashSet scannedChunks = new LongOpenHashSet();
+    /**
+     * Buffer des chunks scannés depuis le dernier {@link #pollPendingNewScanned()}.
+     * Sert à alimenter la coverage layer du dashboard (audit/05 §5 étape 11)
+     * sans avoir à dumper l'intégralité du set scannedChunks à chaque tick.
+     */
+    private final LongOpenHashSet pendingNewScanned = new LongOpenHashSet();
     private final List<ChunkAnalysis> interestingChunks = Collections.synchronizedList(new ArrayList<>());
     private int foundBasesCount = 0;
     private final List<ChunkAnalysis> trailChunks = Collections.synchronizedList(new ArrayList<>());
@@ -42,6 +49,14 @@ public class ChunkScanner {
     private LagDetector lagDetector;
     private final LongOpenHashSet deferredChunks = new LongOpenHashSet();
     private int skippedCount = 0;
+
+    /**
+     * Filtre optionnel : si non null et qu'au moins une zone est définie
+     * pour la dimension courante, le scanner ignore les chunks hors zones.
+     * Dimension passée par {@link #setCurrentDimension(String)}.
+     */
+    private ZoneFilter zoneFilter;
+    private String currentDimension = "overworld";
 
     private double minScore = 20.0;
     private boolean detectMapArt = true;
@@ -100,7 +115,9 @@ public class ChunkScanner {
                         boolean fullyLoaded = lagDetector == null || lagDetector.isChunkFullyLoaded(deferredChunk);
                         if (fullyLoaded) {
                             deferredChunks.remove(deferredKey);
-                            scannedChunks.add(deferredKey);
+                            if (scannedChunks.add(deferredKey)) {
+                                pendingNewScanned.add(deferredKey);
+                            }
                             ChunkAnalysis analysis = BlockAnalyzer.analyzeChunk(mc.level, deferredChunk);
                             if (useEntityScanning) {
                                 entityScanner.scanEntities(analysis);
@@ -149,9 +166,21 @@ public class ChunkScanner {
                             continue;
                         }
 
+                        // Restriction par zone(s) de recherche dessinées dans le dashboard.
+                        // Si l'utilisateur a défini au moins une zone pour la dim courante,
+                        // les chunks dont le centre est hors zones sont skippés (et marqués
+                        // scannés pour ne pas y revenir).
+                        if (zoneFilter != null && !zoneFilter.allows(currentDimension, x, z)) {
+                            scannedChunks.add(key);
+                            skippedCount++;
+                            continue;
+                        }
+
                         deferredChunks.remove(key);
 
-                        scannedChunks.add(key);
+                        if (scannedChunks.add(key)) {
+                            pendingNewScanned.add(key);
+                        }
                         chunksScanned++;
 
                         ChunkAnalysis analysis = BlockAnalyzer.analyzeChunk(mc.level, chunk);
@@ -340,6 +369,7 @@ public class ChunkScanner {
 
     public void reset() {
         scannedChunks.clear();
+        pendingNewScanned.clear();
         interestingChunks.clear();
         foundBasesCount = 0;
         trailChunks.clear();
@@ -349,11 +379,30 @@ public class ChunkScanner {
     }
 
     /**
+     * Drain et retourne le buffer des chunks scannés depuis le dernier appel.
+     * Utilisé par le module pour émettre des {@code chunks_scanned_batch}
+     * vers le backend.
+     */
+    public long[] pollPendingNewScanned() {
+        if (pendingNewScanned.isEmpty()) return new long[0];
+        long[] out = pendingNewScanned.toLongArray();
+        pendingNewScanned.clear();
+        return out;
+    }
+
+    public int getPendingNewScannedSize() {
+        return pendingNewScanned.size();
+    }
+
+    /**
      * Restore previously scanned chunk positions from saved state.
      */
     public void restoreScannedChunks(long[] packedKeys) {
         if (packedKeys != null && packedKeys.length > 0) {
             scannedChunks.addAll(LongOpenHashSet.of(packedKeys));
+            // Re-stream into the pending buffer so a fresh dashboard / backend
+            // (no DB) catches up with what was already explored.
+            for (long k : packedKeys) pendingNewScanned.add(k);
             LOGGER.info("[ChunkScanner] Restored {} scanned chunks from saved state", packedKeys.length);
         }
     }
@@ -395,4 +444,6 @@ public class ChunkScanner {
     public void setDetectCaveMining(boolean v) { this.detectCaveMining = v; }
     public void setFreshnessEstimator(FreshnessEstimator estimator) { this.freshnessEstimator = estimator; }
     public void setLagDetector(LagDetector detector) { this.lagDetector = detector; }
+    public void setZoneFilter(ZoneFilter filter) { this.zoneFilter = filter; }
+    public void setCurrentDimension(String dim) { this.currentDimension = dim; }
 }

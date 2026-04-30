@@ -1,7 +1,9 @@
 package com.basefinder.modules;
 
 import com.basefinder.application.telemetry.EmitBotTickUseCase;
+import com.basefinder.application.telemetry.EmitChunksScannedUseCase;
 import com.basefinder.bootstrap.ServiceRegistry;
+import com.basefinder.domain.zone.ZoneFilter;
 import com.basefinder.domain.view.BaseFinderViewModel;
 import com.basefinder.elytra.ElytraBot;
 import com.basefinder.logger.BaseLogger;
@@ -61,6 +63,8 @@ public class BaseFinderModule extends ToggleableModule {
     private final NavigationHelper navigation = new NavigationHelper();
     private final BaseLogger logger;
     private final EmitBotTickUseCase emitBotTick;
+    private final EmitChunksScannedUseCase emitChunksScanned;
+    private final ZoneFilter zoneFilter;
     private final FreshnessEstimator freshnessEstimator = new FreshnessEstimator();
     private final SurvivalManager survivalManager = new SurvivalManager();
     private final StateManager stateManager = new StateManager();
@@ -203,6 +207,8 @@ public class BaseFinderModule extends ToggleableModule {
         this.logger = registry.baseLogger();
         this.baritoneController = registry.baritoneApi();
         this.emitBotTick = registry.emitBotTickUseCase();
+        this.emitChunksScanned = registry.emitChunksScannedUseCase();
+        this.zoneFilter = registry.zoneFilter();
 
         // Mode de recherche avec paramètres spécifiques par mode
         modeGroup.addSubSettings(searchMode, spiralStep,
@@ -324,6 +330,25 @@ public class BaseFinderModule extends ToggleableModule {
             if (savedState != null && savedState.searchMode.equals(pattern.name()) && savedState.waypointIndex > 0) {
                 // Always use saved center to regenerate identical waypoints
                 searchCenter = new BlockPos(savedState.centerX, 200, savedState.centerZ);
+            }
+        }
+
+        // Override : si l'utilisateur a dessiné des zones sur le dashboard
+        // pour la dimension courante, on bascule en mode ZONE et on utilise
+        // la bbox d'union comme bornes. Le ZoneFilter du scanner s'occupe
+        // ensuite de skip les chunks hors zones (utile pour cercles/polygons).
+        String dimNow = currentDimensionLegacy();
+        if (zoneFilter != null && zoneFilter.hasActiveZonesFor(dimNow)) {
+            int[] bbox = zoneFilter.unionBoundingBox(dimNow);
+            if (bbox != null) {
+                pattern = NavigationHelper.SearchPattern.ZONE;
+                navigation.setZoneBounds(bbox[0], bbox[1], bbox[2], bbox[3]);
+                searchCenter = new BlockPos(
+                        (bbox[0] + bbox[1]) / 2, 200,
+                        (bbox[2] + bbox[3]) / 2);
+                ChatUtils.print("[BaseHunter] " + Lang.t(
+                        "Drawn zones detected — searching inside (bbox " + (bbox[1] - bbox[0]) + "x" + (bbox[3] - bbox[2]) + " blocks)",
+                        "Zones dessinées détectées — recherche dedans (bbox " + (bbox[1] - bbox[0]) + "x" + (bbox[3] - bbox[2]) + " blocs)"));
             }
         }
 
@@ -598,6 +623,20 @@ public class BaseFinderModule extends ToggleableModule {
         // Le sink (NDJSON ou NOOP) absorbe les échecs IO.
         if (tickCounter % 20 == 0) {
             emitBotTick.emit(snapshot());
+        }
+
+        // Garde le scanner aligné avec la dimension courante du joueur — le
+        // ZoneFilter (si présent) compare la dim de chaque zone à celle-ci.
+        scanner.setCurrentDimension(currentDimensionLegacy());
+
+        // Émet le batch de chunks scannés toutes les 200 ticks (~10 s) ou
+        // dès que le buffer dépasse 500 chunks pour limiter la latence
+        // d'affichage côté coverage layer.
+        if (tickCounter % 200 == 0 || scanner.getPendingNewScannedSize() > 500) {
+            long[] newlyScanned = scanner.pollPendingNewScanned();
+            if (newlyScanned.length > 0) {
+                emitChunksScanned.emit(currentDimensionLegacy(), newlyScanned);
+            }
         }
 
         // Lag detection tick (TPS estimation)
@@ -1137,8 +1176,15 @@ public class BaseFinderModule extends ToggleableModule {
             return BaseFinderViewModel.INACTIVE;
         }
 
+        String dim = currentDimensionLegacy();
         BaseFinderViewModel.PlayerVm playerVm = (mc.player != null)
-                ? new BaseFinderViewModel.PlayerVm(true, (int) mc.player.getY(), (int) mc.player.getHealth())
+                ? new BaseFinderViewModel.PlayerVm(
+                        true,
+                        (int) mc.player.getX(),
+                        (int) mc.player.getY(),
+                        (int) mc.player.getZ(),
+                        dim,
+                        (int) mc.player.getHealth())
                 : BaseFinderViewModel.PlayerVm.UNKNOWN;
 
         BaseFinderViewModel.FlightVm flightVm = elytraBot.isFlying()
@@ -1198,6 +1244,16 @@ public class BaseFinderModule extends ToggleableModule {
                 survVm,
                 lagVm,
                 playerVm);
+    }
+
+    private String currentDimensionLegacy() {
+        if (mc.level == null) return "overworld";
+        String location = mc.level.dimension().location().toString();
+        return switch (location) {
+            case "minecraft:the_nether" -> "nether";
+            case "minecraft:the_end" -> "end";
+            default -> "overworld";
+        };
     }
 
     public int[] getZoneBounds() {
